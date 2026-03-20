@@ -131,7 +131,7 @@ The proxy automatically maps Claude model names to the appropriate Codex backend
 | :--- | :--- | :---: | :--- |
 | `claude-sonnet-4-5` | **GPT-5.2 Codex** | ✅ | Default high-intelligence model |
 | `claude-opus-4-5` | **GPT-5.3 Codex** | ✅ | Maximum reasoning capability |
-| `claude-haiku-4` | **Kimi K2.5 / MiniMax** | ❌ | Free tier / routed via OpenRouter (No auth needed) |
+| `claude-haiku-4` | Kilo Code (Free) | ❌ | MiniMax M2.5, Qwen3, DeepSeek R1, etc. (No auth needed) |
 
 ---
 

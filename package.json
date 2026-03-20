@@ -1,6 +1,6 @@
 {
   "name": "codex-claude-proxy",
-  "version": "1.0.4",
+  "version": "1.0.5",
   "description": "Multi-account proxy server for OpenAI Codex CLI with Claude API compatibility",
   "type": "module",
   "main": "src/index.js",
@@ -30,6 +30,9 @@
   "homepage": "https://github.com/Ayush-Kotlin-Dev/codex-claude-proxy#readme",
   "scripts": {
     "start": "node src/index.js",
+    "portfolio:dev": "npm --prefix apps/portfolio run dev",
+    "portfolio:build": "npm --prefix apps/portfolio run build",
+    "portfolio:preview": "npm --prefix apps/portfolio run preview",
     "accounts": "node src/cli/accounts.js",
     "accounts:add": "node src/cli/accounts.js add",
     "accounts:add:headless": "node src/cli/accounts.js add --no-browser",
