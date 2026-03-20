@@ -4,6 +4,7 @@
  */
 
 import { cleanCacheControl } from './thinking-utils.js';
+import { toAnthropicToolId, toOpenAIToolId } from './format-converter.js';
 
 function extractSystemPrompt(system) {
     if (!system) return [];
@@ -153,7 +154,7 @@ function convertMessages(messages = []) {
                     if (block.type === 'tool_result') {
                         output.push({
                             role: 'tool',
-                            tool_call_id: block.tool_use_id,
+                            tool_call_id: toOpenAIToolId(block.tool_use_id),
                             content: normalizeToolResultContent(block)
                         });
                     }
@@ -168,8 +169,9 @@ function convertMessages(messages = []) {
             if (Array.isArray(msg.content)) {
                 for (const block of msg.content) {
                     if (block.type === 'tool_use') {
+                        const openAIId = toOpenAIToolId(block.id);
                         toolCalls.push({
-                            id: block.id,
+                            id: openAIId,
                             type: 'function',
                             function: {
                                 name: block.name,
@@ -185,7 +187,7 @@ function convertMessages(messages = []) {
             if (textParts.length > 0 || toolCalls.length > 0) {
                 const message = {
                     role: 'assistant',
-                    content: textParts.join('\n\n')
+                    content: textParts.length > 0 ? textParts.join('\n\n') : null
                 };
 
                 if (toolCalls.length > 0) {
@@ -232,6 +234,14 @@ export function convertOpenAIChatToAnthropic(openAiResponse) {
     const message = openAiResponse?.choices?.[0]?.message || {};
     const content = [];
 
+    if (message.reasoning || message.reasoning_content) {
+        content.push({ 
+            type: 'thinking', 
+            thinking: message.reasoning || message.reasoning_content,
+            signature: 'kilo-reasoning' // Placeholder signature
+        });
+    }
+
     if (message.content) {
         content.push({ type: 'text', text: message.content });
     }
@@ -249,7 +259,7 @@ export function convertOpenAIChatToAnthropic(openAiResponse) {
 
             content.push({
                 type: 'tool_use',
-                id: call.id,
+                id: toAnthropicToolId(call.id),
                 name: call.function?.name || 'unknown',
                 input
             });

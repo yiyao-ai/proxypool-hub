@@ -3,7 +3,7 @@
  * Streams OpenAI Chat Completions SSE and converts to Anthropic SSE events
  */
 
-import { generateMessageId } from './format-converter.js';
+import { generateMessageId, toAnthropicToolId } from './format-converter.js';
 
 export async function* streamOpenAIChat(response, model) {
     const messageId = generateMessageId();
@@ -76,7 +76,8 @@ export async function* streamOpenAIChat(response, model) {
 
     const startToolBlock = (toolCall) => {
         currentBlockType = 'tool_use';
-        currentToolCallId = toolCall.id;
+        const rawId = toolCall.id || `call_${Math.random().toString(36).slice(2)}`;
+        currentToolCallId = toAnthropicToolId(rawId);
         currentToolName = toolCall.function?.name || 'tool';
         stopReason = 'tool_use';
         return emitContentBlockStart({
@@ -90,7 +91,7 @@ export async function* streamOpenAIChat(response, model) {
     const handleDelta = (delta) => {
         const events = [];
 
-        // Handle reasoning/thinking content (from models like Kimi K2.5)
+        // Handle reasoning/thinking content (from models like MiniMax M2.5)
         const reasoningContent = delta.reasoning || delta.reasoning_content;
         if (reasoningContent) {
             if (!hasEmittedStart) {
@@ -98,6 +99,9 @@ export async function* streamOpenAIChat(response, model) {
                 events.push(emitMessageStart());
                 events.push(startThinkingBlock());
             } else if (currentBlockType !== 'thinking') {
+                if (currentBlockType === 'thinking') {
+                    events.push(emitContentBlockDelta({ type: 'signature_delta', signature: 'kilo-reasoning' }));
+                }
                 events.push(emitContentBlockStop());
                 blockIndex++;
                 events.push(startThinkingBlock());
@@ -106,18 +110,27 @@ export async function* streamOpenAIChat(response, model) {
             events.push(emitContentBlockDelta({ type: 'thinking_delta', thinking: reasoningContent }));
         }
 
-        if (delta.content) {
+        const shouldStartText = (delta.content !== undefined && delta.content !== null) && (
+            delta.content.length > 0 || (!hasEmittedStart && !reasoningContent)
+        );
+
+        if (shouldStartText) {
             if (!hasEmittedStart) {
                 hasEmittedStart = true;
                 events.push(emitMessageStart());
                 events.push(startTextBlock());
             } else if (currentBlockType !== 'text') {
+                if (currentBlockType === 'thinking') {
+                    events.push(emitContentBlockDelta({ type: 'signature_delta', signature: 'kilo-reasoning' }));
+                }
                 events.push(emitContentBlockStop());
                 blockIndex++;
                 events.push(startTextBlock());
             }
 
-            events.push(emitContentBlockDelta({ type: 'text_delta', text: delta.content }));
+            if (delta.content.length > 0) {
+                events.push(emitContentBlockDelta({ type: 'text_delta', text: delta.content }));
+            }
         }
 
         if (Array.isArray(delta.tool_calls)) {
@@ -127,8 +140,13 @@ export async function* streamOpenAIChat(response, model) {
                     events.push(emitMessageStart());
                 }
 
-                if (currentBlockType !== 'tool_use' || currentToolCallId !== toolCall.id) {
+                const toolId = toolCall.id ? toAnthropicToolId(toolCall.id) : currentToolCallId;
+
+                if (currentBlockType !== 'tool_use' || currentToolCallId !== toolId) {
                     if (currentBlockType) {
+                        if (currentBlockType === 'thinking') {
+                            events.push(emitContentBlockDelta({ type: 'signature_delta', signature: 'kilo-reasoning' }));
+                        }
                         events.push(emitContentBlockStop());
                         blockIndex++;
                     }
@@ -137,8 +155,9 @@ export async function* streamOpenAIChat(response, model) {
 
                 const argsDelta = toolCall.function?.arguments || '';
                 if (argsDelta) {
-                    const prev = pendingToolArgs.get(toolCall.id) || '';
-                    pendingToolArgs.set(toolCall.id, prev + argsDelta);
+                    const callIdForArgs = toolCall.id || currentToolCallId;
+                    const prev = pendingToolArgs.get(callIdForArgs) || '';
+                    pendingToolArgs.set(callIdForArgs, prev + argsDelta);
                     events.push(emitContentBlockDelta({
                         type: 'input_json_delta',
                         partial_json: argsDelta
@@ -198,6 +217,9 @@ export async function* streamOpenAIChat(response, model) {
         yield emitContentBlockDelta({ type: 'text_delta', text: '' });
         yield emitContentBlockStop();
     } else if (currentBlockType) {
+        if (currentBlockType === 'thinking') {
+            yield emitContentBlockDelta({ type: 'signature_delta', signature: 'kilo-reasoning' });
+        }
         yield emitContentBlockStop();
     }
 
