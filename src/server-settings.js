@@ -5,7 +5,7 @@ import { CONFIG_DIR } from './account-manager.js';
 const SETTINGS_FILE = join(CONFIG_DIR, 'settings.json');
 
 const DEFAULT_SETTINGS = {
-    haikuKiloModel: 'kimi-k2.5',
+    haikuKiloModel: 'minimax/minimax-m2.5:free',
     accountStrategy: 'sticky'
 };
 

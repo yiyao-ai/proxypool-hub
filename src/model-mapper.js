@@ -93,14 +93,12 @@ export function isKiloModel(mappedModel) {
 
 /**
  * Resolves the actual Kilo model identifier based on server settings.
+ * The setting stores the full Kilo model ID (e.g. 'minimax/minimax-m2.5:free').
  * @returns {string}
  */
 export function resolveKiloModel() {
   const settings = getServerSettings();
-  if (settings.haikuKiloModel === 'minimax-2.5') {
-    return 'minimax/minimax-m2.5:free';
-  }
-  return 'moonshotai/kimi-k2.5:free';
+  return settings.haikuKiloModel || 'minimax/minimax-m2.5:free';
 }
 
 /**

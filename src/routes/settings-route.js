@@ -5,11 +5,12 @@
  *   POST /settings/haiku-model
  *   GET  /settings/account-strategy
  *   POST /settings/account-strategy
+ *   GET  /settings/kilo-models
  */
 
 import { getServerSettings, setServerSettings } from '../server-settings.js';
+import { fetchFreeModels } from '../kilo-models.js';
 
-const VALID_HAIKU_MODELS = ['kimi-k2.5', 'minimax-2.5'];
 const VALID_STRATEGIES = ['sticky', 'round-robin'];
 
 /**
@@ -24,19 +25,56 @@ export function handleGetHaikuModel(req, res) {
 /**
  * POST /settings/haiku-model
  * Updates the Haiku/Kilo model selection.
+ * Accepts any model ID string — the UI filters to only show free models.
  */
-export function handleSetHaikuModel(req, res) {
+export async function handleSetHaikuModel(req, res) {
   const { haikuKiloModel } = req.body || {};
 
-  if (!VALID_HAIKU_MODELS.includes(haikuKiloModel)) {
+  if (!haikuKiloModel || typeof haikuKiloModel !== 'string') {
     return res.status(400).json({
       success: false,
-      error: `Invalid haikuKiloModel. Use one of: ${VALID_HAIKU_MODELS.join(', ')}`
+      error: 'haikuKiloModel is required and must be a string'
     });
+  }
+
+  // Validate against live free models from Kilo API
+  try {
+    const freeModels = await fetchFreeModels();
+    const validIds = freeModels.map(m => m.id);
+    if (!validIds.includes(haikuKiloModel)) {
+      return res.status(400).json({
+        success: false,
+        error: `Model "${haikuKiloModel}" is not a free model. Available: ${validIds.join(', ')}`
+      });
+    }
+  } catch (err) {
+    // If API is unreachable, allow any value (user may know what they're doing)
+    console.warn(`[Settings] Could not validate model against Kilo API: ${err.message}`);
   }
 
   const settings = setServerSettings({ haikuKiloModel });
   res.json({ success: true, haikuKiloModel: settings.haikuKiloModel });
+}
+
+/**
+ * GET /settings/kilo-models
+ * Returns the list of free Kilo models from the API.
+ */
+export async function handleGetKiloModels(req, res) {
+  try {
+    const freeModels = await fetchFreeModels();
+    const settings = getServerSettings();
+    res.json({
+      success: true,
+      models: freeModels,
+      current: settings.haikuKiloModel
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      error: `Failed to fetch models: ${error.message}`
+    });
+  }
 }
 
 /**
@@ -69,6 +107,7 @@ export function handleSetAccountStrategy(req, res) {
 export default { 
   handleGetHaikuModel, 
   handleSetHaikuModel,
+  handleGetKiloModels,
   handleGetAccountStrategy,
   handleSetAccountStrategy
 };
