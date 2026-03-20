@@ -1,6 +1,6 @@
 document.addEventListener('alpine:init', () => {
     Alpine.data('app', () => ({
-        version: '1.0.4',
+        version: '1.0.5',
         connectionStatus: 'connecting',
         activeTab: 'dashboard',
         sidebarOpen: window.innerWidth >= 1024,
@@ -12,10 +12,12 @@ document.addEventListener('alpine:init', () => {
         searchQuery: '',
         stats: { total: 0, active: 0, expired: 0, planType: '-' },
 
-        haikuKiloModel: 'kimi-k2.5',
+        haikuKiloModel: 'minimax/minimax-m2.5:free',
         accountStrategy: 'sticky',
         haikuModelSaving: false,
         strategySaving: false,
+        kiloModels: [],
+        kiloModelsLoading: false,
 
         showAddModal: false,
         showDeleteModal: false,
@@ -37,9 +39,8 @@ document.addEventListener('alpine:init', () => {
         haikuTesting: false,
 
         haikuModelLabel() {
-            if (this.haikuKiloModel === 'minimax-2.5') return 'MiniMax M2.5';
-            if (this.haikuKiloModel === 'kimi-k2.5') return 'Kimi K2.5';
-            return 'Kimi K2.5';
+            const model = this.kiloModels.find(m => m.id === this.haikuKiloModel);
+            return model ? model.name : this.haikuKiloModel;
         },
 
         async testHaikuChat() {
@@ -92,6 +93,7 @@ document.addEventListener('alpine:init', () => {
             this.startLogStream();
             this.loadHaikuModelSetting();
             this.loadAccountStrategySetting();
+            this.loadKiloModels();
 
             window.addEventListener('resize', () => {
                 this.sidebarOpen = window.innerWidth >= 1024;
@@ -431,6 +433,18 @@ document.addEventListener('alpine:init', () => {
             if (ok && data?.haikuKiloModel) {
                 this.haikuKiloModel = data.haikuKiloModel;
             }
+        },
+
+        async loadKiloModels() {
+            this.kiloModelsLoading = true;
+            const { ok, data } = await this.api('/settings/kilo-models');
+            if (ok && data?.models) {
+                this.kiloModels = data.models;
+                if (data.current) {
+                    this.haikuKiloModel = data.current;
+                }
+            }
+            this.kiloModelsLoading = false;
         },
 
         async setHaikuModel(model) {

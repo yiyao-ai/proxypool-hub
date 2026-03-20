@@ -617,13 +617,21 @@
                     <div class="flex flex-wrap items-center justify-between gap-4">
                         <div>
                             <div class="text-sm text-gray-300">Haiku Model Target</div>
-                            <div class="text-xs text-gray-500 font-mono">Routes claude-haiku-4 to Kilo</div>
+                            <div class="text-xs text-gray-500 font-mono">Routes claude-haiku-4 to Kilo free model</div>
                         </div>
-                        <div class="inline-flex items-center gap-2">
-                            <button class="btn btn-xs" :class="haikuKiloModel === 'kimi-k2.5' ? 'bg-neon-purple text-white' : 'btn-outline text-gray-400'"
-                                @click="setHaikuModel('kimi-k2.5')" :disabled="haikuModelSaving">Kimi K2.5</button>
-                            <button class="btn btn-xs" :class="haikuKiloModel === 'minimax-2.5' ? 'bg-neon-purple text-white' : 'btn-outline text-gray-400'"
-                                @click="setHaikuModel('minimax-2.5')" :disabled="haikuModelSaving">MiniMax M2.5</button>
+                        <div class="flex flex-wrap items-center gap-2">
+                            <template x-if="kiloModelsLoading">
+                                <span class="text-xs text-gray-500 font-mono">Loading models...</span>
+                            </template>
+                            <template x-for="model in kiloModels" :key="model.id">
+                                <button class="btn btn-xs transition-all" 
+                                    :class="haikuKiloModel === model.id ? 'bg-neon-purple text-white shadow-md shadow-neon-purple/20' : 'btn-outline text-gray-400 hover:text-white'"
+                                    @click="setHaikuModel(model.id)" 
+                                    :disabled="haikuModelSaving"
+                                    :title="model.id"
+                                    x-text="model.name.replace(/ \(free\)/i, '').replace('Kilo Auto Free', 'Auto (Free)')">
+                                </button>
+                            </template>
                         </div>
                     </div>
                 </div>
