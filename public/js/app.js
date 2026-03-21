@@ -7,6 +7,17 @@ document.addEventListener('alpine:init', () => {
         loading: false,
         toast: null,
         currentTime: '',
+        lang: localStorage.getItem('proxy-lang') || 'en',
+
+        t(key) {
+            const dict = i18n[this.lang] || i18n.en;
+            return dict[key] !== undefined ? dict[key] : (i18n.en[key] || key);
+        },
+
+        setLang(lang) {
+            this.lang = lang;
+            localStorage.setItem('proxy-lang', lang);
+        },
         
         accounts: [],
         searchQuery: '',
@@ -58,7 +69,7 @@ document.addEventListener('alpine:init', () => {
             if (ok && data.choices) {
                 this.haikuTestResponse = data.choices[0].message.content;
             } else {
-                this.haikuTestResponse = data?.error?.message || 'Request failed';
+                this.haikuTestResponse = data?.error?.message || this.t('requestFailed');
             }
         },
         
@@ -263,15 +274,16 @@ document.addEventListener('alpine:init', () => {
             if (!Number.isFinite(resetMs)) return null;
 
             const deltaSec = Math.max(0, Math.floor((resetMs - Date.now()) / 1000));
-            if (deltaSec === 0) return 'Reset due now';
+            if (deltaSec === 0) return this.t('resetDueNow');
 
             const days = Math.floor(deltaSec / 86400);
             const hours = Math.floor((deltaSec % 86400) / 3600);
             const minutes = Math.floor((deltaSec % 3600) / 60);
 
-            if (days > 0) return `Resets in ${days}d ${hours}h`;
-            if (hours > 0) return `Resets in ${hours}h ${minutes}m`;
-            return `Resets in ${minutes}m`;
+            const dict = i18n[this.lang] || i18n.en;
+            if (days > 0) return dict.resetsInDH(days, hours);
+            if (hours > 0) return dict.resetsInHM(hours, minutes);
+            return dict.resetsInM(minutes);
         },
 
         async startOAuth() {
@@ -295,21 +307,21 @@ document.addEventListener('alpine:init', () => {
                 
                 setTimeout(() => clearInterval(checkAdded), 120000);
             } else {
-                this.showToast(data?.message || 'Failed to start OAuth', 'error');
+                this.showToast(data?.message || this.t('failedToStartOauth'), 'error');
             }
         },
 
         async startManualOAuth() {
             await this.api('/accounts/oauth/cleanup', { method: 'POST' });
             const { ok, data } = await this.api('/accounts/add', { method: 'POST' });
-            
+
             if (ok && data.oauth_url) {
                 this.oauthManualUrl = data.oauth_url;
                 this.oauthManualVerifier = data.verifier;
                 this.oauthManualCode = '';
                 this.oauthManualMode = true;
             } else {
-                this.showToast(data?.message || 'Failed to start OAuth', 'error');
+                this.showToast(data?.message || this.t('failedToStartOauth'), 'error');
             }
         },
 
@@ -330,16 +342,16 @@ document.addEventListener('alpine:init', () => {
                 this.oauthManualMode = false;
                 this.refreshAccounts();
             } else {
-                this.showToast(data?.error || 'Failed to add account', 'error');
+                this.showToast(data?.error || this.t('failedToAdd'), 'error');
             }
         },
 
         async copyToClipboard(text) {
             try {
                 await navigator.clipboard.writeText(text);
-                this.showToast('Copied to clipboard', 'success');
+                this.showToast(this.t('copiedToClipboard'), 'success');
             } catch (e) {
-                this.showToast('Failed to copy', 'error');
+                this.showToast(this.t('failedToCopy'), 'error');
             }
         },
 
@@ -350,7 +362,7 @@ document.addEventListener('alpine:init', () => {
                 this.showAddModal = false;
                 this.refreshAccounts();
             } else {
-                this.showToast(data?.message || 'Import failed', 'error');
+                this.showToast(data?.message || this.t('importFailed'), 'error');
             }
         },
 
@@ -363,7 +375,7 @@ document.addEventListener('alpine:init', () => {
                 this.showToast(data.message, 'success');
                 this.refreshAccounts();
             } else {
-                this.showToast(data?.message || 'Failed to switch', 'error');
+                this.showToast(data?.message || this.t('failedToSwitch'), 'error');
             }
         },
 
@@ -373,18 +385,18 @@ document.addEventListener('alpine:init', () => {
                 this.showToast(data.message, 'success');
                 this.refreshAccounts();
             } else {
-                this.showToast(data?.message || 'Refresh failed', 'error');
+                this.showToast(data?.message || this.t('refreshFailed'), 'error');
             }
         },
 
         async refreshAllTokens() {
-            this.showToast('Refreshing all tokens...', 'info');
+            this.showToast(this.t('refreshingAllTokens'), 'info');
             const { ok, data } = await this.api('/accounts/refresh/all', { method: 'POST' });
             if (ok) {
                 this.showToast(data.message, 'success');
                 this.refreshAccounts();
             } else {
-                this.showToast(data?.message || 'Failed', 'error');
+                this.showToast(data?.message || this.t('refreshFailed'), 'error');
             }
         },
 
@@ -400,7 +412,7 @@ document.addEventListener('alpine:init', () => {
                 this.showToast(data.message, 'success');
                 this.refreshAccounts();
             } else {
-                this.showToast(data?.message || 'Delete failed', 'error');
+                this.showToast(data?.message || this.t('deleteFailed'), 'error');
             }
         },
 
@@ -424,7 +436,7 @@ document.addEventListener('alpine:init', () => {
             if (ok && data.choices) {
                 this.testResponse = data.choices[0].message.content;
             } else {
-                this.testResponse = data?.error?.message || 'Request failed';
+                this.testResponse = data?.error?.message || this.t('requestFailed');
             }
         },
 
@@ -457,9 +469,10 @@ document.addEventListener('alpine:init', () => {
             this.haikuModelSaving = false;
             if (ok && data?.haikuKiloModel) {
                 this.haikuKiloModel = data.haikuKiloModel;
-                this.showToast(`Haiku routed to ${data.haikuKiloModel.toUpperCase()}`, 'success');
+                const dict = i18n[this.lang] || i18n.en;
+                this.showToast(dict.haikuRoutedTo(data.haikuKiloModel.toUpperCase()), 'success');
             } else {
-                this.showToast(data?.error || 'Failed to update Haiku model', 'error');
+                this.showToast(data?.error || this.t('failedUpdateHaiku'), 'error');
             }
         },
 
@@ -480,9 +493,10 @@ document.addEventListener('alpine:init', () => {
             this.strategySaving = false;
             if (ok && data?.accountStrategy) {
                 this.accountStrategy = data.accountStrategy;
-                this.showToast(`Account strategy set to ${data.accountStrategy === 'sticky' ? 'Sticky' : 'Round-Robin'}`, 'success');
+                const dict = i18n[this.lang] || i18n.en;
+                this.showToast(dict.strategySetTo(data.accountStrategy), 'success');
             } else {
-                this.showToast(data?.error || 'Failed to update strategy', 'error');
+                this.showToast(data?.error || this.t('failedUpdateStrategy'), 'error');
             }
         },
 
@@ -496,9 +510,9 @@ document.addEventListener('alpine:init', () => {
             });
 
             if (ok && data?.success) {
-                this.showToast('Updated Claude Code settings.json (API URL + API key).', 'success');
+                this.showToast(this.t('claudeSettingsUpdated'), 'success');
             } else {
-                this.showToast(data?.error || error || 'Failed to update Claude Code settings.json', 'error');
+                this.showToast(data?.error || error || this.t('claudeSettingsFailed'), 'error');
             }
         },
 

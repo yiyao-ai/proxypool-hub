@@ -67,21 +67,31 @@
                 CX
             </div>
             <div class="flex flex-col">
-                <span class="text-sm font-bold tracking-wide text-white">CODEX PROXY</span>
+                <span class="text-sm font-bold tracking-wide text-white" x-text="t('codexProxy')"></span>
                 <div class="flex flex-col gap-0.5">
                     <div class="flex items-center gap-1.5">
-                        <span class="text-[10px] text-gray-500 font-mono tracking-wider">CLAUDE PROXY SYSTEM</span>
+                        <span class="text-[10px] text-gray-500 font-mono tracking-wider" x-text="t('claudeProxySystem')"></span>
                         <span class="text-[10px] text-gray-500 font-mono tracking-wider" x-text="'v' + version"></span>
                     </div>
                     <a href="https://github.com/Ayush-Kotlin-Dev/codex-claude-proxy" target="_blank" class="text-[10px] text-neon-purple hover:text-purple-400 hover:underline transition-colors flex items-center gap-1">
                         <svg class="w-3 h-3" fill="currentColor" viewBox="0 0 24 24"><path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/></svg>
-                        <span>Star on GitHub</span>
+                        <span x-text="t('starOnGithub')"></span>
                     </a>
                 </div>
             </div>
         </div>
 
         <div class="flex items-center gap-4">
+            <!-- Language Toggle -->
+            <div class="flex items-center gap-1 text-xs font-mono">
+                <button @click="setLang('en')" class="px-1.5 py-0.5 rounded transition-all"
+                    :class="lang === 'en' ? 'bg-neon-purple/20 text-neon-purple border border-neon-purple/30' : 'text-gray-500 hover:text-gray-300'">EN</button>
+                <button @click="setLang('zh')" class="px-1.5 py-0.5 rounded transition-all"
+                    :class="lang === 'zh' ? 'bg-neon-purple/20 text-neon-purple border border-neon-purple/30' : 'text-gray-500 hover:text-gray-300'">中文</button>
+            </div>
+
+            <div class="h-4 w-px bg-space-border"></div>
+
             <div class="flex items-center gap-2 px-3 py-1 rounded-full text-xs font-mono border transition-all duration-300"
                 :class="connectionStatus === 'connected'
                     ? 'bg-neon-green/10 border-neon-green/20 text-neon-green'
@@ -89,13 +99,13 @@
                 <div class="w-1.5 h-1.5 rounded-full"
                     :class="connectionStatus === 'connected' ? 'bg-neon-green shadow-[0_0_8px_rgba(34,197,94,0.6)]' : 'bg-red-500'">
                 </div>
-                <span x-text="connectionStatus === 'connected' ? 'Online' : 'Offline'"></span>
+                <span x-text="connectionStatus === 'connected' ? t('online') : t('offline')"></span>
             </div>
 
             <div class="h-4 w-px bg-space-border"></div>
 
             <button type="button" class="btn btn-ghost btn-xs btn-square text-gray-400 hover:text-white hover:bg-white/5"
-                @click="refreshAccounts()" :disabled="loading" title="Refresh data">
+                @click="refreshAccounts()" :disabled="loading" :title="t('refreshData')">
                 <svg class="w-4 h-4" :class="{'animate-spin': loading}" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
                 </svg>
@@ -116,33 +126,33 @@
                 '-translate-x-full': !sidebarOpen
             }">
             <div class="w-64 flex flex-col h-full pt-6 pb-4 flex-shrink-0">
-                <div class="px-4 mb-2 text-xs font-bold text-gray-600 uppercase tracking-widest hidden lg:block">Main</div>
-                
+                <div class="px-4 mb-2 text-xs font-bold text-gray-600 uppercase tracking-widest hidden lg:block" x-text="t('main')"></div>
+
                 <nav class="flex flex-col gap-1">
                     <button class="nav-item flex items-center gap-3 px-6 py-3 text-sm font-medium text-gray-400 hover:text-white hover:bg-white/5"
                         :class="{'active': activeTab === 'dashboard'}" @click="setActiveTab('dashboard')">
                         <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" />
                         </svg>
-                        <span>Dashboard</span>
+                        <span x-text="t('dashboard')"></span>
                     </button>
                     <button class="nav-item flex items-center gap-3 px-6 py-3 text-sm font-medium text-gray-400 hover:text-white hover:bg-white/5"
                         :class="{'active': activeTab === 'accounts'}" @click="setActiveTab('accounts')">
                         <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
                         </svg>
-                        <span>Accounts</span>
+                        <span x-text="t('accounts')"></span>
                     </button>
                 </nav>
 
-                <div class="px-4 mt-8 mb-2 text-xs font-bold text-gray-600 uppercase tracking-widest">System</div>
+                <div class="px-4 mt-8 mb-2 text-xs font-bold text-gray-600 uppercase tracking-widest" x-text="t('system')"></div>
                 <nav class="flex flex-col gap-1">
                     <button class="nav-item flex items-center gap-3 px-6 py-3 text-sm font-medium text-gray-400 hover:text-white hover:bg-white/5"
                         :class="{'active': activeTab === 'logs'}" @click="setActiveTab('logs')">
                         <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                         </svg>
-                        <span>Logs</span>
+                        <span x-text="t('logs')"></span>
                     </button>
                     <button class="nav-item flex items-center gap-3 px-6 py-3 text-sm font-medium text-gray-400 hover:text-white hover:bg-white/5"
                         :class="{'active': activeTab === 'settings'}" @click="setActiveTab('settings')">
@@ -150,7 +160,7 @@
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
                         </svg>
-                        <span>Settings</span>
+                        <span x-text="t('settings')"></span>
                     </button>
                 </nav>
 
@@ -161,9 +171,9 @@
             <div x-show="activeTab === 'dashboard'" x-transition class="view-container">
                 <div class="flex items-center justify-between gap-4 mb-6">
                     <div class="flex flex-wrap items-center gap-4">
-                        <h1 class="text-2xl font-bold text-white tracking-tight">Dashboard</h1>
+                        <h1 class="text-2xl font-bold text-white tracking-tight" x-text="t('dashboard')"></h1>
                         <div class="flex items-center h-6 px-3 rounded-full bg-space-800/80 border border-space-border/50 shadow-sm backdrop-blur-sm">
-                            <span class="text-[10px] font-mono text-gray-400 uppercase tracking-wider">CHATGPT PROXY SYSTEM</span>
+                            <span class="text-[10px] font-mono text-gray-400 uppercase tracking-wider" x-text="t('chatgptProxySystem')"></span>
                         </div>
                     </div>
                     <div class="flex items-center gap-2 px-2.5 py-1.5 rounded-lg bg-space-900/60 border border-space-border/40 whitespace-nowrap flex-shrink-0">
@@ -171,7 +181,7 @@
                             <span class="absolute w-1.5 h-1.5 bg-neon-green rounded-full animate-ping opacity-75"></span>
                             <span class="relative w-1.5 h-1.5 bg-neon-green rounded-full"></span>
                         </div>
-                        <span class="text-[10px] font-mono text-gray-500 uppercase tracking-wider">Live</span>
+                        <span class="text-[10px] font-mono text-gray-500 uppercase tracking-wider" x-text="t('live')"></span>
                         <span class="text-gray-700">•</span>
                         <span class="text-[10px] font-mono text-gray-400 tabular-nums" x-text="currentTime"></span>
                     </div>
@@ -185,8 +195,8 @@
                             </svg>
                         </div>
                         <div class="stat-value text-white font-mono text-2xl lg:text-3xl font-bold mb-1 truncate" x-text="stats.total"></div>
-                        <div class="stat-title text-gray-500 font-mono text-[10px] uppercase tracking-wider truncate">Total Accounts</div>
-                        <div class="stat-desc text-cyan-400/60 text-[10px] truncate">Linked accounts</div>
+                        <div class="stat-title text-gray-500 font-mono text-[10px] uppercase tracking-wider truncate" x-text="t('totalAccounts')"></div>
+                        <div class="stat-desc text-cyan-400/60 text-[10px] truncate" x-text="t('linkedAccounts')"></div>
                     </div>
 
                     <div class="stat bg-space-900/40 border border-space-border/30 rounded-xl p-3 lg:p-4 hover:border-green-500/30 hover:bg-green-500/5 transition-all duration-300 group relative cursor-pointer min-w-0">
@@ -196,8 +206,8 @@
                             </svg>
                         </div>
                         <div class="stat-value text-white font-mono text-2xl lg:text-3xl font-bold mb-1 truncate" x-text="stats.active"></div>
-                        <div class="stat-title text-gray-500 font-mono text-[10px] uppercase tracking-wider truncate">Active</div>
-                        <div class="stat-desc text-green-400/60 text-[10px] truncate">Operational</div>
+                        <div class="stat-title text-gray-500 font-mono text-[10px] uppercase tracking-wider truncate" x-text="t('active')"></div>
+                        <div class="stat-desc text-green-400/60 text-[10px] truncate" x-text="t('operational')"></div>
                     </div>
 
                     <div class="stat bg-space-900/40 border border-space-border/30 rounded-xl p-3 lg:p-4 hover:border-yellow-500/30 hover:bg-yellow-500/5 transition-all duration-300 group relative cursor-pointer min-w-0">
@@ -207,8 +217,8 @@
                             </svg>
                         </div>
                         <div class="stat-value text-white font-mono text-2xl lg:text-3xl font-bold mb-1 truncate" x-text="stats.expired"></div>
-                        <div class="stat-title text-gray-500 font-mono text-[10px] uppercase tracking-wider truncate">Token Expired</div>
-                        <div class="stat-desc text-yellow-400/60 text-[10px] truncate">Needs refresh</div>
+                        <div class="stat-title text-gray-500 font-mono text-[10px] uppercase tracking-wider truncate" x-text="t('tokenExpired')"></div>
+                        <div class="stat-desc text-yellow-400/60 text-[10px] truncate" x-text="t('needsRefresh')"></div>
                     </div>
 
                     <div class="stat bg-space-900/40 border border-space-border/30 rounded-xl p-3 lg:p-4 hover:border-purple-500/30 hover:bg-purple-500/5 transition-all duration-300 group relative cursor-pointer min-w-0">
@@ -218,8 +228,8 @@
                             </svg>
                         </div>
                         <div class="stat-value text-white font-mono text-2xl lg:text-3xl font-bold mb-1 truncate" x-text="stats.planType"></div>
-                        <div class="stat-title text-gray-500 font-mono text-[10px] uppercase tracking-wider truncate">Active Plan</div>
-                        <div class="stat-desc text-purple-400/60 text-[10px] truncate">Current tier</div>
+                        <div class="stat-title text-gray-500 font-mono text-[10px] uppercase tracking-wider truncate" x-text="t('activePlan')"></div>
+                        <div class="stat-desc text-purple-400/60 text-[10px] truncate" x-text="t('currentTier')"></div>
                     </div>
                 </div>
 
@@ -228,10 +238,10 @@
                         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" class="w-4 h-4 text-neon-purple">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path>
                         </svg>
-                        <h3 class="text-xs font-mono text-gray-400 uppercase tracking-widest">Quick Test</h3>
+                        <h3 class="text-xs font-mono text-gray-400 uppercase tracking-widest" x-text="t('quickTest')"></h3>
                     </div>
                     <div class="flex gap-3">
-                        <input type="text" x-model="testPrompt" placeholder="Enter a test prompt..."
+                        <input type="text" x-model="testPrompt" :placeholder="t('enterTestPrompt')"
                             class="input flex-1 bg-space-800 border-space-border text-white font-mono text-sm">
                         <button class="btn bg-neon-purple hover:bg-purple-600 border-none text-white btn-sm gap-2"
                             @click="testChat()" :disabled="testing">
@@ -239,7 +249,7 @@
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"></path>
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
                             </svg>
-                            <span>Test</span>
+                            <span x-text="t('test')"></span>
                         </button>
                     </div>
                     <div x-show="testResponse" class="mt-4 p-3 rounded-lg bg-space-800/50 border border-space-border/30">
@@ -253,12 +263,12 @@
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path>
                         </svg>
                         <div class="flex items-center gap-2">
-                            <h3 class="text-xs font-mono text-gray-400 uppercase tracking-widest">Haiku (Kilo) Test</h3>
+                            <h3 class="text-xs font-mono text-gray-400 uppercase tracking-widest" x-text="t('haikuKiloTest')"></h3>
                             <span class="text-[10px] font-mono text-gray-500" x-text="haikuModelLabel()"></span>
                         </div>
                     </div>
                     <div class="flex gap-3">
-                        <input type="text" x-model="haikuTestPrompt" placeholder="Enter a Haiku prompt..."
+                        <input type="text" x-model="haikuTestPrompt" :placeholder="t('enterHaikuPrompt')"
                             class="input flex-1 bg-space-800 border-space-border text-white font-mono text-sm">
                         <button class="btn bg-neon-cyan hover:bg-cyan-600 border-none text-white btn-sm gap-2"
                             @click="testHaikuChat()" :disabled="haikuTesting">
@@ -266,7 +276,7 @@
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"></path>
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
                             </svg>
-                            <span>Test Haiku</span>
+                            <span x-text="t('testHaiku')"></span>
                         </button>
                     </div>
                     <div x-show="haikuTestResponse" class="mt-4 p-3 rounded-lg bg-space-800/50 border border-space-border/30">
@@ -279,20 +289,19 @@
                         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" class="w-4 h-4 text-neon-cyan">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path>
                         </svg>
-                        <h3 class="text-xs font-mono text-gray-400 uppercase tracking-widest">Usage with Claude Code</h3>
+                        <h3 class="text-xs font-mono text-gray-400 uppercase tracking-widest" x-text="t('usageWithClaude')"></h3>
                     </div>
                     <div class="bg-space-800/50 border border-space-border/30 rounded-lg p-4 font-mono text-sm text-gray-300">
-                        <div class="text-gray-500 mb-2"># Set environment variables</div>
+                        <div class="text-gray-500 mb-2" x-text="t('setEnvVars')"></div>
                         <div class="text-neon-cyan">export ANTHROPIC_BASE_URL=http://localhost:8081</div>
                         <div class="text-neon-cyan">export ANTHROPIC_API_KEY=any-key</div>
-                        <div class="text-gray-500 mt-2 mb-2"># Run Claude</div>
+                        <div class="text-gray-500 mt-2 mb-2" x-text="t('runClaude')"></div>
                         <div class="text-neon-green">claude</div>
                     </div>
 
                     <div class="mt-4 flex justify-end">
                         <button class="btn btn-sm bg-neon-purple hover:bg-purple-600 border-none text-white font-sans"
-                            @click="setClaudeCodeProxyTestConfig()">
-                            Update Claude Code settings.json (localhost:8081 + key=test)
+                            @click="setClaudeCodeProxyTestConfig()" x-text="t('updateClaudeSettings')">
                         </button>
                     </div>
                 </div>
@@ -301,15 +310,15 @@
             <div x-show="activeTab === 'accounts'" x-transition class="view-container">
                 <div class="flex items-center justify-between gap-4 mb-6">
                     <div class="flex flex-wrap items-center gap-4">
-                        <h1 class="text-2xl font-bold text-white tracking-tight">Account Management</h1>
+                        <h1 class="text-2xl font-bold text-white tracking-tight" x-text="t('accountManagement')"></h1>
                         <div class="flex items-center h-6 px-3 rounded-full bg-space-800/80 border border-space-border/50 shadow-sm backdrop-blur-sm">
-                            <span class="text-[10px] font-mono text-gray-400 uppercase tracking-wider">Manage ChatGPT accounts</span>
+                            <span class="text-[10px] font-mono text-gray-400 uppercase tracking-wider" x-text="t('manageChatgptAccounts')"></span>
                         </div>
                     </div>
 
                     <div class="flex flex-wrap items-center justify-end gap-2 sm:flex-nowrap">
                         <div class="relative" x-show="accounts.length > 0">
-                            <input type="text" x-model="searchQuery" placeholder="Search accounts..."
+                            <input type="text" x-model="searchQuery" :placeholder="t('searchAccounts')"
                                 class="input-search-sm w-48 pl-9 h-8" @keydown.escape="searchQuery = ''">
                             <svg class="w-4 h-4 absolute left-3 top-2 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
@@ -321,11 +330,11 @@
                             <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z"></path>
                             </svg>
-                            <span>Refresh All</span>
+                            <span x-text="t('refreshAll')"></span>
                         </button>
 
                         <div class="flex items-center h-6 px-2 rounded bg-space-800/80 border border-space-border/50 sm:ml-1">
-                            <span class="text-[11px] font-mono text-gray-400" x-text="accounts.length + ' accounts'"></span>
+                            <span class="text-[11px] font-mono text-gray-400" x-text="accounts.length + ' ' + t('nAccounts')"></span>
                         </div>
 
                         <button class="btn bg-neon-purple hover:bg-purple-600 border-none text-white btn-xs gap-2 shadow-lg shadow-neon-purple/20 h-8"
@@ -333,7 +342,7 @@
                             <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
                             </svg>
-                            <span>Add Account</span>
+                            <span x-text="t('addAccount')"></span>
                         </button>
                     </div>
                 </div>
@@ -342,12 +351,12 @@
                     <table class="w-full min-w-[860px]">
                         <thead x-show="filteredAccounts.length > 0">
                             <tr class="bg-space-900/50 border-b border-space-border/50">
-                                <th class="py-3 text-left text-[10px] font-bold text-gray-500 uppercase tracking-wider w-20">Status</th>
-                                <th class="py-3 text-left text-[10px] font-bold text-gray-500 uppercase tracking-wider flex-1 min-w-[200px]">Account (Email)</th>
-                                <th class="py-3 text-left text-[10px] font-bold text-gray-500 uppercase tracking-wider w-20">Plan</th>
-                                <th class="py-3 text-left text-[10px] font-bold text-gray-500 uppercase tracking-wider w-32">Token</th>
-                                <th class="py-3 text-left text-[10px] font-bold text-gray-500 uppercase tracking-wider w-24">Quota</th>
-                                <th class="py-3 pr-6 text-right text-[10px] font-bold text-gray-500 uppercase tracking-wider w-40">Operations</th>
+                                <th class="py-3 text-left text-[10px] font-bold text-gray-500 uppercase tracking-wider w-20" x-text="t('status')"></th>
+                                <th class="py-3 text-left text-[10px] font-bold text-gray-500 uppercase tracking-wider flex-1 min-w-[200px]" x-text="t('accountEmail')"></th>
+                                <th class="py-3 text-left text-[10px] font-bold text-gray-500 uppercase tracking-wider w-20" x-text="t('plan')"></th>
+                                <th class="py-3 text-left text-[10px] font-bold text-gray-500 uppercase tracking-wider w-32" x-text="t('token')"></th>
+                                <th class="py-3 text-left text-[10px] font-bold text-gray-500 uppercase tracking-wider w-24" x-text="t('quota')"></th>
+                                <th class="py-3 pr-6 text-right text-[10px] font-bold text-gray-500 uppercase tracking-wider w-40" x-text="t('operations')"></th>
                             </tr>
                         </thead>
                         <tbody>
@@ -358,19 +367,18 @@
                                             <svg class="w-20 h-20 text-gray-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
                                             </svg>
-                                            <h3 class="text-xl font-semibold text-gray-400">No Accounts Yet</h3>
-                                            <p class="text-sm text-gray-600 max-w-md leading-relaxed">Get started by adding a ChatGPT account via OAuth, or import from the Codex app.</p>
+                                            <h3 class="text-xl font-semibold text-gray-400" x-text="t('noAccountsYet')"></h3>
+                                            <p class="text-sm text-gray-600 max-w-md leading-relaxed" x-text="t('noAccountsDesc')"></p>
                                             <div class="flex items-center gap-4 mt-2">
                                                 <button class="btn bg-neon-purple hover:bg-purple-600 border-none text-white btn-sm gap-2 shadow-lg shadow-neon-purple/20"
                                                     @click="showAddModal = true">
                                                     <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
                                                     </svg>
-                                                    <span>Add Your First Account</span>
+                                                    <span x-text="t('addFirstAccount')"></span>
                                                 </button>
-                                                <span class="text-xs text-gray-600">or</span>
-                                                <button class="btn btn-outline btn-sm text-gray-400" @click="importFromCodex()">
-                                                    Import from Codex
+                                                <span class="text-xs text-gray-600" x-text="t('or')"></span>
+                                                <button class="btn btn-outline btn-sm text-gray-400" @click="importFromCodex()" x-text="t('importFromCodex')">
                                                 </button>
                                             </div>
                                         </div>
@@ -387,7 +395,7 @@
                                             </div>
                                             <span class="text-xs font-mono font-semibold"
                                                 :class="acc.isActive ? 'text-neon-green' : 'text-gray-500'"
-                                                x-text="acc.isActive ? 'ACTIVE' : 'IDLE'">
+                                                x-text="acc.isActive ? t('activeStatus') : t('idleStatus')">
                                             </span>
                                         </div>
                                     </td>
@@ -408,7 +416,7 @@
                                         <div class="flex items-center gap-2">
                                             <span class="text-xs font-mono"
                                                 :class="acc.tokenExpired ? 'text-red-400' : 'text-neon-green'"
-                                                x-text="acc.tokenExpired ? 'Expired' : 'Valid'"></span>
+                                                x-text="acc.tokenExpired ? t('expired') : t('valid')"></span>
                                         </div>
                                     </td>
                                     <td class="py-4 cursor-pointer" @click="showQuotaModal(acc)">
@@ -422,7 +430,7 @@
                                                         </div>
                                                     </div>
                                                     <template x-if="isQuotaExhausted(acc)">
-                                                        <span class="text-[10px] font-bold uppercase text-red-400 bg-red-500/10 px-1.5 py-0.5 rounded border border-red-500/30">USED</span>
+                                                        <span class="text-[10px] font-bold uppercase text-red-400 bg-red-500/10 px-1.5 py-0.5 rounded border border-red-500/30" x-text="t('used')"></span>
                                                     </template>
                                                     <template x-if="!isQuotaExhausted(acc)">
                                                         <span class="text-xs font-mono"
@@ -443,17 +451,16 @@
                                         <div class="flex justify-end gap-2">
                                             <button x-show="!acc.isActive"
                                                 class="px-3 py-1 text-[10px] font-bold font-mono uppercase tracking-wider rounded bg-neon-purple/10 text-neon-purple hover:bg-neon-purple/20 border border-neon-purple/30 hover:border-neon-purple/50 transition-all"
-                                                @click="switchAccount(acc.email)">
-                                                SWITCH
+                                                @click="switchAccount(acc.email)" x-text="t('switchBtn')">
                                             </button>
                                             <button class="btn btn-xs btn-ghost p-2 rounded hover:bg-white/10 text-gray-500 hover:text-white transition-colors"
-                                                @click="refreshToken(acc.email)" title="Refresh token">
+                                                @click="refreshToken(acc.email)" :title="t('needsRefresh')">
                                                 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
                                                 </svg>
                                             </button>
                                             <button class="btn btn-xs btn-ghost p-2 rounded hover:bg-red-500/10 text-gray-500 hover:text-red-400 transition-colors"
-                                                @click="confirmDelete(acc.email)" title="Delete account">
+                                                @click="confirmDelete(acc.email)" :title="t('delete')">
                                                 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
                                                 </svg>
@@ -470,8 +477,8 @@
                                             <svg class="w-12 h-12 text-gray-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
                                             </svg>
-                                            <p class="text-sm text-gray-600">No accounts match your search</p>
-                                            <button class="text-xs text-neon-cyan hover:underline" @click="searchQuery = ''">Clear Search</button>
+                                            <p class="text-sm text-gray-600" x-text="t('noAccountsMatch')"></p>
+                                            <button class="text-xs text-neon-cyan hover:underline" @click="searchQuery = ''" x-text="t('clearSearch')"></button>
                                         </div>
                                     </td>
                                 </tr>
@@ -484,16 +491,16 @@
             <div x-show="activeTab === 'logs'" x-transition class="view-container h-full flex flex-col">
                 <div class="flex items-center justify-between gap-4 mb-6">
                     <div class="flex flex-wrap items-center gap-4">
-                        <h1 class="text-2xl font-bold text-white tracking-tight">Server Logs</h1>
+                        <h1 class="text-2xl font-bold text-white tracking-tight" x-text="t('serverLogs')"></h1>
                         <div class="flex items-center h-6 px-3 rounded-full bg-space-800/80 border border-space-border/50 shadow-sm backdrop-blur-sm">
-                            <span class="text-[10px] font-mono text-gray-400 uppercase tracking-wider">Real-time log stream</span>
+                            <span class="text-[10px] font-mono text-gray-400 uppercase tracking-wider" x-text="t('realtimeLogStream')"></span>
                         </div>
                     </div>
                     <div class="flex items-center gap-3">
                         <div class="text-[10px] font-mono text-gray-600">
-                            <span x-text="logs.length"></span> entries
+                            <span x-text="logs.length"></span> <span x-text="t('entries')"></span>
                         </div>
-                        <button class="btn btn-xs btn-ghost text-gray-400 hover:text-white" @click="clearLogs()" title="Clear logs">
+                        <button class="btn btn-xs btn-ghost text-gray-400 hover:text-white" @click="clearLogs()" :title="t('delete')">
                             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
                             </svg>
@@ -509,16 +516,16 @@
                             <div class="w-3 h-3 rounded-full bg-green-500/20 border border-green-500/50"></div>
                         </div>
                         <span class="text-xs font-mono text-gray-500 hidden sm:inline-block">~/logs</span>
-                        
+
                         <div class="flex-1 flex items-center justify-center gap-4">
                             <div class="relative w-full max-w-xs">
-                                <input type="text" x-model="logSearchQuery" placeholder="Search logs..."
+                                <input type="text" x-model="logSearchQuery" :placeholder="t('searchLogs')"
                                     class="w-full h-7 bg-space-950 border border-space-border rounded text-xs font-mono pl-7 pr-2 focus:border-neon-purple focus:outline-none transition-colors placeholder-gray-700 text-gray-300">
                                 <svg class="w-3 h-3 absolute left-2.5 top-2 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
                                 </svg>
                             </div>
-                            
+
                             <div class="hidden md:flex gap-3 text-[10px] font-mono font-bold uppercase select-none">
                                 <label class="flex items-center gap-1.5 cursor-pointer text-blue-400 opacity-50 hover:opacity-100 transition-opacity" :class="{'opacity-100': logFilters.INFO}">
                                     <input type="checkbox" class="checkbox checkbox-xs rounded-[2px] w-3 h-3" x-model="logFilters.INFO"> INFO
@@ -535,7 +542,7 @@
                             </div>
                         </div>
                     </div>
-                    
+
                     <div id="logs-container" class="flex-1 overflow-auto p-4 font-mono text-[11px] leading-relaxed bg-space-950 custom-scrollbar">
                         <template x-for="(log, idx) in filteredLogs" :key="idx">
                             <div class="flex gap-3 px-2 py-1 -mx-2 hover:bg-white/[0.03] transition-colors group border-b border-space-border/10">
@@ -567,8 +574,7 @@
                             </div>
                         </template>
                         <div class="h-3 w-1.5 bg-zinc-600 animate-pulse mt-1 inline-block" x-show="filteredLogs.length === logs.length && !logSearchQuery"></div>
-                        <div x-show="filteredLogs.length === 0 && logs.length > 0" class="text-zinc-700 italic mt-8 text-center">
-                            No logs match filter
+                        <div x-show="filteredLogs.length === 0 && logs.length > 0" class="text-zinc-700 italic mt-8 text-center" x-text="t('noLogsMatch')">
                         </div>
                     </div>
                 </div>
@@ -577,9 +583,9 @@
             <div x-show="activeTab === 'settings'" x-transition class="view-container">
                 <div class="flex items-center justify-between gap-4 mb-6">
                     <div class="flex flex-wrap items-center gap-4">
-                        <h1 class="text-2xl font-bold text-white tracking-tight">Settings</h1>
+                        <h1 class="text-2xl font-bold text-white tracking-tight" x-text="t('settings')"></h1>
                         <div class="flex items-center h-6 px-3 rounded-full bg-space-800/80 border border-space-border/50 shadow-sm backdrop-blur-sm">
-                            <span class="text-[10px] font-mono text-gray-400 uppercase tracking-wider">Server configuration</span>
+                            <span class="text-[10px] font-mono text-gray-400 uppercase tracking-wider" x-text="t('serverConfiguration')"></span>
                         </div>
                     </div>
                 </div>
@@ -589,20 +595,20 @@
                         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" class="w-4 h-4 text-neon-cyan">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
                         </svg>
-                        <h3 class="text-xs font-mono text-gray-400 uppercase tracking-widest">Server Info</h3>
+                        <h3 class="text-xs font-mono text-gray-400 uppercase tracking-widest" x-text="t('serverInfo')"></h3>
                     </div>
                     <div class="space-y-3">
                         <div class="flex items-center justify-between py-2 border-b border-space-border/30">
-                            <span class="text-sm text-gray-400">Server URL</span>
+                            <span class="text-sm text-gray-400" x-text="t('serverUrl')"></span>
                             <span class="font-mono text-sm text-white">http://localhost:8081</span>
                         </div>
                         <div class="flex items-center justify-between py-2 border-b border-space-border/30">
-                            <span class="text-sm text-gray-400">Config Path</span>
+                            <span class="text-sm text-gray-400" x-text="t('configPath')"></span>
                             <span class="font-mono text-sm text-white" x-text="configPath"></span>
                         </div>
                         <div class="flex items-center justify-between py-2">
-                            <span class="text-sm text-gray-400">Auto Token Refresh</span>
-                            <span class="text-xs font-mono text-neon-green">Every 55 minutes</span>
+                            <span class="text-sm text-gray-400" x-text="t('autoTokenRefresh')"></span>
+                            <span class="text-xs font-mono text-neon-green" x-text="t('every55min')"></span>
                         </div>
                     </div>
                 </div>
@@ -612,21 +618,21 @@
                         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" class="w-4 h-4 text-neon-purple">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path>
                         </svg>
-                        <h3 class="text-xs font-mono text-gray-400 uppercase tracking-widest">Haiku Kilo Routing</h3>
+                        <h3 class="text-xs font-mono text-gray-400 uppercase tracking-widest" x-text="t('haikuKiloRouting')"></h3>
                     </div>
                     <div class="flex flex-wrap items-center justify-between gap-4">
                         <div>
-                            <div class="text-sm text-gray-300">Haiku Model Target</div>
-                            <div class="text-xs text-gray-500 font-mono">Routes claude-haiku-4 to Kilo free model</div>
+                            <div class="text-sm text-gray-300" x-text="t('haikuModelTarget')"></div>
+                            <div class="text-xs text-gray-500 font-mono" x-text="t('routesHaikuDesc')"></div>
                         </div>
                         <div class="flex flex-wrap items-center gap-2">
                             <template x-if="kiloModelsLoading">
-                                <span class="text-xs text-gray-500 font-mono">Loading models...</span>
+                                <span class="text-xs text-gray-500 font-mono" x-text="t('loadingModels')"></span>
                             </template>
                             <template x-for="model in kiloModels" :key="model.id">
-                                <button class="btn btn-xs transition-all" 
+                                <button class="btn btn-xs transition-all"
                                     :class="haikuKiloModel === model.id ? 'bg-neon-purple text-white shadow-md shadow-neon-purple/20' : 'btn-outline text-gray-400 hover:text-white'"
-                                    @click="setHaikuModel(model.id)" 
+                                    @click="setHaikuModel(model.id)"
                                     :disabled="haikuModelSaving"
                                     :title="model.id"
                                     x-text="model.name.replace(/ \(free\)/i, '').replace('Kilo Auto Free', 'Auto (Free)')">
@@ -641,18 +647,18 @@
                         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" class="w-4 h-4 text-neon-purple">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4"></path>
                         </svg>
-                        <h3 class="text-xs font-mono text-gray-400 uppercase tracking-widest">Account Selection Strategy</h3>
+                        <h3 class="text-xs font-mono text-gray-400 uppercase tracking-widest" x-text="t('accountStrategy')"></h3>
                     </div>
                     <div class="flex flex-wrap items-center justify-between gap-4">
                         <div>
-                            <div class="text-sm text-gray-300">Strategy</div>
-                            <div class="text-xs text-gray-500 font-mono">How accounts are selected when rate-limited</div>
+                            <div class="text-sm text-gray-300" x-text="t('strategy')"></div>
+                            <div class="text-xs text-gray-500 font-mono" x-text="t('strategyDesc')"></div>
                         </div>
                         <div class="inline-flex items-center gap-2">
                             <button class="btn btn-xs" :class="accountStrategy === 'sticky' ? 'bg-neon-purple text-white' : 'btn-outline text-gray-400'"
-                                @click="setAccountStrategy('sticky')" :disabled="strategySaving">Sticky</button>
+                                @click="setAccountStrategy('sticky')" :disabled="strategySaving" x-text="t('sticky')"></button>
                             <button class="btn btn-xs" :class="accountStrategy === 'round-robin' ? 'bg-neon-purple text-white' : 'btn-outline text-gray-400'"
-                                @click="setAccountStrategy('round-robin')" :disabled="strategySaving">Round-Robin</button>
+                                @click="setAccountStrategy('round-robin')" :disabled="strategySaving" x-text="t('roundRobin')"></button>
                         </div>
                     </div>
                 </div>
@@ -663,12 +669,12 @@
     <div x-show="showAddModal" x-transition class="fixed inset-0 z-50 flex items-center justify-center p-4" style="display: none;">
         <div class="absolute inset-0 bg-black/70 backdrop-blur-sm" @click="showAddModal = false"></div>
         <div class="relative bg-space-900 border border-space-border rounded-xl shadow-2xl max-w-md w-full p-6">
-            <h3 class="font-bold text-lg text-white mb-4">Add New Account</h3>
-            
+            <h3 class="font-bold text-lg text-white mb-4" x-text="t('addNewAccount')"></h3>
+
             <template x-if="!oauthManualMode">
                 <div>
-                    <p class="text-sm text-gray-400 mb-6">Connect a ChatGPT account to use with the proxy. The account will be used for API calls.</p>
-                    
+                    <p class="text-sm text-gray-400 mb-6" x-text="t('addAccountDesc')"></p>
+
                     <div class="flex flex-col gap-3">
                         <button class="btn bg-neon-purple hover:bg-purple-600 border-none text-white btn-sm gap-3 h-11"
                             @click="startOAuth()">
@@ -678,48 +684,48 @@
                                 <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"></path>
                                 <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"></path>
                             </svg>
-                            <span>Connect via OAuth</span>
+                            <span x-text="t('connectViaOauth')"></span>
                         </button>
-                        
+
                         <div class="text-center">
-                            <span class="text-xs text-gray-500">or</span>
+                            <span class="text-xs text-gray-500" x-text="t('or')"></span>
                         </div>
-                        
+
                         <button class="btn btn-outline btn-sm text-gray-400 hover:text-white gap-2"
                             @click="startManualOAuth()">
                             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
                             </svg>
-                            <span>Manual Authorization (Headless)</span>
+                            <span x-text="t('manualAuth')"></span>
                         </button>
-                        
+
                         <div class="text-center">
-                            <span class="text-xs text-gray-500">or</span>
+                            <span class="text-xs text-gray-500" x-text="t('or')"></span>
                         </div>
-                        
+
                         <button class="btn btn-outline btn-sm text-gray-400 hover:text-white gap-2"
                             @click="importFromCodex()">
                             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
                             </svg>
-                            <span>Import from Codex App</span>
+                            <span x-text="t('importFromCodexApp')"></span>
                         </button>
                     </div>
 
                     <div class="mt-6 flex justify-end">
-                        <button class="btn btn-outline btn-sm text-gray-400" @click="showAddModal = false">Cancel</button>
+                        <button class="btn btn-outline btn-sm text-gray-400" @click="showAddModal = false" x-text="t('cancel')"></button>
                     </div>
                 </div>
             </template>
-            
+
             <template x-if="oauthManualMode">
                 <div>
-                    <p class="text-sm text-gray-400 mb-4">For headless servers without a browser:</p>
-                    
+                    <p class="text-sm text-gray-400 mb-4" x-text="t('manualOauthDesc')"></p>
+
                     <div class="bg-space-800/50 border border-space-border/30 rounded-lg p-3 mb-4">
-                        <p class="text-xs text-gray-500 mb-2">1. Open this URL on another device:</p>
+                        <p class="text-xs text-gray-500 mb-2" x-text="t('manualStep1')"></p>
                         <div class="flex items-center gap-2">
-                            <input type="text" readonly :value="oauthManualUrl" 
+                            <input type="text" readonly :value="oauthManualUrl"
                                 class="input flex-1 bg-space-700 border-space-border text-xs font-mono text-gray-300">
                             <button class="btn btn-xs btn-ghost text-gray-400" @click="copyToClipboard(oauthManualUrl)">
                                 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -728,19 +734,18 @@
                             </button>
                         </div>
                     </div>
-                    
+
                     <div class="mb-4">
-                        <p class="text-xs text-gray-500 mb-2">2. After authorizing, paste the callback URL or code:</p>
-                        <input type="text" x-model="oauthManualCode" 
-                            placeholder="http://localhost:1455/auth/callback?code=... or just the code"
+                        <p class="text-xs text-gray-500 mb-2" x-text="t('manualStep2')"></p>
+                        <input type="text" x-model="oauthManualCode"
+                            :placeholder="t('manualPlaceholder')"
                             class="input w-full bg-space-800 border-space-border text-white font-mono text-sm">
                     </div>
-                    
+
                     <div class="flex justify-end gap-2">
-                        <button class="btn btn-outline btn-sm text-gray-400" @click="oauthManualMode = false">Back</button>
-                        <button class="btn bg-neon-purple hover:bg-purple-600 border-none text-white btn-sm" 
-                            @click="submitManualOAuth()" :disabled="!oauthManualCode">
-                            Add Account
+                        <button class="btn btn-outline btn-sm text-gray-400" @click="oauthManualMode = false" x-text="t('back')"></button>
+                        <button class="btn bg-neon-purple hover:bg-purple-600 border-none text-white btn-sm"
+                            @click="submitManualOAuth()" :disabled="!oauthManualCode" x-text="t('addAccount')">
                         </button>
                     </div>
                 </div>
@@ -755,16 +760,15 @@
                 <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
                 </svg>
-                <span>Delete Account</span>
+                <span x-text="t('deleteAccount')"></span>
             </h3>
-            <p class="text-gray-300 mb-4">Are you sure you want to delete <strong class="text-white font-mono" x-text="deleteTarget"></strong>?</p>
+            <p class="text-gray-300 mb-4"><span x-text="t('confirmDeletePrefix')"></span> <strong class="text-white font-mono" x-text="deleteTarget"></strong><span x-text="t('confirmDeleteSuffix')"></span></p>
             <div class="bg-red-500/10 border border-red-500/30 rounded p-3 mb-4">
-                <p class="text-sm text-red-300">This action cannot be undone. All configuration will be permanently deleted.</p>
+                <p class="text-sm text-red-300" x-text="t('deleteWarning')"></p>
             </div>
             <div class="flex justify-end gap-2">
-                <button class="btn btn-outline btn-sm text-gray-400" @click="showDeleteModal = false">Cancel</button>
-                <button class="btn bg-red-500 hover:bg-red-600 border-none text-white btn-sm" @click="executeDelete()">
-                    Delete
+                <button class="btn btn-outline btn-sm text-gray-400" @click="showDeleteModal = false" x-text="t('cancel')"></button>
+                <button class="btn bg-red-500 hover:bg-red-600 border-none text-white btn-sm" @click="executeDelete()" x-text="t('delete')">
                 </button>
             </div>
         </div>
@@ -777,21 +781,21 @@
                 <svg class="w-6 h-6 text-neon-cyan" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
                 </svg>
-                <span>Quota Distribution</span>
+                <span x-text="t('quotaDistribution')"></span>
             </h3>
             <p class="text-sm text-gray-500 font-mono mb-4" x-text="selectedAccount?.email"></p>
-            
+
             <div class="space-y-3 max-h-[60vh] overflow-y-auto" x-show="getRemainingPercentage(selectedAccount) !== null">
                 <div class="p-3 bg-space-800/50 border border-space-border/30 rounded-lg">
                     <div class="flex justify-between items-center mb-2">
-                        <span class="text-sm font-semibold text-gray-200">Usage</span>
+                        <span class="text-sm font-semibold text-gray-200" x-text="t('usage')"></span>
                         <template x-if="!isQuotaExhausted(selectedAccount)">
                             <span class="text-xs font-mono"
                                 :class="quotaTextClass(selectedAccount)"
-                                x-text="quotaLabel(selectedAccount) + ' remaining'"></span>
+                                x-text="quotaLabel(selectedAccount) + ' ' + t('remaining')"></span>
                         </template>
                         <template x-if="isQuotaExhausted(selectedAccount)">
-                            <span class="text-[10px] font-bold uppercase text-red-400 bg-red-500/10 px-2 py-0.5 rounded border border-red-500/30">QUOTA EXHAUSTED</span>
+                            <span class="text-[10px] font-bold uppercase text-red-400 bg-red-500/10 px-2 py-0.5 rounded border border-red-500/30" x-text="t('quotaExhausted')"></span>
                         </template>
                     </div>
                     <div class="w-full bg-gray-700 rounded-full h-3 overflow-hidden">
@@ -801,25 +805,26 @@
                     </div>
                     <div class="mt-3 pt-3 border-t border-space-border/30 space-y-1">
                         <div class="flex items-center justify-between text-xs">
-                            <span class="text-gray-500">Reset window</span>
+                            <span class="text-gray-500" x-text="t('resetWindow')"></span>
                             <span class="font-mono text-gray-300" x-text="quotaResetSummary(selectedAccount) || '-'"></span>
                         </div>
                         <template x-if="quotaResetAtLabel(selectedAccount)">
                             <div class="flex items-center justify-between text-xs">
-                                <span class="text-gray-500">Resets at</span>
+                                <span class="text-gray-500" x-text="t('resetsAt')"></span>
                                 <span class="font-mono text-gray-300" x-text="quotaResetAtLabel(selectedAccount)"></span>
                             </div>
                         </template>
                     </div>
                 </div>
             </div>
-            
+
             <div class="mt-6 flex justify-end">
-                <button class="btn btn-outline btn-sm text-gray-400" @click="showQuotaModalView = false">Close</button>
+                <button class="btn btn-outline btn-sm text-gray-400" @click="showQuotaModalView = false" x-text="t('close')"></button>
             </div>
         </div>
     </div>
 
+    <script src="/js/i18n.js"></script>
     <script src="/js/app.js"></script>
 </body>
 </html>
