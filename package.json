@@ -3,7 +3,7 @@
   "version": "1.0.5",
   "description": "Multi-account proxy server for OpenAI Codex CLI with Claude API compatibility",
   "type": "module",
-  "main": "src/index.js",
+  "main": "electron-main.cjs",
   "bin": {
     "proxypool-hub": "./bin/cli.js"
   },
@@ -30,6 +30,9 @@
   "homepage": "https://github.com/yiyao-ai/proxypool-hub#readme",
   "scripts": {
     "start": "node src/index.js",
+    "electron": "electron .",
+    "electron:build": "electron-builder --win",
+    "electron:build:all": "electron-builder --win --mac --linux",
     "portfolio:dev": "npm --prefix apps/portfolio run dev",
     "portfolio:build": "npm --prefix apps/portfolio run build",
     "portfolio:preview": "npm --prefix apps/portfolio run preview",
@@ -50,6 +53,50 @@
   "dependencies": {
     "express": "^4.18.2",
     "cors": "^2.8.5"
+  },
+  "devDependencies": {
+    "electron": "^33.0.0",
+    "electron-builder": "^25.1.0"
+  },
+  "build": {
+    "appId": "com.proxypool-hub.app",
+    "productName": "ProxyPool Hub",
+    "directories": {
+      "output": "dist-electron"
+    },
+    "files": [
+      "src/**/*",
+      "public/**/*",
+      "bin/**/*",
+      "electron-main.cjs",
+      "package.json",
+      "node_modules/**/*"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": ["x64"]
+        }
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "installerIcon": "build/icon.ico",
+      "uninstallerIcon": "build/icon.ico",
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "ProxyPool Hub"
+    },
+    "mac": {
+      "target": ["dmg"],
+      "category": "public.app-category.developer-tools"
+    },
+    "linux": {
+      "target": ["AppImage"],
+      "category": "Development"
+    }
   },
   "keywords": ["codex", "openai", "proxy", "claude", "chatgpt", "oauth"],
   "license": "MIT"

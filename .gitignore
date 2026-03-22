@@ -15,3 +15,5 @@ yarn-error.log*
 .env
 pentagi
 apps/portfolio/dist/
+# Electron build output
+dist-electron/
