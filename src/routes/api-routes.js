@@ -23,6 +23,8 @@ import { handleGatewayChat, handleGatewayMessages, handleListProviders } from '.
 import { handleGetModelMappings, handleSetProviderMapping, handleResetModelMappings, handleResolveModel } from './model-mapping-route.js';
 import { handleCodexResponses, handleCodexModels, handleCodexCatchAll } from './codex-route.js';
 import { handleSetCodexProxy, handleGetCodexConfig, handleSetCodexDirect } from './codex-config-route.js';
+import { handleGeminiApiProxy } from './gemini-api-route.js';
+import { handleGetGeminiCliConfig, handleSetGeminiCliProxy, handleSetGeminiCliDirect } from './gemini-config-route.js';
 import {
   handleListAccounts,
   handleAccountStatus,
@@ -103,6 +105,16 @@ export function registerApiRoutes(app, { port }) {
   app.get('/codex/config', handleGetCodexConfig);
   app.post('/codex/config/proxy', (req, res) => handleSetCodexProxy(req, res, { port }));
   app.post('/codex/config/direct', handleSetCodexDirect);
+
+  // ─── Gemini CLI Configuration ──────────────────────────────────────────
+  app.get('/gemini-cli/config', handleGetGeminiCliConfig);
+  app.post('/gemini-cli/config/proxy', (req, res) => handleSetGeminiCliProxy(req, res, { port }));
+  app.post('/gemini-cli/config/direct', handleSetGeminiCliDirect);
+
+  // ─── Gemini Native API Proxy (for Gemini CLI) ───────────────────────────
+  app.post('/v1beta/models/*', handleGeminiApiProxy);
+  app.get('/v1beta/models', handleGeminiApiProxy);
+  app.get('/v1beta/models/*', handleGeminiApiProxy);
 
   // ─── Codex CLI Passthrough (OpenAI Responses API) ────────────────────────
   app.post('/backend-api/codex/responses', handleCodexResponses);
