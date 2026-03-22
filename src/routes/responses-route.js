@@ -377,8 +377,8 @@ async function _handleResponsesViaApiKey(res, parsed, modelId, isStreaming, keyT
                 if (!response.ok) {
                     recordError(provider.id);
                     recordRequest({ provider: type, keyId: provider.id, model: mappedModel, durationMs, success: false, error: responseBody.slice(0, 200) });
-                    res.status(response.status).type('json').send(responseBody);
-                    return;
+                    logger.warn(`[Codex Proxy] API key error ${response.status}: ${provider.name} - ${responseBody.slice(0, 200)}`);
+                    continue; // Try next provider instead of returning error
                 }
 
                 // Convert chat completions response → Responses API format

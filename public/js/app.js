@@ -692,7 +692,7 @@ document.addEventListener('alpine:init', () => {
             'anthropic':    { name: 'My Anthropic Key',    key: 'sk-ant-...',                       url: 'https://api.anthropic.com' },
             'gemini':       { name: 'My Gemini Key',       key: 'AIza...',                          url: 'https://generativelanguage.googleapis.com/v1beta' },
             'azure-openai': { name: 'My Azure OpenAI Key', key: 'xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx', url: 'https://{resource}.openai.azure.com' },
-            'vertex-ai':    { name: 'My Vertex AI Key',    key: 'ya29... or API key',               url: 'https://{region}-aiplatform.googleapis.com/v1/projects/{project}/locations/{region}/publishers/google/models' },
+            'vertex-ai':    { name: 'My Vertex AI Key',    key: '{"type":"service_account","project_id":"...","private_key":"...","client_email":"..."}', url: '' },
         },
         apiKeysList: [],
         apiKeyStats: { totalKeys: 0, activeKeys: 0, totalRequests: 0, totalCost: 0 },

@@ -272,8 +272,8 @@ export async function handleGeminiApiProxy(req, res) {
                 if (!response.ok) {
                     const errorBody = await response.text();
                     recordError(provider.id);
-                    res.status(response.status).type('json').send(errorBody);
-                    return;
+                    logger.warn(`[Gemini API Proxy] Error ${response.status}: ${provider.name} - ${errorBody.slice(0, 200)}`);
+                    continue;
                 }
 
                 const responseBody = await response.text();

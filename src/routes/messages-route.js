@@ -109,8 +109,8 @@ async function _handleViaApiKey(req, res, body, requestedModel, startTime) {
             if (!response.ok) {
                 recordError(provider.id);
                 recordRequest({ provider: 'anthropic', keyId: provider.id, model: body.model, durationMs, success: false, error: responseBody.slice(0, 200) });
-                res.status(response.status).type('json').send(responseBody);
-                return;
+                logger.warn(`[Messages] API key error ${response.status}: ${provider.name} - ${responseBody.slice(0, 200)}`);
+                continue;
             }
 
             let inputTokens = 0, outputTokens = 0;

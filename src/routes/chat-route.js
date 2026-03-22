@@ -112,8 +112,8 @@ async function _handleChatViaApiKey(res, body, requestedModel, keyTypes, startTi
         if (!response.ok) {
           recordError(provider.id);
           recordRequest({ provider: type, keyId: provider.id, model: mappedModel, durationMs, success: false, error: responseBody.slice(0, 200) });
-          res.status(response.status).type('json').send(responseBody);
-          return;
+          logger.warn(`[Chat] API key error ${response.status}: ${provider.name} - ${responseBody.slice(0, 200)}`);
+          continue;
         }
 
         let inputTokens = 0, outputTokens = 0;

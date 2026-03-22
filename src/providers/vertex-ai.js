@@ -2,15 +2,21 @@
  * Vertex AI Provider
  * Forwards requests to Google Cloud Vertex AI endpoints.
  *
+ * Supports two model families with different endpoints and formats:
+ *   - Gemini models  → :generateContent (Gemini format)
+ *   - Claude models  → :rawPredict     (Anthropic Messages format)
+ *
+ * Authentication:
+ *   - Service Account JSON → auto-generates OAuth2 access tokens with refresh
+ *   - apiKey field stores the full Service Account JSON string
+ *
  * Required config:
- *   - apiKey:     OAuth2 Bearer token or API key
+ *   - apiKey:     Service Account JSON string (the full JSON content)
  *   - projectId:  GCP project ID
  *   - location:   Region, e.g. us-central1
- *
- * URL format:
- *   https://{location}-aiplatform.googleapis.com/v1/projects/{projectId}/locations/{location}/publishers/google/models/{model}:generateContent
  */
 
+import { createSign } from 'crypto';
 import { BaseProvider } from './base.js';
 
 const PRICING = {
@@ -27,6 +33,80 @@ const PRICING = {
 };
 
 const DEFAULT_MODEL = 'gemini-3-flash-preview';
+const TOKEN_URL = 'https://oauth2.googleapis.com/token';
+const TOKEN_SCOPE = 'https://www.googleapis.com/auth/cloud-platform';
+// Refresh token 5 minutes before expiry
+const TOKEN_REFRESH_BUFFER_MS = 5 * 60 * 1000;
+
+// ─── JWT / OAuth2 helpers ───────────────────────────────────────────────────
+
+function _base64url(data) {
+    return Buffer.from(data).toString('base64url');
+}
+
+/**
+ * Create a signed JWT for Google OAuth2 service account authentication.
+ * Uses Node.js built-in crypto — no external dependencies.
+ */
+function _createJwt(serviceAccount) {
+    const now = Math.floor(Date.now() / 1000);
+    const header = { alg: 'RS256', typ: 'JWT' };
+    const payload = {
+        iss: serviceAccount.client_email,
+        scope: TOKEN_SCOPE,
+        aud: TOKEN_URL,
+        iat: now,
+        exp: now + 3600, // 1 hour
+    };
+
+    const headerB64 = _base64url(JSON.stringify(header));
+    const payloadB64 = _base64url(JSON.stringify(payload));
+    const signInput = `${headerB64}.${payloadB64}`;
+
+    const signer = createSign('RSA-SHA256');
+    signer.update(signInput);
+    const signature = signer.sign(serviceAccount.private_key, 'base64url');
+
+    return `${signInput}.${signature}`;
+}
+
+/**
+ * Exchange a JWT assertion for an OAuth2 access token.
+ */
+async function _getAccessToken(serviceAccount) {
+    const jwt = _createJwt(serviceAccount);
+    const response = await fetch(TOKEN_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({
+            grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer',
+            assertion: jwt,
+        }),
+    });
+
+    if (!response.ok) {
+        const err = await response.text();
+        throw new Error(`OAuth2 token exchange failed (${response.status}): ${err}`);
+    }
+
+    const data = await response.json();
+    return {
+        accessToken: data.access_token,
+        expiresAt: Date.now() + (data.expires_in || 3600) * 1000,
+    };
+}
+
+// ─── Model classification ───────────────────────────────────────────────────
+
+function _isClaudeModel(model) {
+    return /^claude-/i.test(model);
+}
+
+function _isGeminiModel(model) {
+    return /^gemini-/i.test(model);
+}
+
+// ─── Provider ───────────────────────────────────────────────────────────────
 
 export class VertexAIProvider extends BaseProvider {
     constructor(config) {
@@ -37,56 +117,106 @@ export class VertexAIProvider extends BaseProvider {
         });
         this.projectId = config.projectId || '';
         this.location = config.location || 'us-central1';
-    }
 
-    /**
-     * Build Vertex AI endpoint URL for a given model.
-     */
-    _buildUrl(model) {
-        return `https://${this.location}-aiplatform.googleapis.com/v1/projects/${this.projectId}/locations/${this.location}/publishers/google/models/${model}:generateContent`;
-    }
+        // Parse service account JSON from apiKey field
+        this._serviceAccount = null;
+        this._accessToken = null;
+        this._tokenExpiresAt = 0;
 
-    /**
-     * Determine auth headers based on key format.
-     */
-    _authHeaders() {
-        // OAuth tokens start with ya29. or are very long (JWT)
-        if (this.apiKey.startsWith('ya29.') || this.apiKey.length > 200) {
-            return { 'Authorization': `Bearer ${this.apiKey}` };
+        try {
+            this._serviceAccount = JSON.parse(this.apiKey);
+        } catch {
+            // apiKey might be a raw OAuth2 token (legacy support)
         }
-        return {};
     }
 
     /**
-     * Build URL with API key appended if not using Bearer auth.
+     * Get a valid OAuth2 access token, refreshing if needed.
      */
-    _authUrl(url) {
-        if (this.apiKey.startsWith('ya29.') || this.apiKey.length > 200) {
-            return url;
+    async _ensureToken() {
+        // Legacy: if apiKey is not JSON, treat it as a raw token
+        if (!this._serviceAccount) {
+            return this.apiKey;
         }
-        const separator = url.includes('?') ? '&' : '?';
-        return `${url}${separator}key=${this.apiKey}`;
+
+        // Check if current token is still valid
+        if (this._accessToken && Date.now() < this._tokenExpiresAt - TOKEN_REFRESH_BUFFER_MS) {
+            return this._accessToken;
+        }
+
+        // Get a new token
+        const { accessToken, expiresAt } = await _getAccessToken(this._serviceAccount);
+        this._accessToken = accessToken;
+        this._tokenExpiresAt = expiresAt;
+        return accessToken;
     }
+
+    /**
+     * Pick API version: preview models need v1beta1, stable models use v1.
+     */
+    _apiVersion(model) {
+        return /preview/i.test(model) ? 'v1beta1' : 'v1';
+    }
+
+    /**
+     * Build the base domain for Vertex AI.
+     * 'global' location uses aiplatform.googleapis.com (no prefix).
+     * Regional locations use {location}-aiplatform.googleapis.com.
+     */
+    _buildDomain(location) {
+        if (location === 'global') {
+            return 'aiplatform.googleapis.com';
+        }
+        return `${location}-aiplatform.googleapis.com`;
+    }
+
+    /**
+     * Resolve effective location for a model.
+     * 'global' doesn't work for model-specific endpoints on Vertex AI.
+     * Gemini models → us-central1, Claude models → europe-west1.
+     */
+    _effectiveLocation(model) {
+        if (this.location !== 'global') return this.location;
+        if (_isClaudeModel(model)) return 'europe-west1';
+        return 'us-central1';
+    }
+
+    /**
+     * Build Vertex AI endpoint URL for Gemini models.
+     */
+    _buildGeminiUrl(model) {
+        const ver = this._apiVersion(model);
+        const loc = this._effectiveLocation(model);
+        const domain = this._buildDomain(loc);
+        return `https://${domain}/${ver}/projects/${this.projectId}/locations/${loc}/publishers/google/models/${model}:generateContent`;
+    }
+
+    /**
+     * Build Vertex AI endpoint URL for Claude models (rawPredict).
+     */
+    _buildClaudeUrl(model) {
+        const ver = this._apiVersion(model);
+        const loc = this._effectiveLocation(model);
+        const domain = this._buildDomain(loc);
+        return `https://${domain}/${ver}/projects/${this.projectId}/locations/${loc}/publishers/anthropic/models/${model}:rawPredict`;
+    }
+
+    // ─── Gemini format converters (reused from gemini.js) ────────────────────
 
     /**
      * Convert OpenAI messages to Gemini contents format.
-     * Handles text, tool_calls (assistant→functionCall), and tool results (tool→functionResponse).
      */
-    _convertMessages(messages) {
+    _convertMessagesToGemini(messages) {
         const contents = [];
         let systemInstruction = null;
 
-        for (let i = 0; i < messages.length; i++) {
-            const msg = messages[i];
-
+        for (const msg of messages) {
             if (msg.role === 'system') {
                 systemInstruction = { parts: [{ text: msg.content }] };
                 continue;
             }
 
-            // Assistant message with tool_calls → convert to plain text summary
-            // Gemini 3.x requires thought_signature on functionCall parts which we can't preserve
-            // through OpenAI format conversion, so we flatten tool history to text.
+            // Flatten tool history to text (Gemini 3.x thought_signature requirement)
             if (msg.role === 'assistant' && msg.tool_calls) {
                 const parts = [];
                 if (msg.content) parts.push(msg.content);
@@ -97,7 +227,6 @@ export class VertexAIProvider extends BaseProvider {
                 continue;
             }
 
-            // Tool result message → convert to plain text
             if (msg.role === 'tool') {
                 const name = msg.name || 'unknown';
                 contents.push({
@@ -113,7 +242,7 @@ export class VertexAIProvider extends BaseProvider {
             });
         }
 
-        // Gemini requires alternating user/model roles — merge consecutive same-role messages
+        // Merge consecutive same-role messages (Gemini requires alternating roles)
         const merged = [];
         for (const c of contents) {
             if (merged.length > 0 && merged[merged.length - 1].role === c.role) {
@@ -127,7 +256,7 @@ export class VertexAIProvider extends BaseProvider {
     }
 
     /**
-     * Strip fields unsupported by Gemini from JSON Schema (e.g. additionalProperties).
+     * Strip fields unsupported by Gemini from JSON Schema.
      */
     _cleanSchema(schema) {
         if (!schema || typeof schema !== 'object') return schema;
@@ -141,9 +270,9 @@ export class VertexAIProvider extends BaseProvider {
     }
 
     /**
-     * Convert OpenAI tools format to Gemini tools format.
+     * Convert OpenAI tools to Gemini tools format.
      */
-    _convertTools(tools) {
+    _convertToolsToGemini(tools) {
         if (!Array.isArray(tools) || tools.length === 0) return null;
         const functionDeclarations = tools
             .filter(t => t.type === 'function' && t.function)
@@ -156,19 +285,16 @@ export class VertexAIProvider extends BaseProvider {
     }
 
     /**
-     * Convert Vertex/Gemini response to OpenAI format.
-     * Handles text parts, functionCall parts, and thinking parts.
+     * Convert Gemini/Vertex response to OpenAI format.
      */
-    _convertResponse(vertexResponse, model) {
+    _convertGeminiResponse(vertexResponse, model) {
         const candidate = vertexResponse.candidates?.[0];
         const parts = candidate?.content?.parts || [];
         const usage = vertexResponse.usageMetadata || {};
 
-        // Extract text (skip thinking parts)
         const textParts = parts.filter(p => p.text !== undefined && !p.thought);
         const text = textParts.map(p => p.text).join('');
 
-        // Extract function calls
         const functionCalls = parts.filter(p => p.functionCall);
         const toolCalls = functionCalls.map((p, i) => ({
             id: `call_${Date.now()}_${i}`,
@@ -180,9 +306,7 @@ export class VertexAIProvider extends BaseProvider {
         }));
 
         const message = { role: 'assistant', content: text };
-        if (toolCalls.length > 0) {
-            message.tool_calls = toolCalls;
-        }
+        if (toolCalls.length > 0) message.tool_calls = toolCalls;
 
         return {
             id: `chatcmpl-vertex-${Date.now()}`,
@@ -202,9 +326,11 @@ export class VertexAIProvider extends BaseProvider {
         };
     }
 
-    async sendRequest(body) {
+    // ─── Gemini model request ────────────────────────────────────────────────
+
+    async _sendGeminiRequest(body, token) {
         const model = body.model || DEFAULT_MODEL;
-        const { contents, systemInstruction } = this._convertMessages(body.messages || []);
+        const { contents, systemInstruction } = this._convertMessagesToGemini(body.messages || []);
 
         const vertexBody = {
             contents,
@@ -214,26 +340,20 @@ export class VertexAIProvider extends BaseProvider {
                 topP: body.top_p,
             }
         };
-        if (systemInstruction) {
-            vertexBody.systemInstruction = systemInstruction;
-        }
+        if (systemInstruction) vertexBody.systemInstruction = systemInstruction;
 
-        // Convert and attach tools
-        const vertexTools = this._convertTools(body.tools);
+        const vertexTools = this._convertToolsToGemini(body.tools);
         if (vertexTools) {
             vertexBody.tools = vertexTools;
-            // Gemini 3.x requires thought_signature round-trip for tool calls with thinking enabled.
-            // Since we convert between OpenAI↔Gemini formats, we can't preserve thought signatures,
-            // so disable thinking when tools are present.
             vertexBody.generationConfig.thinkingConfig = { thinkingBudget: 0 };
         }
 
-        const url = this._authUrl(this._buildUrl(model));
+        const url = this._buildGeminiUrl(model);
         const response = await fetch(url, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
-                ...this._authHeaders()
+                'Authorization': `Bearer ${token}`
             },
             body: JSON.stringify(vertexBody)
         });
@@ -241,21 +361,182 @@ export class VertexAIProvider extends BaseProvider {
         if (!response.ok) return response;
 
         const data = await response.json();
-        return new Response(JSON.stringify(this._convertResponse(data, model)), {
+        return new Response(JSON.stringify(this._convertGeminiResponse(data, model)), {
             status: 200,
             headers: { 'Content-Type': 'application/json' }
         });
     }
 
+    // ─── Claude model request (rawPredict → Anthropic Messages format) ──────
+
+    /**
+     * Convert OpenAI Chat Completions messages to Anthropic Messages format.
+     * Extracts system messages to top-level 'system' field.
+     */
+    _convertMessagesToAnthropic(messages) {
+        let system = '';
+        const anthropicMessages = [];
+
+        for (const msg of messages) {
+            if (msg.role === 'system') {
+                system += (system ? '\n' : '') + msg.content;
+                continue;
+            }
+
+            if (msg.role === 'assistant' && msg.tool_calls) {
+                // Convert OpenAI tool_calls to Anthropic tool_use content blocks
+                const content = [];
+                if (msg.content) content.push({ type: 'text', text: msg.content });
+                for (const tc of msg.tool_calls) {
+                    let input = {};
+                    try { input = JSON.parse(tc.function.arguments || '{}'); } catch { input = {}; }
+                    content.push({
+                        type: 'tool_use',
+                        id: tc.id,
+                        name: tc.function.name,
+                        input
+                    });
+                }
+                anthropicMessages.push({ role: 'assistant', content });
+                continue;
+            }
+
+            if (msg.role === 'tool') {
+                anthropicMessages.push({
+                    role: 'user',
+                    content: [{
+                        type: 'tool_result',
+                        tool_use_id: msg.tool_call_id,
+                        content: msg.content || ''
+                    }]
+                });
+                continue;
+            }
+
+            anthropicMessages.push({
+                role: msg.role === 'assistant' ? 'assistant' : 'user',
+                content: msg.content || ''
+            });
+        }
+
+        return { system, messages: anthropicMessages };
+    }
+
+    /**
+     * Convert OpenAI tools to Anthropic tools format.
+     */
+    _convertToolsToAnthropic(tools) {
+        if (!Array.isArray(tools) || tools.length === 0) return null;
+        return tools
+            .filter(t => t.type === 'function' && t.function)
+            .map(t => ({
+                name: t.function.name,
+                description: t.function.description || '',
+                input_schema: t.function.parameters || { type: 'object', properties: {} }
+            }));
+    }
+
+    /**
+     * Convert Anthropic Messages response to OpenAI Chat Completions format.
+     */
+    _convertAnthropicResponse(anthropicResponse, model) {
+        const content = anthropicResponse.content || [];
+        const textParts = content.filter(c => c.type === 'text');
+        const toolUseParts = content.filter(c => c.type === 'tool_use');
+
+        const text = textParts.map(c => c.text).join('');
+        const message = { role: 'assistant', content: text };
+
+        if (toolUseParts.length > 0) {
+            message.tool_calls = toolUseParts.map(c => ({
+                id: c.id,
+                type: 'function',
+                function: {
+                    name: c.name,
+                    arguments: JSON.stringify(c.input || {})
+                }
+            }));
+        }
+
+        return {
+            id: `chatcmpl-vertex-${Date.now()}`,
+            object: 'chat.completion',
+            created: Math.floor(Date.now() / 1000),
+            model,
+            choices: [{
+                index: 0,
+                message,
+                finish_reason: toolUseParts.length > 0 ? 'tool_calls' : 'stop'
+            }],
+            usage: {
+                prompt_tokens: anthropicResponse.usage?.input_tokens || 0,
+                completion_tokens: anthropicResponse.usage?.output_tokens || 0,
+                total_tokens: (anthropicResponse.usage?.input_tokens || 0) + (anthropicResponse.usage?.output_tokens || 0)
+            }
+        };
+    }
+
+    async _sendClaudeRequest(body, token) {
+        const model = body.model;
+        const { system, messages } = this._convertMessagesToAnthropic(body.messages || []);
+
+        // rawPredict: model is in the URL, NOT in the body
+        const claudeBody = {
+            anthropic_version: 'vertex-2023-10-16',
+            max_tokens: body.max_tokens || 8192,
+            messages,
+            stream: false,
+        };
+        if (system) claudeBody.system = system;
+        if (body.temperature !== undefined) claudeBody.temperature = body.temperature;
+        if (body.top_p !== undefined) claudeBody.top_p = body.top_p;
+
+        const anthropicTools = this._convertToolsToAnthropic(body.tools);
+        if (anthropicTools) claudeBody.tools = anthropicTools;
+
+        const url = this._buildClaudeUrl(model);
+        const response = await fetch(url, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`
+            },
+            body: JSON.stringify(claudeBody)
+        });
+
+        if (!response.ok) return response;
+
+        // Convert Anthropic response → OpenAI format
+        const data = await response.json();
+        return new Response(JSON.stringify(this._convertAnthropicResponse(data, model)), {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' }
+        });
+    }
+
+    // ─── Public interface ────────────────────────────────────────────────────
+
+    async sendRequest(body) {
+        const token = await this._ensureToken();
+        const model = body.model || DEFAULT_MODEL;
+
+        if (_isClaudeModel(model)) {
+            return this._sendClaudeRequest(body, token);
+        }
+        return this._sendGeminiRequest(body, token);
+    }
+
     async validateKey() {
         try {
+            const token = await this._ensureToken();
+            // Quick validation: try a minimal Gemini request
             const model = 'gemini-2.0-flash';
-            const url = this._authUrl(this._buildUrl(model));
+            const url = this._buildGeminiUrl(model);
             const response = await fetch(url, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
-                    ...this._authHeaders()
+                    'Authorization': `Bearer ${token}`
                 },
                 body: JSON.stringify({
                     contents: [{ role: 'user', parts: [{ text: 'hi' }] }],
@@ -275,12 +556,33 @@ export class VertexAIProvider extends BaseProvider {
                (outputTokens / 1_000_000) * pricing.output;
     }
 
+    get maskedKey() {
+        if (this._serviceAccount) {
+            const email = this._serviceAccount.client_email || '';
+            return email.length > 20 ? email.slice(0, 16) + '...' : email;
+        }
+        if (!this.apiKey) return '';
+        if (this.apiKey.length <= 8) return '****';
+        return this.apiKey.slice(0, 4) + '...' + this.apiKey.slice(-4);
+    }
+
     toJSON() {
         return {
             ...super.toJSON(),
             projectId: this.projectId,
             location: this.location
         };
+    }
+
+    toSafeJSON() {
+        const json = this.toJSON();
+        json.apiKey = this.maskedKey;
+        json.isAvailable = this.isAvailable;
+        json.isRateLimited = this.isRateLimited;
+        if (this._serviceAccount) {
+            json.serviceAccountEmail = this._serviceAccount.client_email || '';
+        }
+        return json;
     }
 
     static get pricing() {

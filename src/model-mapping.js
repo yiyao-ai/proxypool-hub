@@ -59,10 +59,10 @@ const DEFAULT_PROVIDER_MAPPINGS = {
         reasoning: 'o4-mini',
     },
     'vertex-ai': {
-        flagship:  'gemini-3.1-pro-preview',
-        standard:  'gemini-3-flash-preview',
-        fast:      'gemini-3.1-flash-lite-preview',
-        reasoning: 'gemini-3.1-pro-preview',
+        flagship:  'claude-opus-4-6',
+        standard:  'claude-sonnet-4-6',
+        fast:      'claude-haiku-4-5',
+        reasoning: 'claude-opus-4-6',
     },
 };
 
@@ -207,8 +207,9 @@ function isNativeModel(providerType, model) {
     const m = model.toLowerCase();
     switch (providerType) {
         case 'gemini':
-        case 'vertex-ai':
             return m.startsWith('gemini-');
+        case 'vertex-ai':
+            return m.startsWith('gemini-') || m.startsWith('claude-');
         case 'openai':
         case 'azure-openai':
             return m.startsWith('gpt-') || /^o[134](-|$)/.test(m);

@@ -221,6 +221,8 @@ const i18n = {
     vertexLocation: 'Location (Region)',
     vertexLocationHint: 'e.g. us-central1, europe-west1, asia-east1',
     vertexProjectRequired: 'GCP Project ID is required',
+    vertexServiceAccountJson: 'Service Account JSON',
+    vertexServiceAccountHint: 'Paste the full content of your service account JSON file. The key will be stored securely.',
 
     // Usage page
     usageStats: 'Usage & Costs',
@@ -471,6 +473,8 @@ const i18n = {
     vertexLocation: '区域（Region）',
     vertexLocationHint: '例如 us-central1、europe-west1、asia-east1',
     vertexProjectRequired: 'GCP 项目 ID 不能为空',
+    vertexServiceAccountJson: '服务账号 JSON',
+    vertexServiceAccountHint: '粘贴服务账号 JSON 文件的完整内容，密钥将安全存储。',
 
     // Usage page
     usageStats: '用量与费用',

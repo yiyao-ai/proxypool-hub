@@ -1069,11 +1069,20 @@
                         :placeholder="keyPlaceholders[newKeyType]?.name || 'My API Key'"
                         class="input w-full bg-space-800 border-space-border text-white font-mono text-sm">
                 </div>
-                <div>
+                <div x-show="newKeyType !== 'vertex-ai'">
                     <label class="text-xs text-gray-500 mb-1 block" x-text="t('apiKeyLabel')"></label>
                     <input type="password" x-model="newKeyValue"
                         :placeholder="keyPlaceholders[newKeyType]?.key || 'API Key'"
                         class="input w-full bg-space-800 border-space-border text-white font-mono text-sm">
+                </div>
+
+                <!-- Vertex AI: Service Account JSON -->
+                <div x-show="newKeyType === 'vertex-ai'">
+                    <label class="text-xs text-gray-500 mb-1 block" x-text="t('vertexServiceAccountJson')"></label>
+                    <textarea x-model="newKeyValue" rows="5"
+                        :placeholder="keyPlaceholders['vertex-ai']?.key || ''"
+                        class="input w-full bg-space-800 border-space-border text-white font-mono text-xs resize-y"></textarea>
+                    <p class="text-[10px] text-gray-600 mt-1" x-text="t('vertexServiceAccountHint')"></p>
                 </div>
 
                 <!-- Azure OpenAI extra fields -->
