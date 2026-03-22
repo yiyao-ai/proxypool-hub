@@ -12,7 +12,7 @@ import { handleStreamError } from '../middleware/sse.js';
 import { logger } from '../utils/logger.js';
 import { listAccounts } from '../account-manager.js';
 import { getServerSettings } from '../server-settings.js';
-import { selectKey, recordUsage, recordError, recordRateLimit } from '../api-key-manager.js';
+import { selectKey, recordUsage, recordError, recordRateLimit, hasKeysForTypes, getKeyRateLimitInfo } from '../api-key-manager.js';
 import { recordRequest } from '../usage-tracker.js';
 
 /**
@@ -46,7 +46,7 @@ export async function handleChatCompletion(req, res) {
   const hasAccounts = listAccounts().total > 0;
   // Try openai, azure-openai, gemini, vertex-ai keys for chat completions
   const chatKeyTypes = ['openai', 'azure-openai', 'gemini', 'vertex-ai'];
-  const hasApiKeys = chatKeyTypes.some(t => !!selectKey(t));
+  const hasApiKeys = hasKeysForTypes(chatKeyTypes);
 
   if (priority === 'apikey-first' && hasApiKeys) {
     const result = await _handleChatViaApiKey(res, body, requestedModel, chatKeyTypes, startTime);
@@ -68,7 +68,13 @@ export async function handleChatCompletion(req, res) {
   if (!hasAccounts && !hasApiKeys) {
     return sendAuthError(res, 'No accounts or API keys configured. Add them in the dashboard.');
   }
-  return handleStreamError(res, new Error('All accounts and API keys exhausted'), requestedModel, startTime);
+  // Check if all API keys are rate-limited
+  const rlInfo = getKeyRateLimitInfo(chatKeyTypes);
+  if (rlInfo.allRateLimited) {
+    const waitSec = Math.ceil(rlInfo.minWaitMs / 1000);
+    return res.status(429).json({ error: { message: `All API keys are rate-limited. Try again in ${waitSec}s.`, type: 'rate_limit_error' } });
+  }
+  return res.status(503).json({ error: { message: 'All accounts and API keys exhausted. Try again later.', type: 'service_unavailable' } });
 }
 
 /**

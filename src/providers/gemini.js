@@ -16,6 +16,22 @@ const PRICING = {
     'gemini-1.5-flash':   { input: 0.075, output: 0.30 },
 };
 
+const DEFAULT_MODEL = 'gemini-2.5-flash';
+
+/**
+ * Map non-Gemini model names to a Gemini model.
+ * When requests come from Codex/Claude with OpenAI model names,
+ * we need to route them to an appropriate Gemini model.
+ */
+function resolveGeminiModel(model) {
+    if (!model || model.startsWith('gemini-')) return model || DEFAULT_MODEL;
+    // Map OpenAI/other model names to Gemini equivalents
+    if (model.includes('gpt-4o-mini') || model.includes('gpt-3.5') || model.includes('mini')) return 'gemini-2.0-flash';
+    if (model.includes('gpt-4') || model.includes('gpt-5') || model.includes('o1') || model.includes('o3') || model.includes('o4')) return 'gemini-2.5-flash';
+    if (model.includes('claude')) return 'gemini-2.5-pro';
+    return DEFAULT_MODEL;
+}
+
 export class GeminiProvider extends BaseProvider {
     constructor(config) {
         super({
@@ -73,7 +89,7 @@ export class GeminiProvider extends BaseProvider {
     }
 
     async sendRequest(body) {
-        const model = body.model || 'gemini-2.0-flash';
+        const model = resolveGeminiModel(body.model);
         const { contents, systemInstruction } = this._convertMessages(body.messages || []);
 
         const geminiBody = {

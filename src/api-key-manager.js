@@ -177,6 +177,41 @@ export function selectKey(type) {
     return available[0];
 }
 
+/**
+ * Check if any enabled keys exist for the given types (ignores rate limit status).
+ * Used to distinguish "no keys configured" from "all keys rate-limited".
+ */
+export function hasKeysForTypes(types) {
+    const data = loadKeys();
+    return types.some(type =>
+        data.keys.some(k => k.type === type && k.enabled)
+    );
+}
+
+/**
+ * Get rate limit info for keys of given types.
+ * Returns { allRateLimited, minWaitMs } if keys exist but are all rate-limited.
+ */
+export function getKeyRateLimitInfo(types) {
+    let hasAnyKey = false;
+    let minUntil = Infinity;
+
+    for (const type of types) {
+        const keys = getApiKeysByType(type);
+        for (const k of keys) {
+            hasAnyKey = true;
+            if (k.isAvailable) return { allRateLimited: false, minWaitMs: 0 };
+            if (k.rateLimitedUntil) {
+                const wait = k.rateLimitedUntil - Date.now();
+                if (wait > 0 && wait < minUntil) minUntil = wait;
+            }
+        }
+    }
+
+    if (!hasAnyKey) return { allRateLimited: false, minWaitMs: 0 };
+    return { allRateLimited: true, minWaitMs: minUntil === Infinity ? 60000 : minUntil };
+}
+
 export async function validateApiKey(id) {
     const data = loadKeys();
     const key = data.keys.find(k => k.id === id);

@@ -24,6 +24,16 @@ const PRICING = {
     'claude-haiku-4-5':      { input: 0.80, output: 4.00 },
 };
 
+const DEFAULT_MODEL = 'gemini-2.5-flash';
+
+function resolveVertexModel(model) {
+    if (!model) return DEFAULT_MODEL;
+    if (model.startsWith('gemini-') || model.startsWith('claude-')) return model;
+    if (model.includes('gpt-4o-mini') || model.includes('gpt-3.5') || model.includes('mini')) return 'gemini-2.0-flash';
+    if (model.includes('gpt-4') || model.includes('gpt-5') || model.includes('o1') || model.includes('o3') || model.includes('o4')) return 'gemini-2.5-flash';
+    return DEFAULT_MODEL;
+}
+
 export class VertexAIProvider extends BaseProvider {
     constructor(config) {
         super({
@@ -112,7 +122,7 @@ export class VertexAIProvider extends BaseProvider {
     }
 
     async sendRequest(body) {
-        const model = body.model || 'gemini-2.0-flash';
+        const model = resolveVertexModel(body.model);
         const { contents, systemInstruction } = this._convertMessages(body.messages || []);
 
         const vertexBody = {

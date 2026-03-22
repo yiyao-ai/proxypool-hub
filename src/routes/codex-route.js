@@ -13,6 +13,9 @@ import { getCredentialsForAccount } from '../middleware/credentials.js';
 import { logger } from '../utils/logger.js';
 import { getServerSettings } from '../server-settings.js';
 import { fetchModels } from '../model-api.js';
+import { selectKey, recordUsage, recordError, recordRateLimit, hasKeysForTypes, getKeyRateLimitInfo } from '../api-key-manager.js';
+import { recordRequest } from '../usage-tracker.js';
+import { sendResponsesSSE } from '../utils/responses-sse.js';
 
 const UPSTREAM_BASE = 'https://chatgpt.com/backend-api';
 const MAX_RETRIES = 5;
@@ -75,6 +78,7 @@ function sleep(ms) {
 /**
  * POST /backend-api/codex/responses
  * Transparent proxy with account rotation for Codex CLI.
+ * Falls back to API key pool when no accounts are available.
  */
 export async function handleCodexResponses(req, res) {
     const startTime = Date.now();
@@ -117,20 +121,236 @@ export async function handleCodexResponses(req, res) {
     }
     console.log('='.repeat(70));
 
+    const settings = getServerSettings();
+    const priority = settings.routingPriority || 'account-first';
+    const hasAccounts = listAccounts().total > 0;
+    const apiKeyTypes = ['openai', 'azure-openai', 'gemini', 'vertex-ai'];
+    const hasApiKeys = hasKeysForTypes(apiKeyTypes);
+
+    if (priority === 'apikey-first' && hasApiKeys) {
+        const result = await _handleCodexViaApiKey(res, body, modelId, isStreaming, apiKeyTypes, startTime);
+        if (result !== false) return;
+        if (hasAccounts) {
+            const poolResult = await _handleCodexViaAccountPool(res, body, modelId, isStreaming, startTime);
+            if (poolResult !== false) return;
+        }
+        return sendCodexError(res, 503, 'All API keys and accounts exhausted.');
+    }
+
+    // account-first (default)
+    if (hasAccounts) {
+        const poolResult = await _handleCodexViaAccountPool(res, body, modelId, isStreaming, startTime);
+        if (poolResult !== false) return;
+    }
+    if (hasApiKeys) {
+        const result = await _handleCodexViaApiKey(res, body, modelId, isStreaming, apiKeyTypes, startTime);
+        if (result !== false) return;
+    }
+
+    if (!hasAccounts && !hasApiKeys) {
+        return sendCodexError(res, 401, 'No accounts or API keys configured. Add them in the dashboard.');
+    }
+    const rlInfo = getKeyRateLimitInfo(apiKeyTypes);
+    if (rlInfo.allRateLimited) {
+        const waitSec = Math.ceil(rlInfo.minWaitMs / 1000);
+        return sendCodexError(res, 429, `All API keys are rate-limited. Try again in ${waitSec}s.`);
+    }
+    return sendCodexError(res, 503, 'All accounts and API keys exhausted.');
+}
+
+// ─── Codex Responses API ↔ Chat Completions format converters ─────────────────
+
+function _codexToChatBody(body) {
+    const messages = [];
+
+    if (body.instructions) {
+        messages.push({ role: 'system', content: body.instructions });
+    }
+
+    if (Array.isArray(body.input)) {
+        for (const item of body.input) {
+            if (item.type === 'message') {
+                const role = item.role === 'developer' ? 'system' : item.role;
+                let content = '';
+                if (typeof item.content === 'string') {
+                    content = item.content;
+                } else if (Array.isArray(item.content)) {
+                    content = item.content.map(c => c.text || '').join('\n');
+                }
+                messages.push({ role, content });
+            } else if (item.type === 'function_call') {
+                messages.push({
+                    role: 'assistant',
+                    content: '',
+                    tool_calls: [{
+                        id: item.call_id || item.id || `call_${Date.now()}`,
+                        type: 'function',
+                        function: { name: item.name, arguments: item.arguments || '{}' }
+                    }]
+                });
+            } else if (item.type === 'function_call_output') {
+                messages.push({
+                    role: 'tool',
+                    tool_call_id: item.call_id || item.id || '',
+                    content: item.output || ''
+                });
+            }
+        }
+    } else if (typeof body.input === 'string') {
+        messages.push({ role: 'user', content: body.input });
+    }
+
+    const chatBody = {
+        model: body.model || 'gpt-4o',
+        messages,
+        stream: false
+    };
+
+    if (body.max_output_tokens) chatBody.max_tokens = body.max_output_tokens;
+    if (body.temperature !== undefined) chatBody.temperature = body.temperature;
+
+    if (Array.isArray(body.tools) && body.tools.length > 0) {
+        chatBody.tools = body.tools
+            .filter(t => t.type === 'function')
+            .map(t => ({
+                type: 'function',
+                function: {
+                    name: t.name,
+                    description: t.description || '',
+                    parameters: t.parameters || { type: 'object', properties: {} }
+                }
+            }));
+    }
+
+    return chatBody;
+}
+
+function _chatToCodexResponse(chatResponse, model) {
+    const choice = chatResponse.choices?.[0];
+    const msg = choice?.message || {};
+    const output = [];
+
+    if (msg.content) {
+        output.push({
+            type: 'message',
+            id: `msg_${Date.now()}`,
+            role: 'assistant',
+            status: 'completed',
+            content: [{ type: 'output_text', text: msg.content }]
+        });
+    }
+
+    if (msg.tool_calls) {
+        for (const tc of msg.tool_calls) {
+            output.push({
+                type: 'function_call',
+                id: tc.id,
+                call_id: tc.id,
+                name: tc.function?.name,
+                arguments: tc.function?.arguments || '{}'
+            });
+        }
+    }
+
+    return {
+        id: chatResponse.id || `resp_${Date.now()}`,
+        object: 'response',
+        created_at: chatResponse.created || Math.floor(Date.now() / 1000),
+        model,
+        status: 'completed',
+        output,
+        usage: {
+            input_tokens: chatResponse.usage?.prompt_tokens || 0,
+            output_tokens: chatResponse.usage?.completion_tokens || 0,
+            total_tokens: chatResponse.usage?.total_tokens || 0
+        }
+    };
+}
+
+/**
+ * Handle /backend-api/codex/responses via API key pool (with format conversion).
+ */
+async function _handleCodexViaApiKey(res, body, modelId, isStreaming, keyTypes, startTime) {
+    const chatBody = _codexToChatBody(body);
+    const MAX_KEY_RETRIES = 3;
+
+    for (let attempt = 0; attempt < MAX_KEY_RETRIES; attempt++) {
+        for (const type of keyTypes) {
+            const provider = selectKey(type);
+            if (!provider) continue;
+
+            try {
+                console.log(`[Codex Proxy] >>> API KEY fallback | ${type}/${provider.name} | model=${modelId}`);
+                const response = await provider.sendRequest(chatBody);
+                const durationMs = Date.now() - startTime;
+
+                if (response.status === 429) {
+                    const retryAfter = response.headers?.get?.('retry-after');
+                    recordRateLimit(provider.id, retryAfter ? parseInt(retryAfter) * 1000 : 60000);
+                    logger.warn(`[Codex] API key rate limited: ${provider.name} (${type})`);
+                    continue;
+                }
+                if (response.status === 401 || response.status === 403) {
+                    recordError(provider.id);
+                    continue;
+                }
+
+                const responseBody = await response.text();
+                if (!response.ok) {
+                    recordError(provider.id);
+                    recordRequest({ provider: type, keyId: provider.id, model: modelId, durationMs, success: false, error: responseBody.slice(0, 200) });
+                    res.status(response.status).type('json').send(responseBody);
+                    return;
+                }
+
+                let chatResponse;
+                try { chatResponse = JSON.parse(responseBody); } catch {
+                    res.status(200).type('json').send(responseBody);
+                    return;
+                }
+
+                const inputTokens = chatResponse.usage?.prompt_tokens || 0;
+                const outputTokens = chatResponse.usage?.completion_tokens || 0;
+                const cost = provider.estimateCost(modelId, inputTokens, outputTokens);
+                recordUsage(provider.id, { inputTokens, outputTokens, model: modelId });
+                recordRequest({ provider: type, keyId: provider.id, model: modelId, inputTokens, outputTokens, cost, durationMs, success: true });
+
+                const codexResponse = _chatToCodexResponse(chatResponse, modelId);
+                console.log(`[Codex Proxy] <<< API KEY OK | ${type}/${provider.name} | model=${modelId} | ${durationMs}ms`);
+
+                if (isStreaming) {
+                    sendResponsesSSE(res, codexResponse);
+                } else {
+                    res.json(codexResponse);
+                }
+                return;
+            } catch (error) {
+                recordError(provider.id);
+                recordRequest({ provider: type, keyId: provider.id, model: modelId, durationMs: Date.now() - startTime, success: false, error: error.message });
+                logger.error(`[Codex] API key error: ${provider.name} - ${error.message}`);
+                continue;
+            }
+        }
+    }
+    return false;
+}
+
+/**
+ * Handle /backend-api/codex/responses via ChatGPT account pool.
+ * Returns false if all accounts exhausted.
+ */
+async function _handleCodexViaAccountPool(res, body, modelId, isStreaming, startTime) {
     const rotator = getAccountRotator();
     rotator.clearExpiredLimits();
 
     const maxAttempts = Math.max(MAX_RETRIES, listAccounts().total);
 
     for (let attempt = 0; attempt < maxAttempts; attempt++) {
-        // Check if all accounts are rate-limited
         if (rotator.isAllRateLimited(modelId)) {
             const minWait = rotator.getMinWaitTimeMs(modelId);
-
             if (minWait > MAX_WAIT_BEFORE_ERROR_MS) {
-                return sendCodexError(res, 429, `All accounts rate-limited. Wait ${Math.round(minWait / 1000)}s`);
+                return false; // Let caller try API keys
             }
-
             logger.info(`[Codex] All accounts rate-limited, waiting ${Math.round(minWait / 1000)}s...`);
             await sleep(minWait + 500);
             rotator.clearExpiredLimits();
@@ -139,14 +359,9 @@ export async function handleCodexResponses(req, res) {
         }
 
         const { account, waitMs } = rotator.selectAccount(modelId);
-
         if (!account) {
-            if (waitMs > 0) {
-                await sleep(waitMs);
-                attempt--;
-                continue;
-            }
-            return sendCodexError(res, 401, 'No available accounts. Add accounts via the proxy dashboard.');
+            if (waitMs > 0) { await sleep(waitMs); attempt--; continue; }
+            return false; // No accounts available
         }
 
         const creds = await getCredentialsForAccount(account.email);
@@ -195,14 +410,13 @@ export async function handleCodexResponses(req, res) {
                     continue;
                 }
 
-                // Other errors: return to client
                 logger.error(`[Codex] Upstream error ${upstreamResponse.status}: ${errorText.slice(0, 200)}`);
                 return res.status(upstreamResponse.status)
                     .set('Content-Type', 'application/json')
                     .send(errorText);
             }
 
-            // Success — stream or send response back
+            // Success
             rotator.notifySuccess(account, modelId);
 
             if (isStreaming) {
@@ -240,18 +454,31 @@ export async function handleCodexResponses(req, res) {
         }
     }
 
-    return sendCodexError(res, 503, 'Max retries exceeded. All accounts failed.');
+    return false;
 }
 
 /**
  * GET /backend-api/codex/models
  * Proxies model listing with account rotation.
+ * Falls back to a synthetic model list when only API keys are available.
  */
 export async function handleCodexModels(req, res) {
     const creds = await _getAnyCreds();
 
     if (!creds) {
-        return sendCodexError(res, 401, 'No available accounts');
+        // No accounts — check for API keys and return a synthetic model list
+        const apiKeyTypes = ['openai', 'azure-openai', 'gemini', 'vertex-ai'];
+        const hasApiKeys = apiKeyTypes.some(t => !!selectKey(t));
+        if (hasApiKeys) {
+            return res.json({
+                models: [
+                    { slug: 'gpt-4o', name: 'GPT-4o (via API key)', tags: ['gpt4'] },
+                    { slug: 'gpt-4o-mini', name: 'GPT-4o Mini (via API key)', tags: ['gpt4'] },
+                    { slug: 'gpt-5.2', name: 'GPT-5.2 (via API key)', tags: ['gpt5'] },
+                ]
+            });
+        }
+        return sendCodexError(res, 401, 'No available accounts or API keys');
     }
 
     const clientVersion = req.query.client_version || '0.116.0';
