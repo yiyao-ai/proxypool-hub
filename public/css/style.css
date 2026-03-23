@@ -17,6 +17,21 @@
     --color-surface-glow: rgba(34, 211, 238, 0.06);
 }
 
+html.light {
+    --color-space-950: #f5f7fa;
+    --color-space-900: #edf0f5;
+    --color-space-850: #e4e8ee;
+    --color-space-800: #dde1e8;
+    --color-space-700: #cdd3dc;
+    --color-space-border: #c5cbd6;
+    --color-neon-purple: #7c3aed;
+    --color-neon-cyan: #0891b2;
+    --color-neon-green: #16a34a;
+    --color-neon-yellow: #ca8a04;
+    --color-text-dim: #64748b;
+    --color-surface-glow: rgba(14, 165, 233, 0.06);
+}
+
 * { margin: 0; padding: 0; box-sizing: border-box; }
 
 body {
@@ -36,6 +51,114 @@ body::before {
     inset: 0;
     pointer-events: none;
     background: linear-gradient(to bottom, rgba(255, 255, 255, 0.015), transparent 20%);
+}
+
+html.light body {
+    background:
+        radial-gradient(circle at 20% -10%, rgba(14, 165, 233, 0.06), transparent 35%),
+        radial-gradient(circle at 80% -20%, rgba(124, 58, 237, 0.06), transparent 40%),
+        var(--color-space-950);
+    color: #1e293b;
+}
+
+html.light body::before {
+    background: none;
+}
+
+html.light .text-white { color: #0f172a; }
+html.light .text-gray-200 { color: #1e293b; }
+html.light .text-gray-300 { color: #334155; }
+html.light .text-gray-400 { color: #475569; }
+html.light .text-gray-500 { color: #64748b; }
+html.light .text-gray-600 { color: #475569; }
+
+html.light .text-red-400 { color: #dc2626; }
+html.light .text-red-300 { color: #ef4444; }
+html.light .text-blue-400 { color: #2563eb; }
+html.light .text-yellow-400 { color: #ca8a04; }
+html.light .text-cyan-400 { color: #0891b2; }
+html.light .text-green-400 { color: #16a34a; }
+html.light .text-purple-400 { color: #7c3aed; }
+
+html.light .view-card {
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.9), rgba(248, 250, 252, 0.85));
+    border-color: rgba(197, 203, 214, 0.6);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.8), 0 4px 16px rgba(0, 0, 0, 0.06);
+}
+
+html.light .nav-item { color: #64748b; }
+html.light .nav-item.active {
+    background: rgba(124, 58, 237, 0.08);
+    color: #0f172a;
+    border-right-color: var(--color-neon-purple);
+}
+html.light .nav-item:hover { background: rgba(0, 0, 0, 0.04); color: #0f172a; }
+
+html.light .btn { color: #475569; }
+html.light .btn-ghost { color: #475569; }
+html.light .btn-ghost:hover { background: rgba(0, 0, 0, 0.05); color: #0f172a; }
+html.light .btn-outline { border-color: rgba(197, 203, 214, 0.8); color: #475569; }
+html.light .btn-outline:hover { background: rgba(0, 0, 0, 0.04); color: #0f172a; border-color: rgba(197, 203, 214, 1); }
+
+html.light .input { background: #fff; border-color: var(--color-space-border); color: #0f172a; }
+html.light .input-search-sm { background: #fff; border-color: var(--color-space-border); color: #0f172a; }
+html.light select { background: #fff; border-color: var(--color-space-border); color: #0f172a; }
+
+html.light .modal-box { background: #f1f5f9; border-color: var(--color-space-border); color: #1e293b; }
+html.light dialog::backdrop { background: rgba(0, 0, 0, 0.3); }
+
+html.light .alert-info { background: rgba(14, 165, 233, 0.08); border-color: rgba(14, 165, 233, 0.2); }
+html.light .alert-success { background: rgba(22, 163, 74, 0.08); border-color: rgba(22, 163, 74, 0.2); }
+html.light .alert-error { background: rgba(220, 38, 38, 0.08); border-color: rgba(220, 38, 38, 0.2); }
+html.light .alert-warning { background: rgba(202, 138, 4, 0.08); border-color: rgba(202, 138, 4, 0.2); }
+
+html.light table tr:hover { background: rgba(14, 165, 233, 0.04); }
+html.light table .btn-outline { background: transparent; border-color: rgba(197, 203, 214, 0.8); color: #475569; }
+html.light table .btn-outline:hover { background: rgba(0, 0, 0, 0.04); color: #0f172a; }
+
+html.light .bg-space-900\/90 { background-color: rgba(237, 240, 245, 0.95); }
+html.light .bg-space-800\/50 { background-color: rgba(221, 225, 232, 0.5); }
+html.light .bg-space-800\/80 { background-color: rgba(221, 225, 232, 0.8); }
+html.light .bg-space-900\/40 { background-color: rgba(237, 240, 245, 0.4); }
+html.light .bg-space-900\/50 { background-color: rgba(237, 240, 245, 0.5); }
+html.light .bg-space-900\/60 { background-color: rgba(237, 240, 245, 0.6); }
+html.light .bg-space-900\/20 { background-color: rgba(237, 240, 245, 0.2); }
+html.light .bg-white\/5 { background-color: rgba(0, 0, 0, 0.03); }
+html.light .bg-white\/10 { background-color: rgba(0, 0, 0, 0.05); }
+html.light .bg-black\/50 { background-color: rgba(0, 0, 0, 0.3); }
+html.light .bg-black\/70 { background-color: rgba(0, 0, 0, 0.4); }
+html.light .hover\:bg-white\/5:hover { background-color: rgba(0, 0, 0, 0.04); }
+html.light .hover\:bg-white\/10:hover { background-color: rgba(0, 0, 0, 0.06); }
+html.light .hover\:text-white:hover { color: #0f172a; }
+
+html.light .custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(197, 203, 214, 0.6); }
+html.light .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: rgba(197, 203, 214, 0.9); }
+
+html.light .bg-gray-700 { background-color: rgba(203, 213, 225, 0.9); }
+
+html.light .group:hover .group-hover\:text-white { color: #0f172a; }
+html.light .group:hover .group-hover\:text-cyan-400 { color: #0891b2; }
+html.light .group:hover .group-hover\:text-green-400 { color: #16a34a; }
+html.light .group:hover .group-hover\:text-red-400 { color: #dc2626; }
+html.light .group:hover .group-hover\:text-yellow-400 { color: #ca8a04; }
+html.light .group:hover .group-hover\:text-purple-400 { color: #7c3aed; }
+
+html.light .shadow-neon-purple { --tw-shadow-color: rgba(124, 58, 237, 0.25); }
+html.light .shadow-neon-purple\/20 { box-shadow: 0 0 18px rgba(124, 58, 237, 0.12); }
+html.light .shadow-\[0_0_15px_rgba\(168\,85\,247\,0\.4\)\] { box-shadow: 0 0 15px rgba(124, 58, 237, 0.25); }
+html.light .shadow-\[0_0_8px_rgba\(34\,197\,94\,0\.6\)\] { box-shadow: 0 0 8px rgba(22, 163, 74, 0.4); }
+
+/* Smooth theme transition */
+html.light body,
+html.light .view-card,
+html.light .nav-item,
+html.light .input,
+html.light .input-search-sm,
+html.light select,
+html.light .btn,
+html.light .modal-box,
+html.light .alert {
+    transition: background-color 0.3s ease, color 0.3s ease, border-color 0.3s ease, box-shadow 0.3s ease;
 }
 
 .font-mono { font-family: 'JetBrains Mono', monospace; }

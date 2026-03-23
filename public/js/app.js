@@ -8,6 +8,7 @@ document.addEventListener('alpine:init', () => {
         toast: null,
         currentTime: '',
         lang: localStorage.getItem('proxy-lang') || 'en',
+        darkMode: localStorage.getItem('proxy-theme') !== 'light',
 
         t(key) {
             const dict = i18n[this.lang] || i18n.en;
@@ -17,6 +18,13 @@ document.addEventListener('alpine:init', () => {
         setLang(lang) {
             this.lang = lang;
             localStorage.setItem('proxy-lang', lang);
+        },
+
+        toggleTheme() {
+            this.darkMode = !this.darkMode;
+            document.documentElement.classList.toggle('light', !this.darkMode);
+            document.documentElement.classList.toggle('dark', this.darkMode);
+            localStorage.setItem('proxy-theme', this.darkMode ? 'dark' : 'light');
         },
         
         accounts: [],
@@ -106,6 +114,8 @@ document.addEventListener('alpine:init', () => {
         },
 
         init() {
+            document.documentElement.classList.toggle('light', !this.darkMode);
+            document.documentElement.classList.toggle('dark', this.darkMode);
             this.updateTime();
             setInterval(() => this.updateTime(), 1000);
             this.refreshAccounts();
