@@ -622,6 +622,30 @@ document.addEventListener('alpine:init', () => {
             }
         },
 
+        async setCodexProxyConfig() {
+            const { ok, data, error } = await this.api('/codex/config/proxy', {
+                method: 'POST',
+            });
+
+            if (ok && data?.success) {
+                this.showToast(this.t('codexSettingsUpdated'), 'success');
+            } else {
+                this.showToast(data?.error || data?.warning || error || this.t('codexSettingsFailed'), 'error');
+            }
+        },
+
+        async setGeminiCliProxyConfig() {
+            const { ok, data, error } = await this.api('/gemini-cli/config/proxy', {
+                method: 'POST',
+            });
+
+            if (ok && data?.success) {
+                this.showToast(this.t('geminiSettingsUpdated'), 'success');
+            } else {
+                this.showToast(data?.error || error || this.t('geminiSettingsFailed'), 'error');
+            }
+        },
+
         showToast(message, type = 'success') {
             this.toast = { message, type };
             setTimeout(() => { this.toast = null; }, 3000);
