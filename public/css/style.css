@@ -656,6 +656,8 @@ table .btn-outline:hover {
 .text-yellow-500 { color: #eab308; }
 .text-blue-400 { color: #60a5fa; }
 .text-blue-500 { color: #3b82f6; }
+.text-orange-400 { color: #fb923c; }
+.text-pink-400 { color: #f472b6; }
 
 .bg-white\/5 { background-color: rgba(255, 255, 255, 0.05); }
 .bg-white\/10 { background-color: rgba(255, 255, 255, 0.1); }
@@ -695,6 +697,8 @@ table .btn-outline:hover {
 .border-neon-purple\/50 { border-color: rgba(168, 85, 247, 0.5); }
 .border-neon-cyan\/20 { border-color: rgba(34, 211, 238, 0.2); }
 .border-neon-green\/20 { border-color: rgba(34, 197, 94, 0.2); }
+.border-orange-500\/30 { border-color: rgba(249, 115, 22, 0.3); }
+.border-pink-500\/30 { border-color: rgba(236, 72, 153, 0.3); }
 
 .rounded { border-radius: 0.25rem; }
 .rounded-full { border-radius: 9999px; }
@@ -859,6 +863,8 @@ table .btn-outline:hover {
 .bg-blue-500\/10 { background-color: rgba(59, 130, 246, 0.1); }
 .bg-gray-500\/10 { background-color: rgba(107, 114, 128, 0.1); }
 .bg-red-500\/10 { background-color: rgba(239, 68, 68, 0.1); }
+.bg-orange-500\/10 { background-color: rgba(249, 115, 22, 0.1); }
+.bg-pink-500\/10 { background-color: rgba(236, 72, 153, 0.1); }
 
 .border-gray-500\/30 { border-color: rgba(107, 114, 128, 0.3); }
 

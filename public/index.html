@@ -973,9 +973,12 @@
                                                 'bg-orange-500/10 text-orange-400 border border-orange-500/30': key.type === 'anthropic',
                                                 'bg-blue-500/10 text-blue-400 border border-blue-500/30': key.type === 'gemini',
                                                 'bg-cyan-500/10 text-cyan-400 border border-cyan-500/30': key.type === 'azure-openai',
-                                                'bg-purple-500/10 text-purple-400 border border-purple-500/30': key.type === 'vertex-ai'
+                                                'bg-purple-500/10 text-purple-400 border border-purple-500/30': key.type === 'vertex-ai',
+                                                'bg-yellow-500/10 text-yellow-400 border border-yellow-500/30': key.type === 'minimax',
+                                                'bg-pink-500/10 text-pink-400 border border-pink-500/30': key.type === 'moonshot',
+                                                'bg-red-500/10 text-red-300 border border-red-500/30': key.type === 'zhipu'
                                             }"
-                                            x-text="key.type === 'azure-openai' ? 'AZURE' : key.type === 'vertex-ai' ? 'VERTEX' : key.type.toUpperCase()"></span>
+                                            x-text="key.type === 'azure-openai' ? 'AZURE' : key.type === 'vertex-ai' ? 'VERTEX' : key.type === 'moonshot' ? 'KIMI' : key.type === 'zhipu' ? 'GLM' : key.type.toUpperCase()"></span>
                                     </td>
                                     <td class="py-4"><span class="font-mono text-xs text-gray-500" x-text="key.apiKey"></span></td>
                                     <td class="py-4"><span class="font-mono text-sm text-gray-300" x-text="key.totalRequests"></span></td>
@@ -1232,6 +1235,9 @@
                         <option value="gemini">Gemini</option>
                         <option value="vertex-ai">Vertex AI</option>
                         <option value="azure-openai">Azure OpenAI</option>
+                        <option value="minimax">MiniMax</option>
+                        <option value="moonshot">Moonshot</option>
+                        <option value="zhipu">ZhipuAI</option>
                     </select>
                     <label class="flex items-center gap-1.5 text-xs text-gray-400 cursor-pointer">
                         <input type="checkbox" class="checkbox checkbox-xs border-space-border" x-model="reqLogFilter.errorsOnly" @change="loadRequestLogs()">
@@ -1308,6 +1314,9 @@
                         <option value="gemini">Google Gemini</option>
                         <option value="azure-openai">Azure OpenAI</option>
                         <option value="vertex-ai">Vertex AI</option>
+                        <option value="minimax">MiniMax</option>
+                        <option value="moonshot">Moonshot (Kimi)</option>
+                        <option value="zhipu">ZhipuAI (GLM)</option>
                     </select>
                 </div>
                 <div>

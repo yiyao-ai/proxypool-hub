@@ -12,6 +12,9 @@ import { AnthropicProvider } from './providers/anthropic.js';
 import { GeminiProvider } from './providers/gemini.js';
 import { AzureOpenAIProvider } from './providers/azure-openai.js';
 import { VertexAIProvider } from './providers/vertex-ai.js';
+import { MiniMaxProvider } from './providers/minimax.js';
+import { MoonshotProvider } from './providers/moonshot.js';
+import { ZhipuProvider } from './providers/zhipu.js';
 
 const API_KEYS_FILE = join(CONFIG_DIR, 'api-keys.json');
 
@@ -20,7 +23,10 @@ const PROVIDER_CLASSES = {
     anthropic: AnthropicProvider,
     gemini: GeminiProvider,
     'azure-openai': AzureOpenAIProvider,
-    'vertex-ai': VertexAIProvider
+    'vertex-ai': VertexAIProvider,
+    minimax: MiniMaxProvider,
+    moonshot: MoonshotProvider,
+    zhipu: ZhipuProvider
 };
 
 let keysData = null;
