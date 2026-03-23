@@ -34,7 +34,7 @@ function getAccountRotator() {
 
     if (!accountRotator || currentStrategy !== strategy) {
         const accts = listAccounts();
-        console.log(`[Codex Proxy] Initializing rotator: strategy=${strategy}, accounts=${accts.total}, active=${accts.active || 'none'}`);
+        logger.info(`[Codex Proxy] Initializing rotator: strategy=${strategy}, accounts=${accts.total}, active=${accts.active || 'none'}`);
         accountRotator = new AccountRotator({
             listAccounts,
             save,
@@ -160,31 +160,8 @@ export async function handleResponses(req, res) {
     const parsed = tryExtractSummary(rawBody, contentEncoding);
 
     // --- Request logging ---
-    console.log('\n' + '='.repeat(70));
-    console.log(`[Codex Proxy] >>> REQUEST via /responses`);
-    console.log(`  Model:       ${modelId}`);
-    console.log(`  Encoding:    ${contentEncoding || 'none'}`);
-    console.log(`  Body size:   ${rawBody.length} bytes`);
-    if (parsed) {
-        console.log(`  Stream:      ${parsed.stream !== false}`);
-        const toolNames = Array.isArray(parsed.tools) ? parsed.tools.map(t => t.name || t.function?.name).filter(Boolean) : [];
-        console.log(`  Tools:       ${toolNames.length > 0 ? toolNames.join(', ') : '(none)'}`);
-        if (parsed.instructions) {
-            console.log(`  System:      ${parsed.instructions.slice(0, 120)}${parsed.instructions.length > 120 ? '...' : ''}`);
-        }
-        if (Array.isArray(parsed.input)) {
-            const msgs = parsed.input.slice(-3).map(item => {
-                if (item.type === 'message') {
-                    const text = typeof item.content === 'string' ? item.content : JSON.stringify(item.content);
-                    return `[${item.role}] ${text.slice(0, 100)}${text.length > 100 ? '...' : ''}`;
-                }
-                return `[${item.type}]`;
-            });
-            console.log(`  Last msgs (${parsed.input.length} total):`);
-            for (const m of msgs) console.log(`    ${m}`);
-        }
-    }
-    console.log('='.repeat(70));
+    const toolNames = parsed && Array.isArray(parsed.tools) ? parsed.tools.map(t => t.name || t.function?.name).filter(Boolean) : [];
+    logger.info(`[Codex] >>> /responses | model=${modelId} | ${rawBody.length}B | encoding=${contentEncoding || 'none'} | tools=${toolNames.length}`);
 
     const isStreaming = parsed ? parsed.stream !== false : true;
 
@@ -366,7 +343,7 @@ async function _handleResponsesViaApiKey(res, parsed, modelId, isStreaming, keyT
                 // Map model name to provider-native model
                 const mappedModel = resolveModel(type, modelId);
                 const mappedBody = { ...chatBody, model: mappedModel };
-                console.log(`[Codex Proxy] >>> API KEY fallback | ${type}/${provider.name} | ${modelId}→${mappedModel}`);
+                logger.info(`[Codex] >>> API KEY | ${type}/${provider.name} | ${modelId}→${mappedModel}`);
 
                 const response = await provider.sendRequest(mappedBody);
                 const durationMs = Date.now() - startTime;
@@ -406,7 +383,7 @@ async function _handleResponsesViaApiKey(res, parsed, modelId, isStreaming, keyT
                 logRequest({ route: '/responses', provider: type, keyId: provider.id, model: modelId, mappedModel, requestBody: parsed, responseBody, inputTokens, outputTokens, cost, durationMs, status: 200, success: true });
 
                 const responsesFormat = _chatToResponsesFormat(chatResponse, modelId);
-                console.log(`[Codex Proxy] <<< API KEY OK | ${type}/${provider.name} | model=${modelId} | ${durationMs}ms`);
+                logger.success(`[Codex] <<< API KEY OK | ${type}/${provider.name} | model=${modelId} | ${durationMs}ms`);
 
                 if (isStreaming) {
                     sendResponsesSSE(res, responsesFormat);
@@ -441,7 +418,7 @@ async function _handleResponsesViaAccountPool(req, res, rawBody, contentEncoding
             if (minWait > MAX_WAIT_BEFORE_ERROR_MS) {
                 return false; // Let caller try API keys
             }
-            console.log(`[Codex Proxy] All accounts rate-limited, waiting ${Math.round(minWait / 1000)}s...`);
+            logger.warn(`[Codex] All accounts rate-limited, waiting ${Math.round(minWait / 1000)}s...`);
             await sleep(minWait + 500);
             rotator.clearExpiredLimits();
             attempt--;
@@ -456,12 +433,12 @@ async function _handleResponsesViaAccountPool(req, res, rawBody, contentEncoding
 
         const creds = await getCredentialsForAccount(account.email);
         if (!creds) {
-            console.log(`[Codex Proxy] Credentials failed for ${account.email}, marking invalid`);
+            logger.warn(`[Codex] Credentials failed for ${account.email}, marking invalid`);
             rotator.markInvalid(account.email, 'Failed to get credentials');
             continue;
         }
 
-        console.log(`[Codex Proxy] >>> FORWARDING | account=${creds.email} | model=${modelId} | attempt=${attempt + 1}`);
+        logger.info(`[Codex] >>> FORWARDING | account=${creds.email} | model=${modelId} | attempt=${attempt + 1}`);
 
         try {
             const upstreamHeaders = {
@@ -486,7 +463,7 @@ async function _handleResponsesViaAccountPool(req, res, rawBody, contentEncoding
                 if (upstreamResponse.status === 401) {
                     rotator.markInvalid(creds.email, 'Token expired');
                     rotator.notifyFailure(account, modelId);
-                    console.log(`[Codex Proxy] Auth expired for ${creds.email}, trying next...`);
+                    logger.warn(`[Codex] Auth expired for ${creds.email}, trying next...`);
                     continue;
                 }
 
@@ -496,12 +473,12 @@ async function _handleResponsesViaAccountPool(req, res, rawBody, contentEncoding
                     rotator.notifyRateLimit(account, modelId);
 
                     if (resetMs <= SHORT_RATE_LIMIT_THRESHOLD_MS) {
-                        console.log(`[Codex Proxy] Short rate limit on ${creds.email}, waiting ${resetMs}ms...`);
+                        logger.warn(`[Codex] Short rate limit on ${creds.email}, waiting ${resetMs}ms...`);
                         await sleep(resetMs);
                         attempt--;
                         continue;
                     }
-                    console.log(`[Codex Proxy] Rate limited ${creds.email} (${Math.round(resetMs / 1000)}s), switching...`);
+                    logger.warn(`[Codex] Rate limited ${creds.email} (${Math.round(resetMs / 1000)}s), switching...`);
                     continue;
                 }
 
@@ -540,7 +517,7 @@ async function _handleResponsesViaAccountPool(req, res, rawBody, contentEncoding
             }
 
             const duration = Date.now() - startTime;
-            console.log(`[Codex Proxy] <<< RESPONSE OK | account=${creds.email} | model=${modelId} | ${duration}ms`);
+            logger.success(`[Codex] <<< OK | account=${creds.email} | model=${modelId} | ${duration}ms`);
             return;
         } catch (error) {
             logger.error(`[Codex Proxy] Network error on ${creds.email}: ${error.message}`);
