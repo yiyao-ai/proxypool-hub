@@ -97,5 +97,5 @@
     }
   },
   "keywords": ["codex", "openai", "proxy", "claude", "chatgpt", "oauth"],
-  "license": "MIT"
+  "license": "AGPL-3.0"
 }

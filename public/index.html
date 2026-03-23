@@ -1003,7 +1003,7 @@
                 </div>
 
                 <!-- Overview cards -->
-                <div class="grid grid-cols-2 sm:grid-cols-4 gap-2 lg:gap-3 mb-6">
+                <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2 lg:gap-3 mb-6">
                     <div class="stat bg-space-900/40 border border-space-border/30 rounded-xl p-3 lg:p-4 min-w-0">
                         <div class="stat-value text-white font-mono text-2xl font-bold mb-1" x-text="usageOverview.today?.requests || 0"></div>
                         <div class="stat-title text-gray-500 font-mono text-[10px] uppercase tracking-wider" x-text="t('today') + ' ' + t('requests')"></div>
@@ -1013,18 +1013,61 @@
                         <div class="stat-title text-gray-500 font-mono text-[10px] uppercase tracking-wider" x-text="t('today') + ' ' + t('cost')"></div>
                     </div>
                     <div class="stat bg-space-900/40 border border-space-border/30 rounded-xl p-3 lg:p-4 min-w-0">
+                        <div class="stat-value text-neon-cyan font-mono text-2xl font-bold mb-1" x-text="((usageOverview.today?.inputTokens || 0) + (usageOverview.today?.outputTokens || 0)).toLocaleString()"></div>
+                        <div class="stat-title text-gray-500 font-mono text-[10px] uppercase tracking-wider" x-text="t('todayTokens')"></div>
+                    </div>
+                    <div class="stat bg-space-900/40 border border-space-border/30 rounded-xl p-3 lg:p-4 min-w-0">
                         <div class="stat-value text-white font-mono text-2xl font-bold mb-1" x-text="usageOverview.allTime?.requests || 0"></div>
                         <div class="stat-title text-gray-500 font-mono text-[10px] uppercase tracking-wider" x-text="t('allTime') + ' ' + t('requests')"></div>
                     </div>
                     <div class="stat bg-space-900/40 border border-space-border/30 rounded-xl p-3 lg:p-4 min-w-0">
-                        <div class="stat-value text-neon-cyan font-mono text-2xl font-bold mb-1" x-text="'$' + (usageOverview.allTime?.cost || 0).toFixed(4)"></div>
+                        <div class="stat-value text-neon-green font-mono text-2xl font-bold mb-1" x-text="'$' + (usageOverview.allTime?.cost || 0).toFixed(4)"></div>
                         <div class="stat-title text-gray-500 font-mono text-[10px] uppercase tracking-wider" x-text="t('allTime') + ' ' + t('cost')"></div>
+                    </div>
+                    <div class="stat bg-space-900/40 border border-space-border/30 rounded-xl p-3 lg:p-4 min-w-0">
+                        <div class="stat-value font-mono text-2xl font-bold mb-1"
+                            :class="(usageOverview.today?.requests > 0 && usageOverview.today?.errors / usageOverview.today?.requests > 0.1) ? 'text-red-400' : 'text-gray-400'"
+                            x-text="usageOverview.today?.requests > 0 ? (usageOverview.today.errors / usageOverview.today.requests * 100).toFixed(1) + '%' : '0%'"></div>
+                        <div class="stat-title text-gray-500 font-mono text-[10px] uppercase tracking-wider" x-text="t('errorRate')"></div>
                     </div>
                 </div>
 
-                <!-- Daily usage table -->
+                <!-- Daily usage chart + table -->
                 <div class="view-card mb-6">
-                    <h3 class="text-xs font-mono text-gray-400 uppercase tracking-widest mb-4" x-text="t('dailyUsage')"></h3>
+                    <div class="flex items-center justify-between mb-4">
+                        <h3 class="text-xs font-mono text-gray-400 uppercase tracking-widest" x-text="(i18n[lang] || i18n.en).dailyUsageDays(dailyDays)"></h3>
+                        <div class="flex gap-1">
+                            <template x-for="d in [7, 14, 30]" :key="d">
+                                <button class="px-2.5 py-1 text-[10px] font-mono rounded-md border transition-colors"
+                                    :class="dailyDays === d ? 'bg-neon-cyan/10 border-neon-cyan/40 text-neon-cyan' : 'border-space-border/30 text-gray-500 hover:text-gray-300 hover:border-space-border/60'"
+                                    @click="setDailyDays(d)"
+                                    x-text="d + 'd'"></button>
+                            </template>
+                        </div>
+                    </div>
+
+                    <!-- Bar chart -->
+                    <div class="flex items-end gap-[3px] h-28 mb-4" x-show="dailyStats.length > 0">
+                        <template x-for="day in dailyStats" :key="day.date">
+                            <div class="flex-1 flex flex-col items-center gap-1 group relative min-w-0">
+                                <div class="w-full rounded-t transition-all duration-300 cursor-pointer"
+                                    :class="day.errors > 0 ? 'bg-gradient-to-t from-red-500/60 to-red-400/40' : 'bg-gradient-to-t from-neon-cyan/60 to-neon-cyan/30'"
+                                    :style="'height: ' + Math.max(4, (day.requests / dailyChartMax) * 100) + '%'">
+                                </div>
+                                <span class="text-[8px] font-mono text-gray-600 truncate w-full text-center" x-text="day.date.slice(5)"></span>
+                                <!-- Tooltip -->
+                                <div class="absolute bottom-full mb-2 left-1/2 -translate-x-1/2 bg-space-800 border border-space-border/60 rounded-lg px-3 py-2 text-[10px] font-mono hidden group-hover:block z-10 whitespace-nowrap shadow-xl">
+                                    <div class="text-gray-300" x-text="day.date"></div>
+                                    <div class="text-neon-cyan" x-text="day.requests + ' requests'"></div>
+                                    <div class="text-gray-400" x-text="(day.inputTokens + day.outputTokens).toLocaleString() + ' tokens'"></div>
+                                    <div class="text-neon-green" x-text="'$' + day.cost.toFixed(4)"></div>
+                                    <div x-show="day.errors > 0" class="text-red-400" x-text="day.errors + ' errors'"></div>
+                                </div>
+                            </div>
+                        </template>
+                    </div>
+
+                    <!-- Table -->
                     <div class="overflow-x-auto">
                         <table class="w-full">
                             <thead>
@@ -1054,6 +1097,49 @@
                     <div x-show="dailyStats.length === 0" class="py-8 text-center text-gray-600 text-sm" x-text="t('noUsageData')"></div>
                 </div>
 
+                <!-- Provider & Model distribution -->
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 lg:gap-6 mb-6">
+                    <!-- By Provider -->
+                    <div class="view-card">
+                        <h3 class="text-xs font-mono text-gray-400 uppercase tracking-widest mb-4" x-text="t('byProvider')"></h3>
+                        <div class="space-y-3" x-show="providerStatsEntries.length > 0">
+                            <template x-for="entry in providerStatsEntries" :key="entry.name">
+                                <div>
+                                    <div class="flex items-center justify-between mb-1">
+                                        <span class="font-mono text-xs text-gray-300" x-text="entry.name"></span>
+                                        <span class="font-mono text-[10px] text-gray-500" x-text="entry.requests + ' reqs · $' + entry.cost.toFixed(4)"></span>
+                                    </div>
+                                    <div class="w-full h-2 bg-space-800 rounded-full overflow-hidden">
+                                        <div class="h-full rounded-full bg-gradient-to-r from-neon-purple/70 to-neon-cyan/70 transition-all duration-500"
+                                            :style="'width: ' + entry.pct + '%'"></div>
+                                    </div>
+                                </div>
+                            </template>
+                        </div>
+                        <div x-show="providerStatsEntries.length === 0" class="py-6 text-center text-gray-600 text-sm" x-text="t('noUsageData')"></div>
+                    </div>
+
+                    <!-- By Model -->
+                    <div class="view-card">
+                        <h3 class="text-xs font-mono text-gray-400 uppercase tracking-widest mb-4" x-text="t('byModel')"></h3>
+                        <div class="space-y-3" x-show="modelStatsEntries.length > 0">
+                            <template x-for="entry in modelStatsEntries" :key="entry.name">
+                                <div>
+                                    <div class="flex items-center justify-between mb-1">
+                                        <span class="font-mono text-xs text-gray-300 truncate mr-2" x-text="entry.name"></span>
+                                        <span class="font-mono text-[10px] text-gray-500 whitespace-nowrap" x-text="entry.requests + ' reqs · $' + entry.cost.toFixed(4)"></span>
+                                    </div>
+                                    <div class="w-full h-2 bg-space-800 rounded-full overflow-hidden">
+                                        <div class="h-full rounded-full bg-gradient-to-r from-neon-green/70 to-neon-cyan/70 transition-all duration-500"
+                                            :style="'width: ' + entry.pct + '%'"></div>
+                                    </div>
+                                </div>
+                            </template>
+                        </div>
+                        <div x-show="modelStatsEntries.length === 0" class="py-6 text-center text-gray-600 text-sm" x-text="t('noUsageData')"></div>
+                    </div>
+                </div>
+
                 <!-- Recent requests -->
                 <div class="view-card">
                     <h3 class="text-xs font-mono text-gray-400 uppercase tracking-widest mb-4" x-text="t('recentRequests')"></h3>
@@ -1062,6 +1148,7 @@
                             <thead>
                                 <tr class="border-b border-space-border/30">
                                     <th class="py-2 text-left text-[10px] font-bold text-gray-500 uppercase">Time</th>
+                                    <th class="py-2 text-left text-[10px] font-bold text-gray-500 uppercase" x-text="t('account')"></th>
                                     <th class="py-2 text-left text-[10px] font-bold text-gray-500 uppercase" x-text="t('provider')"></th>
                                     <th class="py-2 text-left text-[10px] font-bold text-gray-500 uppercase" x-text="t('model')"></th>
                                     <th class="py-2 text-right text-[10px] font-bold text-gray-500 uppercase" x-text="t('tokens')"></th>
@@ -1074,6 +1161,7 @@
                                 <template x-for="(req, idx) in usageHistory" :key="idx">
                                     <tr class="border-b border-space-border/10 hover:bg-white/[0.03]">
                                         <td class="py-2 font-mono text-[11px] text-gray-500" x-text="new Date(req.timestamp).toLocaleTimeString([], {hour12:false})"></td>
+                                        <td class="py-2 font-mono text-[11px] text-gray-400 truncate max-w-[120px]" x-text="req.keyId || '-'"></td>
                                         <td class="py-2 font-mono text-xs text-gray-300" x-text="req.provider"></td>
                                         <td class="py-2 font-mono text-xs text-gray-300" x-text="req.model || '-'"></td>
                                         <td class="py-2 text-right font-mono text-xs text-gray-400" x-text="(req.inputTokens + req.outputTokens).toLocaleString()"></td>

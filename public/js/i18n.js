@@ -248,7 +248,8 @@ const i18n = {
     outputTokensLabel: 'Output Tokens',
     totalTokensLabel: 'Total Tokens',
     estimatedCost: 'Est. Cost',
-    dailyUsage: 'Daily Usage (7 days)',
+    dailyUsage: 'Daily Usage',
+    dailyUsageDays: (n) => `Daily Usage (${n} days)`,
     byProvider: 'By Provider',
     byModel: 'By Model',
     recentRequests: 'Recent Requests',
@@ -260,6 +261,13 @@ const i18n = {
     duration: 'Duration',
     successLabel: 'Success',
     failedLabel: 'Failed',
+    todayTokens: 'Today Tokens',
+    errorRate: 'Error Rate',
+    account: 'Account',
+    totalRequests: 'Total Requests',
+    days7: '7 Days',
+    days14: '14 Days',
+    days30: '30 Days',
 
     // Request Logs
     requestLogs: 'Request Logs',
@@ -528,7 +536,8 @@ const i18n = {
     outputTokensLabel: '输出 Token',
     totalTokensLabel: 'Token 总数',
     estimatedCost: '预估费用',
-    dailyUsage: '每日用量（7天）',
+    dailyUsage: '每日用量',
+    dailyUsageDays: (n) => `每日用量（${n}天）`,
     byProvider: '按供应商',
     byModel: '按模型',
     recentRequests: '近期请求',
@@ -540,6 +549,13 @@ const i18n = {
     duration: '耗时',
     successLabel: '成功',
     failedLabel: '失败',
+    todayTokens: '今日 Token',
+    errorRate: '错误率',
+    account: '账号',
+    totalRequests: '总请求数',
+    days7: '7 天',
+    days14: '14 天',
+    days30: '30 天',
 
     // Language
     // Request Logs

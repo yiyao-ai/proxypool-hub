@@ -830,13 +830,39 @@ document.addEventListener('alpine:init', () => {
         // ─── Usage & Costs ────────────────────────────────────────────────
         usageOverview: { today: {}, allTime: {}, keys: {} },
         dailyStats: [],
+        dailyDays: 7,
         usageHistory: [],
+        providerStats: {},
+        modelStats: {},
+
+        get dailyChartMax() {
+            if (!this.dailyStats.length) return 1;
+            return Math.max(1, ...this.dailyStats.map(d => d.requests));
+        },
+
+        get providerStatsEntries() {
+            const entries = Object.entries(this.providerStats)
+                .map(([name, s]) => ({ name, ...s }))
+                .sort((a, b) => b.requests - a.requests);
+            const max = Math.max(1, ...entries.map(e => e.requests));
+            return entries.map(e => ({ ...e, pct: (e.requests / max) * 100 }));
+        },
+
+        get modelStatsEntries() {
+            const entries = Object.entries(this.modelStats)
+                .map(([name, s]) => ({ name, ...s }))
+                .sort((a, b) => b.requests - a.requests);
+            const max = Math.max(1, ...entries.map(e => e.requests));
+            return entries.map(e => ({ ...e, pct: (e.requests / max) * 100 }));
+        },
 
         async loadUsageData() {
-            const [overviewRes, dailyRes, historyRes] = await Promise.all([
+            const [overviewRes, dailyRes, historyRes, providerRes, modelRes] = await Promise.all([
                 this.api('/api/usage/overview'),
-                this.api('/api/usage/daily?days=7'),
-                this.api('/api/usage/history?limit=50')
+                this.api(`/api/usage/daily?days=${this.dailyDays}`),
+                this.api('/api/usage/history?limit=50'),
+                this.api('/api/usage/providers'),
+                this.api('/api/usage/models')
             ]);
             if (overviewRes.ok && overviewRes.data) {
                 this.usageOverview = overviewRes.data;
@@ -846,6 +872,20 @@ document.addEventListener('alpine:init', () => {
             }
             if (historyRes.ok && historyRes.data?.history) {
                 this.usageHistory = historyRes.data.history;
+            }
+            if (providerRes.ok && providerRes.data?.stats) {
+                this.providerStats = providerRes.data.stats;
+            }
+            if (modelRes.ok && modelRes.data?.stats) {
+                this.modelStats = modelRes.data.stats;
+            }
+        },
+
+        async setDailyDays(days) {
+            this.dailyDays = days;
+            const res = await this.api(`/api/usage/daily?days=${days}`);
+            if (res.ok && res.data?.stats) {
+                this.dailyStats = res.data.stats;
             }
         },
 
