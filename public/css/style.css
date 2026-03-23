@@ -88,11 +88,10 @@ html.light .view-card {
 
 html.light .nav-item { color: #64748b; }
 html.light .nav-item.active {
-    background: rgba(124, 58, 237, 0.08);
+    background: rgba(124, 58, 237, 0.1);
     color: #0f172a;
-    border-right-color: var(--color-neon-purple);
 }
-html.light .nav-item:hover { background: rgba(0, 0, 0, 0.04); color: #0f172a; }
+html.light .nav-item:hover:not(.active) { background: rgba(0, 0, 0, 0.04); color: #0f172a; }
 
 html.light .btn { color: #475569; }
 html.light .btn-ghost { color: #475569; }
@@ -190,16 +189,17 @@ html.light .alert {
 .nav-item {
     background: transparent;
     color: #9ca3af;
-    border-right: 2px solid transparent;
+    border-radius: 0.5rem;
+    margin: 0 0.5rem;
+    transition: all 0.15s ease;
 }
 
 .nav-item.active {
-    background: rgba(168, 85, 247, 0.1);
+    background: rgba(168, 85, 247, 0.12);
     color: white;
-    border-right: 2px solid var(--color-neon-purple);
 }
 
-.nav-item:hover {
+.nav-item:hover:not(.active) {
     background: rgba(255, 255, 255, 0.05);
     color: white;
 }
