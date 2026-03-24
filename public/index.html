@@ -629,10 +629,10 @@
                                     <td class="py-4 pl-6">
                                         <div class="flex items-center gap-2">
                                             <div class="w-2 h-2 rounded-full flex-shrink-0"
-                                                :class="acc.isActive ? 'bg-neon-purple shadow-[0_0_8px_rgba(168,85,247,0.6)] animate-pulse' : 'bg-gray-500'"></div>
+                                                :class="acc.enabled === false ? 'bg-red-500' : acc.isActive ? 'bg-neon-purple shadow-[0_0_8px_rgba(168,85,247,0.6)] animate-pulse' : 'bg-gray-500'"></div>
                                             <span class="text-xs font-mono font-semibold"
-                                                :class="acc.isActive ? 'text-neon-purple' : 'text-gray-500'"
-                                                x-text="acc.isActive ? t('activeStatus') : t('idleStatus')"></span>
+                                                :class="acc.enabled === false ? 'text-red-400' : acc.isActive ? 'text-neon-purple' : 'text-gray-500'"
+                                                x-text="acc.enabled === false ? t('disabled') : acc.isActive ? t('activeStatus') : t('idleStatus')"></span>
                                         </div>
                                     </td>
                                     <td class="py-4">
@@ -660,6 +660,10 @@
                                     </td>
                                     <td class="py-4 pr-6">
                                         <div class="flex justify-end gap-2">
+                                            <button class="px-3 py-1 text-[10px] font-bold font-mono uppercase rounded transition-all"
+                                                :class="acc.enabled !== false ? 'bg-yellow-500/10 text-yellow-400 border border-yellow-500/30 hover:bg-yellow-500/20' : 'bg-green-500/10 text-green-400 border border-green-500/30 hover:bg-green-500/20'"
+                                                @click="toggleClaudeAccountEnabled(acc.email, acc.enabled === false)"
+                                                x-text="acc.enabled !== false ? t('actionDisable') : t('actionEnable')"></button>
                                             <button x-show="!acc.isActive"
                                                 class="px-3 py-1 text-[10px] font-bold font-mono uppercase tracking-wider rounded bg-neon-purple/10 text-neon-purple hover:bg-neon-purple/20 border border-neon-purple/30 hover:border-neon-purple/50 transition-all"
                                                 @click="switchClaudeAccount(acc.email)" x-text="t('switchBtn')"></button>

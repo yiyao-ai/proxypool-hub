@@ -546,6 +546,19 @@ document.addEventListener('alpine:init', () => {
             }
         },
 
+        async toggleClaudeAccountEnabled(email, enabled) {
+            const { ok, data } = await this.api(`/claude-accounts/${encodeURIComponent(email)}/toggle`, {
+                method: 'PUT',
+                body: JSON.stringify({ enabled })
+            });
+            if (ok && data.success) {
+                this.showToast(data.message, 'success');
+                this.refreshClaudeAccounts();
+            } else {
+                this.showToast(data?.message || data?.error || this.t('updateFailed'), 'error');
+            }
+        },
+
         async removeClaudeAccount(email) {
             if (!confirm(this.t('confirmDeleteAccount') + ': ' + email)) return;
             const { ok, data } = await this.api(`/claude-accounts/${encodeURIComponent(email)}`, { method: 'DELETE' });

@@ -18,6 +18,7 @@ import {
     getActiveAccount,
     setActiveAccount,
     removeAccount,
+    toggleAccount,
     listAccounts,
     refreshAccountToken,
     refreshAllAccounts,
@@ -214,6 +215,19 @@ export async function handleRefreshActiveClaudeAccount(req, res) {
     res.json(result);
 }
 
+export function handleToggleClaudeAccount(req, res) {
+    const email = decodeURIComponent(req.params.email);
+    const { enabled } = req.body;
+    if (typeof enabled !== 'boolean') {
+        return res.status(400).json({ success: false, error: 'enabled must be a boolean' });
+    }
+    const result = toggleAccount(email, enabled);
+    if (result.success) {
+        logger.info(`Claude account ${email} ${enabled ? 'enabled' : 'disabled'}`);
+    }
+    res.json(result);
+}
+
 export function handleRemoveClaudeAccount(req, res) {
     const email = decodeURIComponent(req.params.email);
     const result = removeAccount(email);
@@ -268,6 +282,7 @@ export default {
     handleRefreshClaudeAccount,
     handleRefreshAllClaudeAccounts,
     handleRefreshActiveClaudeAccount,
+    handleToggleClaudeAccount,
     handleRemoveClaudeAccount,
     handleImportClaudeAccount
 };

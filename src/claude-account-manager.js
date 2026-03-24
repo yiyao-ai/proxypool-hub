@@ -13,8 +13,9 @@ const CONFIG_DIR = join(homedir(), '.proxypool-hub');
 const CLAUDE_ACCOUNTS_FILE = join(CONFIG_DIR, 'claude-accounts.json');
 const CLAUDE_ACCOUNTS_DIR = join(CONFIG_DIR, 'claude-accounts');
 
-const TOKEN_REFRESH_INTERVAL_MS = 55 * 60 * 1000;
-const TOKEN_EXPIRY_BUFFER_MS = 5 * 60 * 1000;
+const TOKEN_CHECK_INTERVAL_MS = 10 * 60 * 1000;  // Check every 10 minutes
+const TOKEN_EXPIRY_BUFFER_MS = 5 * 60 * 1000;    // Refresh when < 5 min left
+const CLAUDE_CODE_CREDENTIALS_FILE = join(homedir(), '.claude', '.credentials.json');
 
 const DEFAULT_ACCOUNTS = {
     accounts: [],
@@ -133,6 +134,17 @@ function removeAccount(email) {
     return { success: true, message: `Claude account removed: ${email}` };
 }
 
+function toggleAccount(email, enabled) {
+    const data = loadAccounts();
+    const account = data.accounts.find(a => a.email === email);
+    if (!account) {
+        return { success: false, message: `Claude account not found: ${email}` };
+    }
+    account.enabled = enabled;
+    saveAccounts(data);
+    return { success: true, message: `Claude account ${email} ${enabled ? 'enabled' : 'disabled'}`, enabled };
+}
+
 function listAccounts() {
     const data = loadAccounts();
 
@@ -161,6 +173,33 @@ function listAccounts() {
 function isTokenExpiredOrExpiringSoon(account) {
     if (!account.expiresAt) return true;
     return Date.now() >= (account.expiresAt - TOKEN_EXPIRY_BUFFER_MS);
+}
+
+/**
+ * Write refreshed tokens back to Claude Code's credentials file.
+ * Only called for accounts with source === 'claude-code-import'.
+ */
+function _writeBackToClaudeCode(account) {
+    try {
+        if (!existsSync(CLAUDE_CODE_CREDENTIALS_FILE)) {
+            console.warn('[ClaudeAccountManager] Claude Code credentials file not found, skip writeback');
+            return;
+        }
+
+        const raw = JSON.parse(readFileSync(CLAUDE_CODE_CREDENTIALS_FILE, 'utf8'));
+        const oauth = raw.claudeAiOauth;
+        if (!oauth) return;
+
+        // Update tokens while preserving Claude Code's own fields (subscriptionType, rateLimitTier, etc.)
+        oauth.accessToken = account.accessToken;
+        oauth.refreshToken = account.refreshToken;
+        oauth.expiresAt = account.expiresAt;
+
+        writeFileSync(CLAUDE_CODE_CREDENTIALS_FILE, JSON.stringify(raw), 'utf8');
+        console.log(`[ClaudeAccountManager] Wrote back refreshed token to Claude Code credentials`);
+    } catch (e) {
+        console.warn(`[ClaudeAccountManager] Failed to write back to Claude Code: ${e.message}`);
+    }
 }
 
 async function refreshAccountToken(email) {
@@ -196,6 +235,11 @@ async function refreshAccountToken(email) {
                 token: tokens.accessToken,
                 extractedAt: Date.now()
             });
+
+            // Write back to Claude Code if this account was imported from there
+            if (data.accounts[index].source === 'claude-code-import') {
+                _writeBackToClaudeCode(data.accounts[index]);
+            }
         }
 
         // Try to refresh profile info
@@ -242,30 +286,27 @@ function startAutoRefresh() {
         clearInterval(autoRefreshIntervalId);
     }
 
-    // Initial refresh on startup (delayed 3s)
-    setTimeout(async () => {
-        console.log('[ClaudeAccountManager] Startup: refreshing all Claude account tokens...');
-        const data = loadAccounts();
-        for (const account of data.accounts) {
-            if (account.refreshToken) {
-                console.log(`[ClaudeAccountManager] Startup refresh for ${account.email}`);
-                await refreshAccountToken(account.email);
-            }
-        }
-    }, 3000);
+    // Initial check on startup (delayed 5s) — only refresh if expired or expiring soon
+    setTimeout(() => _checkAndRefreshExpiring('startup'), 5000);
 
-    // Periodic refresh
-    autoRefreshIntervalId = setInterval(async () => {
-        const data = loadAccounts();
-        for (const account of data.accounts) {
-            if (account.refreshToken) {
-                console.log(`[ClaudeAccountManager] Periodic refresh for ${account.email}`);
-                await refreshAccountToken(account.email);
-            }
-        }
-    }, TOKEN_REFRESH_INTERVAL_MS);
+    // Periodic check every 10 minutes — only refresh tokens that are about to expire
+    autoRefreshIntervalId = setInterval(() => _checkAndRefreshExpiring('periodic'), TOKEN_CHECK_INTERVAL_MS);
 
-    console.log('[ClaudeAccountManager] Auto-refresh started (every 55 minutes)');
+    console.log('[ClaudeAccountManager] Smart auto-refresh started (check every 10 min, refresh only when expiring)');
+}
+
+async function _checkAndRefreshExpiring(trigger) {
+    const data = loadAccounts();
+    for (const account of data.accounts) {
+        if (!account.refreshToken || account.enabled === false) continue;
+
+        if (isTokenExpiredOrExpiringSoon(account)) {
+            const remainMs = account.expiresAt ? account.expiresAt - Date.now() : -1;
+            const remainStr = remainMs > 0 ? `${Math.round(remainMs / 1000)}s left` : 'expired';
+            console.log(`[ClaudeAccountManager] ${trigger}: refreshing ${account.email} (${remainStr})`);
+            await refreshAccountToken(account.email);
+        }
+    }
 }
 
 function stopAutoRefresh() {
@@ -278,7 +319,7 @@ function stopAutoRefresh() {
 
 function getCachedToken(email) {
     const cached = tokenCache.get(email);
-    if (cached && (Date.now() - cached.extractedAt) < TOKEN_REFRESH_INTERVAL_MS) {
+    if (cached && (Date.now() - cached.extractedAt) < TOKEN_CHECK_INTERVAL_MS) {
         return cached.token;
     }
     return null;
@@ -422,6 +463,7 @@ export {
     getActiveAccount,
     setActiveAccount,
     removeAccount,
+    toggleAccount,
     listAccounts,
     refreshAccountToken,
     refreshAllAccounts,
@@ -434,7 +476,7 @@ export {
     isTokenExpiredOrExpiringSoon,
     getCachedToken,
     setCachedToken,
-    TOKEN_REFRESH_INTERVAL_MS,
+    TOKEN_CHECK_INTERVAL_MS,
     CLAUDE_ACCOUNTS_FILE,
     CONFIG_DIR
 };
@@ -443,6 +485,7 @@ export default {
     getActiveAccount,
     setActiveAccount,
     removeAccount,
+    toggleAccount,
     listAccounts,
     refreshAccountToken,
     refreshAllAccounts,

@@ -53,6 +53,7 @@ import {
   handleRefreshClaudeAccount,
   handleRefreshAllClaudeAccounts,
   handleRefreshActiveClaudeAccount,
+  handleToggleClaudeAccount,
   handleRemoveClaudeAccount,
   handleImportClaudeAccount
 } from './claude-accounts-route.js';
@@ -126,6 +127,7 @@ export function registerApiRoutes(app, { port }) {
   app.post('/claude-accounts/oauth/cleanup', handleClaudeOAuthCleanup);
   app.post('/claude-accounts/:email/refresh', handleRefreshClaudeAccount);
 
+  app.put('/claude-accounts/:email/toggle', handleToggleClaudeAccount);
   app.delete('/claude-accounts/:email', handleRemoveClaudeAccount);
 
   // ─── Claude CLI Configuration ──────────────────────────────────────────────

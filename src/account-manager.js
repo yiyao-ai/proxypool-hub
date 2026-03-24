@@ -13,8 +13,9 @@ const CONFIG_DIR = join(homedir(), '.proxypool-hub');
 const ACCOUNTS_FILE = join(CONFIG_DIR, 'accounts.json');
 const ACCOUNTS_DIR = join(CONFIG_DIR, 'accounts');
 
-const TOKEN_REFRESH_INTERVAL_MS = 55 * 60 * 1000;
-const TOKEN_EXPIRY_BUFFER_MS = 5 * 60 * 1000;
+const TOKEN_CHECK_INTERVAL_MS = 10 * 60 * 1000;  // Check every 10 minutes
+const TOKEN_EXPIRY_BUFFER_MS = 5 * 60 * 1000;    // Refresh when < 5 min left
+const CODEX_AUTH_FILE = join(homedir(), '.codex', 'auth.json');
 
 const DEFAULT_ACCOUNTS = {
     accounts: [],
@@ -244,22 +245,48 @@ function isTokenExpiredOrExpiringSoon(account) {
     return Date.now() >= (account.expiresAt - TOKEN_EXPIRY_BUFFER_MS);
 }
 
+/**
+ * Write refreshed tokens back to Codex CLI's auth.json.
+ * Only called for accounts with source === 'imported'.
+ */
+function _writeBackToCodex(account) {
+    try {
+        if (!existsSync(CODEX_AUTH_FILE)) {
+            console.warn('[AccountManager] Codex auth.json not found, skip writeback');
+            return;
+        }
+
+        const raw = JSON.parse(readFileSync(CODEX_AUTH_FILE, 'utf8'));
+        if (!raw.tokens) return;
+
+        raw.tokens.access_token = account.accessToken;
+        raw.tokens.refresh_token = account.refreshToken;
+        if (account.idToken) raw.tokens.id_token = account.idToken;
+        raw.last_refresh = new Date().toISOString();
+
+        writeFileSync(CODEX_AUTH_FILE, JSON.stringify(raw, null, 2), 'utf8');
+        console.log(`[AccountManager] Wrote back refreshed token to Codex auth.json`);
+    } catch (e) {
+        console.warn(`[AccountManager] Failed to write back to Codex: ${e.message}`);
+    }
+}
+
 async function refreshAccountToken(email) {
     const data = loadAccounts();
     const account = data.accounts.find(a => a.email === email);
-    
+
     if (!account) {
         return { success: false, message: `Account not found: ${email}` };
     }
-    
+
     if (!account.refreshToken) {
         return { success: false, message: 'No refresh token available' };
     }
-    
+
     try {
         const tokens = await refreshAccessToken(account.refreshToken);
         const accountInfo = extractAccountInfo(tokens.accessToken);
-        
+
         const index = data.accounts.findIndex(a => a.email === email);
         if (index >= 0) {
             data.accounts[index].accessToken = tokens.accessToken;
@@ -270,19 +297,24 @@ async function refreshAccountToken(email) {
                 data.accounts[index].planType = accountInfo.planType;
             }
             saveAccounts(data);
-            
+
             tokenCache.set(email, {
                 token: tokens.accessToken,
                 extractedAt: Date.now()
             });
-            
+
             if (data.activeAccount === email) {
                 updateAccountAuth(data.accounts[index]);
             }
+
+            // Write back to Codex if this account was imported from there
+            if (data.accounts[index].source === 'imported') {
+                _writeBackToCodex(data.accounts[index]);
+            }
         }
-        
+
         console.log(`[AccountManager] Token refreshed for: ${email}`);
-        
+
         // Auto-fetch quota after refresh
         try {
             const quotaData = await fetchQuota(tokens.accessToken, accountInfo.accountId);
@@ -317,30 +349,28 @@ function startAutoRefresh() {
     if (autoRefreshIntervalId) {
         clearInterval(autoRefreshIntervalId);
     }
-    
-    setTimeout(async () => {
-        console.log('[AccountManager] Startup: refreshing all account tokens...');
-        const data = loadAccounts();
-        for (const account of data.accounts) {
-            if (account.refreshToken) {
-                console.log(`[AccountManager] Startup refresh for ${account.email}`);
-                await refreshAccountToken(account.email);
-            }
+
+    // Initial check on startup (delayed 3s) — only refresh if expired or expiring soon
+    setTimeout(() => _checkAndRefreshExpiring('startup'), 3000);
+
+    // Periodic check every 10 minutes — only refresh tokens that are about to expire
+    autoRefreshIntervalId = setInterval(() => _checkAndRefreshExpiring('periodic'), TOKEN_CHECK_INTERVAL_MS);
+
+    console.log('[AccountManager] Smart auto-refresh started (check every 10 min, refresh only when expiring)');
+}
+
+async function _checkAndRefreshExpiring(trigger) {
+    const data = loadAccounts();
+    for (const account of data.accounts) {
+        if (!account.refreshToken || account.enabled === false) continue;
+
+        if (isTokenExpiredOrExpiringSoon(account)) {
+            const remainMs = account.expiresAt ? account.expiresAt - Date.now() : -1;
+            const remainStr = remainMs > 0 ? `${Math.round(remainMs / 1000)}s left` : 'expired';
+            console.log(`[AccountManager] ${trigger}: refreshing ${account.email} (${remainStr})`);
+            await refreshAccountToken(account.email);
         }
-    }, 2000);
-    
-    autoRefreshIntervalId = setInterval(async () => {
-        const data = loadAccounts();
-        
-        for (const account of data.accounts) {
-            if (account.refreshToken) {
-                console.log(`[AccountManager] Periodic refresh for ${account.email}`);
-                await refreshAccountToken(account.email);
-            }
-        }
-    }, TOKEN_REFRESH_INTERVAL_MS);
-    
-    console.log('[AccountManager] Auto-refresh started (every 55 minutes)');
+    }
 }
 
 function stopAutoRefresh() {
@@ -353,7 +383,7 @@ function stopAutoRefresh() {
 
 function getCachedToken(email) {
     const cached = tokenCache.get(email);
-    if (cached && (Date.now() - cached.extractedAt) < TOKEN_REFRESH_INTERVAL_MS) {
+    if (cached && (Date.now() - cached.extractedAt) < TOKEN_CHECK_INTERVAL_MS) {
         return cached.token;
     }
     return null;
@@ -511,7 +541,7 @@ export {
     isTokenExpiredOrExpiringSoon,
     getCachedToken,
     setCachedToken,
-    TOKEN_REFRESH_INTERVAL_MS,
+    TOKEN_CHECK_INTERVAL_MS,
     ACCOUNTS_FILE,
     CONFIG_DIR
 };
