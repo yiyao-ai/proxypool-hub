@@ -174,9 +174,12 @@ export async function handleResponses(req, res) {
     const hasApiKeys = hasKeysForTypes(chatKeyTypes);
     const hasClaudeAccounts = _getUsableClaudeAccounts().length > 0;
 
-    if (priority === 'apikey-first' && hasApiKeys && parsed) {
-        const result = await _handleResponsesViaApiKey(res, parsed, modelId, isStreaming, chatKeyTypes, startTime);
-        if (result !== false) return;
+    if (priority === 'apikey-first') {
+        // apikey-first: API Key → ChatGPT accounts → Claude accounts
+        if (hasApiKeys && parsed) {
+            const result = await _handleResponsesViaApiKey(res, parsed, modelId, isStreaming, chatKeyTypes, startTime);
+            if (result !== false) return;
+        }
         if (hasAccounts) {
             const poolResult = await _handleResponsesViaAccountPool(req, res, rawBody, contentEncoding, modelId, isStreaming, startTime);
             if (poolResult !== false) return;
@@ -185,22 +188,20 @@ export async function handleResponses(req, res) {
             const claudeResult = await _handleResponsesViaClaudeAccount(res, parsed, modelId, isStreaming, startTime);
             if (claudeResult !== false) return;
         }
-        return res.status(503).json({ error: { message: 'All API keys and accounts exhausted.' } });
-    }
-
-    // account-first (default)
-    if (hasAccounts) {
-        const poolResult = await _handleResponsesViaAccountPool(req, res, rawBody, contentEncoding, modelId, isStreaming, startTime);
-        if (poolResult !== false) return;
-    }
-    if (hasApiKeys && parsed) {
-        const result = await _handleResponsesViaApiKey(res, parsed, modelId, isStreaming, chatKeyTypes, startTime);
-        if (result !== false) return;
-    }
-    // Fallback to Claude accounts
-    if (hasClaudeAccounts && parsed) {
-        const claudeResult = await _handleResponsesViaClaudeAccount(res, parsed, modelId, isStreaming, startTime);
-        if (claudeResult !== false) return;
+    } else {
+        // account-first (default): ChatGPT accounts → Claude accounts → API Key
+        if (hasAccounts) {
+            const poolResult = await _handleResponsesViaAccountPool(req, res, rawBody, contentEncoding, modelId, isStreaming, startTime);
+            if (poolResult !== false) return;
+        }
+        if (hasClaudeAccounts && parsed) {
+            const claudeResult = await _handleResponsesViaClaudeAccount(res, parsed, modelId, isStreaming, startTime);
+            if (claudeResult !== false) return;
+        }
+        if (hasApiKeys && parsed) {
+            const result = await _handleResponsesViaApiKey(res, parsed, modelId, isStreaming, chatKeyTypes, startTime);
+            if (result !== false) return;
+        }
     }
 
     if (!hasAccounts && !hasApiKeys && !hasClaudeAccounts) {

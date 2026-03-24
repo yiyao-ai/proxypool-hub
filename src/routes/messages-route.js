@@ -56,9 +56,12 @@ export async function handleMessages(req, res) {
     const hasApiKeys = !!selectKey('anthropic');
     const hasClaudeAccounts = _getUsableClaudeAccounts().length > 0;
 
-    if (priority === 'apikey-first' && hasApiKeys) {
-        const result = await _handleViaApiKey(req, res, body, requestedModel, startTime);
-        if (result !== false) return;
+    if (priority === 'apikey-first') {
+        // apikey-first: API Key → ChatGPT accounts → Claude accounts
+        if (hasApiKeys) {
+            const result = await _handleViaApiKey(req, res, body, requestedModel, startTime);
+            if (result !== false) return;
+        }
         if (hasAccounts) {
             const poolResult = await _handleViaAccountPool(req, res, body, requestedModel, upstreamModel, isStreaming, startTime);
             if (poolResult !== false) return;
@@ -67,22 +70,20 @@ export async function handleMessages(req, res) {
             const claudeResult = await _handleViaClaudeAccount(res, body, requestedModel, isStreaming, startTime);
             if (claudeResult !== false) return;
         }
-        return handleStreamError(res, new Error('No available API keys or accounts'), requestedModel, startTime);
-    }
-
-    // account-first (default)
-    if (hasAccounts) {
-        const result = await _handleViaAccountPool(req, res, body, requestedModel, upstreamModel, isStreaming, startTime);
-        if (result !== false) return;
-    }
-    if (hasApiKeys) {
-        const result = await _handleViaApiKey(req, res, body, requestedModel, startTime);
-        if (result !== false) return;
-    }
-    // Fallback to Claude accounts
-    if (hasClaudeAccounts) {
-        const result = await _handleViaClaudeAccount(res, body, requestedModel, isStreaming, startTime);
-        if (result !== false) return;
+    } else {
+        // account-first (default): ChatGPT accounts → Claude accounts → API Key
+        if (hasAccounts) {
+            const result = await _handleViaAccountPool(req, res, body, requestedModel, upstreamModel, isStreaming, startTime);
+            if (result !== false) return;
+        }
+        if (hasClaudeAccounts) {
+            const result = await _handleViaClaudeAccount(res, body, requestedModel, isStreaming, startTime);
+            if (result !== false) return;
+        }
+        if (hasApiKeys) {
+            const result = await _handleViaApiKey(req, res, body, requestedModel, startTime);
+            if (result !== false) return;
+        }
     }
 
     if (!hasAccounts && !hasApiKeys && !hasClaudeAccounts) {
