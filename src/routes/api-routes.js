@@ -39,7 +39,8 @@ import {
   handleRemoveAccount,
   handleImportAccount,
   handleGetQuota,
-  handleGetAllQuotas
+  handleGetAllQuotas,
+  handleToggleAccount
 } from './accounts-route.js';
 
 import {
@@ -109,6 +110,7 @@ export function registerApiRoutes(app, { port }) {
   app.post('/accounts/oauth/cleanup', handleOAuthCleanup);
   app.post('/accounts/:email/refresh', handleRefreshAccount);
 
+  app.put('/accounts/:email/toggle', handleToggleAccount);
   app.delete('/accounts/:email', handleRemoveAccount);
 
   // ─── Claude Account Management ────────────────────────────────────────────

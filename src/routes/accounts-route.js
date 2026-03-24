@@ -20,6 +20,7 @@ import {
   getActiveAccount,
   setActiveAccount,
   removeAccount,
+  toggleAccount,
   listAccounts,
   refreshActiveAccount,
   refreshAccountToken,
@@ -209,6 +210,19 @@ export function handleRemoveAccount(req, res) {
   res.json(result);
 }
 
+export function handleToggleAccount(req, res) {
+  const email = decodeURIComponent(req.params.email);
+  const { enabled } = req.body;
+  if (typeof enabled !== 'boolean') {
+    return res.status(400).json({ success: false, error: 'enabled must be a boolean' });
+  }
+  const result = toggleAccount(email, enabled);
+  if (result.success) {
+    logger.info(`Account ${email} ${enabled ? 'enabled' : 'disabled'}`);
+  }
+  res.json(result);
+}
+
 export function handleImportAccount(req, res) {
   const result = importFromCodex();
   res.json(result);
@@ -313,6 +327,7 @@ export default {
   handleRefreshAllAccounts,
   handleRefreshActiveAccount,
   handleRemoveAccount,
+  handleToggleAccount,
   handleImportAccount,
   handleGetQuota,
   handleGetAllQuotas

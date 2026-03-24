@@ -175,9 +175,20 @@ function removeAccount(email) {
     return { success: true, message: `Account removed: ${email}` };
 }
 
+function toggleAccount(email, enabled) {
+    const data = loadAccounts();
+    const account = data.accounts.find(a => a.email === email);
+    if (!account) {
+        return { success: false, message: `Account not found: ${email}` };
+    }
+    account.enabled = enabled;
+    saveAccounts(data);
+    return { success: true, message: `Account ${email} ${enabled ? 'enabled' : 'disabled'}`, enabled };
+}
+
 function listAccounts() {
     const data = loadAccounts();
-    
+
     const accounts = data.accounts.map(account => {
         const info = extractAccountInfo(account.accessToken);
         return {
@@ -187,6 +198,7 @@ function listAccounts() {
             addedAt: account.addedAt,
             lastUsed: account.lastUsed,
             isActive: account.email === data.activeAccount,
+            enabled: account.enabled !== false,
             tokenExpired: info?.expiresAt ? info.expiresAt < Date.now() : false,
             quota: account.quota || null
         };
@@ -483,6 +495,7 @@ export {
     getActiveAccount,
     setActiveAccount,
     removeAccount,
+    toggleAccount,
     listAccounts,
     refreshActiveAccount,
     refreshAccountToken,

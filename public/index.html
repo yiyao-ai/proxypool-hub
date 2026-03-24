@@ -506,10 +506,10 @@
                                     <td class="py-4 pl-6">
                                         <div class="flex items-center gap-2">
                                             <div class="w-2 h-2 rounded-full flex-shrink-0"
-                                                :class="acc.isActive ? 'bg-neon-green shadow-[0_0_8px_rgba(34,197,94,0.6)] animate-pulse' : 'bg-gray-500'"></div>
-                                            <span class="text-xs font-mono font-semibold"
-                                                :class="acc.isActive ? 'text-neon-green' : 'text-gray-500'"
-                                                x-text="acc.isActive ? t('activeStatus') : t('idleStatus')"></span>
+                                                :class="!acc.enabled ? 'bg-red-500' : acc.isActive ? 'bg-neon-green shadow-[0_0_8px_rgba(34,197,94,0.6)]' : 'bg-gray-500'"></div>
+                                            <span class="text-xs font-mono"
+                                                :class="!acc.enabled ? 'text-red-400' : acc.isActive ? 'text-neon-green' : 'text-gray-500'"
+                                                x-text="!acc.enabled ? t('disabled') : acc.isActive ? t('activeStatus') : t('idleStatus')"></span>
                                         </div>
                                     </td>
                                     <td class="py-4">
@@ -553,7 +553,11 @@
                                         </template>
                                     </td>
                                     <td class="py-4 pr-6">
-                                        <div class="flex justify-end gap-2">
+                                        <div class="flex justify-end items-center gap-2">
+                                            <button class="px-3 py-1 text-[10px] font-bold font-mono uppercase rounded transition-all"
+                                                :class="acc.enabled ? 'bg-yellow-500/10 text-yellow-400 border border-yellow-500/30 hover:bg-yellow-500/20' : 'bg-green-500/10 text-green-400 border border-green-500/30 hover:bg-green-500/20'"
+                                                @click="toggleAccountEnabled(acc.email, !acc.enabled)"
+                                                x-text="acc.enabled ? t('actionDisable') : t('actionEnable')"></button>
                                             <button x-show="!acc.isActive"
                                                 class="px-3 py-1 text-[10px] font-bold font-mono uppercase tracking-wider rounded bg-neon-purple/10 text-neon-purple hover:bg-neon-purple/20 border border-neon-purple/30 hover:border-neon-purple/50 transition-all"
                                                 @click="switchAccount(acc.email)" x-text="t('switchBtn')"></button>
@@ -1188,7 +1192,7 @@
                                     :class="day.errors > 0 ? 'bg-gradient-to-t from-red-500/60 to-red-400/40' : 'bg-gradient-to-t from-neon-cyan/60 to-neon-cyan/30'"
                                     :style="'height: ' + Math.max(4, (day.requests / dailyChartMax) * 100) + '%'">
                                 </div>
-                                <span class="text-[8px] font-mono text-gray-600 truncate w-full text-center" x-text="day.date.slice(5)"></span>
+                                <span class="text-[8px] font-mono text-gray-600 truncate w-full text-center hidden" x-text="day.date.slice(5)"></span>
                                 <!-- Tooltip -->
                                 <div class="absolute bottom-full mb-2 left-1/2 -translate-x-1/2 bg-space-800 border border-space-border/60 rounded-lg px-3 py-2 text-[10px] font-mono hidden group-hover:block z-10 whitespace-nowrap shadow-xl">
                                     <div class="text-gray-300" x-text="day.date"></div>
@@ -1215,7 +1219,7 @@
                                 </tr>
                             </thead>
                             <tbody>
-                                <template x-for="day in dailyStats" :key="day.date">
+                                <template x-for="day in [...dailyStats].reverse()" :key="day.date">
                                     <tr class="border-b border-space-border/10 hover:bg-white/[0.03]">
                                         <td class="py-2 font-mono text-xs text-gray-300" x-text="day.date"></td>
                                         <td class="py-2 text-right font-mono text-xs text-gray-300" x-text="day.requests"></td>

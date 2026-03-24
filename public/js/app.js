@@ -440,6 +440,19 @@ document.addEventListener('alpine:init', () => {
             }
         },
 
+        async toggleAccountEnabled(email, enabled) {
+            const { ok, data } = await this.api(`/accounts/${encodeURIComponent(email)}/toggle`, {
+                method: 'PUT',
+                body: JSON.stringify({ enabled })
+            });
+            if (ok && data.success) {
+                this.showToast(data.message, 'success');
+                this.refreshAccounts();
+            } else {
+                this.showToast(data?.message || data?.error || this.t('updateFailed'), 'error');
+            }
+        },
+
         confirmDelete(email) {
             this.deleteTarget = email;
             this.showDeleteModal = true;
