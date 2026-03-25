@@ -13,6 +13,66 @@ const OPENCLAW_CONFIG_FILE = join(OPENCLAW_DIR, 'openclaw.json');
 
 const PROVIDER_ID = 'proxypool';
 
+const ANTHROPIC_MODELS = [
+    {
+        id: 'claude-opus-4-6',
+        name: 'Claude Opus 4.6',
+        reasoning: true,
+        input: ['text', 'image'],
+        contextWindow: 200000,
+        maxTokens: 32768,
+        cost: { input: 0.015, output: 0.075, cacheRead: 0.0015, cacheWrite: 0.01875 }
+    },
+    {
+        id: 'claude-sonnet-4-6',
+        name: 'Claude Sonnet 4.6',
+        reasoning: true,
+        input: ['text', 'image'],
+        contextWindow: 200000,
+        maxTokens: 16384,
+        cost: { input: 0.003, output: 0.015, cacheRead: 0.0003, cacheWrite: 0.00375 }
+    },
+    {
+        id: 'claude-haiku-4-5',
+        name: 'Claude Haiku 4.5',
+        reasoning: false,
+        input: ['text', 'image'],
+        contextWindow: 200000,
+        maxTokens: 8192,
+        cost: { input: 0.0008, output: 0.004, cacheRead: 0.00008, cacheWrite: 0.001 }
+    }
+];
+
+const OPENAI_MODELS = [
+    {
+        id: 'gpt-5.2',
+        name: 'GPT-5.2',
+        reasoning: true,
+        input: ['text', 'image'],
+        contextWindow: 128000,
+        maxTokens: 16384,
+        cost: { input: 0.003, output: 0.015, cacheRead: 0, cacheWrite: 0 }
+    },
+    {
+        id: 'gpt-5.2-codex',
+        name: 'GPT-5.2 Codex',
+        reasoning: true,
+        input: ['text'],
+        contextWindow: 192000,
+        maxTokens: 32768,
+        cost: { input: 0.003, output: 0.015, cacheRead: 0, cacheWrite: 0 }
+    },
+    {
+        id: 'claude-sonnet-4-6',
+        name: 'Claude Sonnet 4.6 (via proxy)',
+        reasoning: true,
+        input: ['text', 'image'],
+        contextWindow: 200000,
+        maxTokens: 16384,
+        cost: { input: 0.003, output: 0.015, cacheRead: 0.0003, cacheWrite: 0.00375 }
+    }
+];
+
 function ensureOpenClawDir() {
     if (!existsSync(OPENCLAW_DIR)) {
         mkdirSync(OPENCLAW_DIR, { recursive: true });
@@ -68,47 +128,45 @@ export function setProxyMode(port, { apiType = 'anthropic-messages' } = {}) {
 
     // Ensure nested structures exist
     if (!config.models) config.models = {};
+    config.models.mode = 'merge';
     if (!config.models.providers) config.models.providers = {};
     if (!config.agents) config.agents = {};
     if (!config.agents.defaults) config.agents.defaults = {};
     if (!config.agents.defaults.model) config.agents.defaults.model = {};
-    if (!config.agents.defaults.models) config.agents.defaults.models = {};
 
     const baseUrl = `http://localhost:${port}`;
 
     const models = apiType === 'anthropic-messages'
-        ? [
-            { id: 'claude-opus-4-6', name: 'Claude Opus 4.6' },
-            { id: 'claude-sonnet-4-6', name: 'Claude Sonnet 4.6' },
-            { id: 'claude-haiku-4-5', name: 'Claude Haiku 4.5' }
-        ]
-        : [
-            { id: 'gpt-5.2', name: 'GPT-5.2' },
-            { id: 'gpt-5.2-codex', name: 'GPT-5.2 Codex' },
-            { id: 'claude-sonnet-4-6', name: 'Claude Sonnet 4.6 (via proxy)' }
-        ];
+        ? ANTHROPIC_MODELS
+        : OPENAI_MODELS;
 
     const defaultModel = apiType === 'anthropic-messages'
         ? 'claude-sonnet-4-6'
         : 'gpt-5.2';
 
-    // Set the custom provider
+    // Set the custom provider (store previousModel inside provider entry to avoid unknown-key config errors)
     config.models.providers[PROVIDER_ID] = {
         baseUrl,
         apiKey: 'sk-ant-proxy',
         api: apiType,
-        models
+        models,
+        _previousModel: (!previousModel.startsWith(`${PROVIDER_ID}/`)) ? previousModel : (config.models.providers[PROVIDER_ID]?._previousModel || '')
     };
 
+    // Save previous model for later restoration (stored inside the provider entry to avoid unknown-key errors)
+    const previousModel = config.agents.defaults.model.primary || '';
+
     // Set default model to use our provider
-    const previousModel = config.agents.defaults.model.primary;
     config.agents.defaults.model.primary = `${PROVIDER_ID}/${defaultModel}`;
 
-    // Add model aliases for easy switching
-    for (const m of models) {
-        config.agents.defaults.models[`${PROVIDER_ID}/${m.id}`] = {
-            alias: m.name
-        };
+    // Add models to allowlist only if user already has an allowlist
+    const existingAllowlist = config.agents.defaults.models;
+    if (existingAllowlist && Object.keys(existingAllowlist).length > 0) {
+        for (const m of models) {
+            if (!existingAllowlist[`${PROVIDER_ID}/${m.id}`]) {
+                existingAllowlist[`${PROVIDER_ID}/${m.id}`] = {};
+            }
+        }
     }
 
     writeFileSync(OPENCLAW_CONFIG_FILE, JSON.stringify(config, null, 2), 'utf8');
@@ -136,7 +194,7 @@ export function setDirectMode() {
         delete config.models.providers[PROVIDER_ID];
     }
 
-    // Remove model aliases
+    // Remove model entries from allowlist
     if (config.agents?.defaults?.models) {
         for (const key of Object.keys(config.agents.defaults.models)) {
             if (key.startsWith(`${PROVIDER_ID}/`)) {
@@ -145,12 +203,10 @@ export function setDirectMode() {
         }
     }
 
-    // Reset default model if it's using our provider
+    // Restore previous model if currently using our provider
     if (config.agents?.defaults?.model?.primary?.startsWith(`${PROVIDER_ID}/`)) {
-        // Try to fall back to first available non-proxypool model
-        const otherModels = Object.keys(config.agents?.defaults?.models || {})
-            .filter(k => !k.startsWith(`${PROVIDER_ID}/`));
-        config.agents.defaults.model.primary = otherModels[0] || '';
+        const savedModel = config.models?.providers?.[PROVIDER_ID]?._previousModel;
+        config.agents.defaults.model.primary = savedModel || '';
     }
 
     writeFileSync(OPENCLAW_CONFIG_FILE, JSON.stringify(config, null, 2), 'utf8');

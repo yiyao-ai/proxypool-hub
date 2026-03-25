@@ -22,14 +22,6 @@ export function handleGetOpenClawConfig(req, res) {
  */
 export function handleSetOpenClawProxy(req, res, { port }) {
     try {
-        const status = getProxyStatus();
-        if (!status.installed) {
-            return res.status(404).json({
-                success: false,
-                error: 'OpenClaw config not found (~/.openclaw/openclaw.json). Install OpenClaw first.'
-            });
-        }
-
         const { apiType } = req.body || {};
         const result = setProxyMode(port, { apiType: apiType || 'anthropic-messages' });
         logger.info(`[OpenClawConfig] Proxy configured: ${result.baseUrl} (${result.apiType})`);

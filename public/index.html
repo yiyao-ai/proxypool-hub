@@ -399,11 +399,14 @@
                     <div class="bg-space-800/50 border border-space-border/30 rounded-lg p-4 font-mono text-sm text-gray-300">
                         <div class="text-gray-500 mb-2" x-text="t('openclawSetConfig')"></div>
                         <div class="text-neon-cyan text-xs mb-1">~/.openclaw/openclaw.json</div>
-                        <div class="text-orange-300">"models": { "providers": { "proxypool": {</div>
-                        <div class="text-orange-300 pl-4">"baseUrl": "http://localhost:8081",</div>
-                        <div class="text-orange-300 pl-4">"apiKey": "sk-ant-proxy",</div>
-                        <div class="text-orange-300 pl-4">"api": "anthropic-messages"</div>
-                        <div class="text-orange-300">} } }</div>
+                        <div class="text-orange-300">"models": { "mode": "merge", "providers": {</div>
+                        <div class="text-orange-300 pl-4">"proxypool": {</div>
+                        <div class="text-orange-300 pl-6">"baseUrl": "http://localhost:8081",</div>
+                        <div class="text-orange-300 pl-6">"apiKey": "sk-ant-proxy",</div>
+                        <div class="text-orange-300 pl-6">"api": "anthropic-messages",</div>
+                        <div class="text-orange-300 pl-6">"models": [{ "id": "...", "contextWindow": ... }]</div>
+                        <div class="text-orange-300 pl-4">}</div>
+                        <div class="text-orange-300">} }</div>
                         <div class="text-gray-500 mt-3 mb-2" x-text="t('runOpenClaw')"></div>
                         <div class="text-neon-green">openclaw</div>
                     </div>

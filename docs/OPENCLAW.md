@@ -6,7 +6,7 @@
 
 Open http://localhost:8081 → Settings tab → Click **"One-click configure OpenClaw"**.
 
-This automatically adds a `proxypool` provider to your `~/.openclaw/openclaw.json` and sets it as the default model.
+This automatically adds a `proxypool` provider to your `~/.openclaw/openclaw.json` and sets it as the default model. It works whether or not the config file already exists.
 
 ## Manual Setup
 
@@ -15,15 +15,40 @@ Add the following to `~/.openclaw/openclaw.json`:
 ```json
 {
   "models": {
+    "mode": "merge",
     "providers": {
       "proxypool": {
         "baseUrl": "http://localhost:8081",
         "apiKey": "sk-ant-proxy",
         "api": "anthropic-messages",
         "models": [
-          { "id": "claude-opus-4-6", "name": "Claude Opus 4.6" },
-          { "id": "claude-sonnet-4-6", "name": "Claude Sonnet 4.6" },
-          { "id": "claude-haiku-4-5", "name": "Claude Haiku 4.5" }
+          {
+            "id": "claude-opus-4-6",
+            "name": "Claude Opus 4.6",
+            "reasoning": true,
+            "input": ["text", "image"],
+            "contextWindow": 200000,
+            "maxTokens": 32768,
+            "cost": { "input": 0.015, "output": 0.075, "cacheRead": 0.0015, "cacheWrite": 0.01875 }
+          },
+          {
+            "id": "claude-sonnet-4-6",
+            "name": "Claude Sonnet 4.6",
+            "reasoning": true,
+            "input": ["text", "image"],
+            "contextWindow": 200000,
+            "maxTokens": 16384,
+            "cost": { "input": 0.003, "output": 0.015, "cacheRead": 0.0003, "cacheWrite": 0.00375 }
+          },
+          {
+            "id": "claude-haiku-4-5",
+            "name": "Claude Haiku 4.5",
+            "reasoning": false,
+            "input": ["text", "image"],
+            "contextWindow": 200000,
+            "maxTokens": 8192,
+            "cost": { "input": 0.0008, "output": 0.004, "cacheRead": 0.00008, "cacheWrite": 0.001 }
+          }
         ]
       }
     }
@@ -71,3 +96,5 @@ curl -X POST http://localhost:8081/openclaw/config/direct
 - Use `127.0.0.1` instead of `localhost` if you encounter connection issues
 - Verify proxy health: `curl http://localhost:8081/health`
 - Check OpenClaw logs for API errors
+- Run `openclaw doctor` to check configuration syntax and provider connectivity
+- If you ran `openclaw onboard` after configuring the proxy, re-click "One-click configure OpenClaw" — onboard may overwrite the config
