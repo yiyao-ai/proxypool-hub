@@ -239,13 +239,18 @@ async function _streamDirectWithRotation(res, anthropicRequest, creds, responseM
     initSSEResponse(res);
     const stream = sendMessageStream(anthropicRequest, creds.accessToken, creds.accountId, rotator, creds.email);
     await pipeSSEStream(res, stream);
-    logger.response(200, { model: anthropicRequest.model, duration: Date.now() - startTime });
+    const durationMs = Date.now() - startTime;
+    logger.response(200, { model: anthropicRequest.model, duration: durationMs });
+    logRequest({ route: '/v1/messages', method: 'POST', provider: 'chatgpt-pool', keyId: creds.email, model: responseModel, mappedModel: anthropicRequest.model, durationMs, status: 200, success: true });
 }
 
 async function _sendDirectWithRotation(res, anthropicRequest, creds, responseModel, startTime, rotator) {
     const response = await sendMessage(anthropicRequest, creds.accessToken, creds.accountId);
-    const duration = Date.now() - startTime;
-    logger.response(200, { model: anthropicRequest.model, tokens: response.usage?.output_tokens || 0, duration });
+    const durationMs = Date.now() - startTime;
+    const inputTokens = response.usage?.input_tokens || 0;
+    const outputTokens = response.usage?.output_tokens || 0;
+    logger.response(200, { model: anthropicRequest.model, tokens: outputTokens, duration: durationMs });
+    logRequest({ route: '/v1/messages', method: 'POST', provider: 'chatgpt-pool', keyId: creds.email, model: responseModel, mappedModel: anthropicRequest.model, inputTokens, outputTokens, durationMs, status: 200, success: true });
     res.json({ ...response, model: responseModel });
 }
 
@@ -253,13 +258,18 @@ async function _streamKilo(res, anthropicRequest, kiloTarget, responseModel, sta
     initSSEResponse(res);
     const stream = sendKiloMessageStream(anthropicRequest, kiloTarget);
     await pipeSSEStream(res, stream);
-    logger.response(200, { model: kiloTarget, duration: Date.now() - startTime });
+    const durationMs = Date.now() - startTime;
+    logger.response(200, { model: kiloTarget, duration: durationMs });
+    logRequest({ route: '/v1/messages', method: 'POST', provider: 'kilo', model: responseModel, mappedModel: kiloTarget, durationMs, status: 200, success: true });
 }
 
 async function _sendKilo(res, anthropicRequest, kiloTarget, responseModel, startTime) {
     const response = await sendKiloMessage(anthropicRequest, kiloTarget);
-    const duration = Date.now() - startTime;
-    logger.response(200, { model: kiloTarget, tokens: response.usage?.output_tokens || 0, duration });
+    const durationMs = Date.now() - startTime;
+    const inputTokens = response.usage?.input_tokens || 0;
+    const outputTokens = response.usage?.output_tokens || 0;
+    logger.response(200, { model: kiloTarget, tokens: outputTokens, duration: durationMs });
+    logRequest({ route: '/v1/messages', method: 'POST', provider: 'kilo', model: responseModel, mappedModel: kiloTarget, inputTokens, outputTokens, durationMs, status: 200, success: true });
     res.json({
         id: response.id || undefined,
         type: 'message',
@@ -322,6 +332,7 @@ async function _handleViaClaudeAccount(res, body, requestedModel, isStreaming, s
 
             const durationMs = Date.now() - startTime;
             recordRequest({ provider: 'claude-pool', keyId: account.email, model: body.model, durationMs, success: true });
+            logRequest({ route: '/v1/messages', method: 'POST', provider: 'claude-pool', keyId: account.email, model: requestedModel, mappedModel: body.model, durationMs, status: 200, success: true });
             logger.success(`[Messages] <<< OK via Claude account | ${account.email} | model=${body.model} | ${durationMs}ms`);
             return true;
         } catch (error) {
@@ -350,6 +361,7 @@ async function _handleViaClaudeAccount(res, body, requestedModel, isStreaming, s
                             }
                             const retryDurationMs = Date.now() - startTime;
                             recordRequest({ provider: 'claude-pool', keyId: account.email, model: body.model, durationMs: retryDurationMs, success: true });
+                            logRequest({ route: '/v1/messages', method: 'POST', provider: 'claude-pool', keyId: account.email, model: requestedModel, mappedModel: body.model, durationMs: retryDurationMs, status: 200, success: true });
                             logger.success(`[Messages] <<< OK via Claude account (after refresh) | ${account.email} | model=${body.model} | ${retryDurationMs}ms`);
                             return true;
                         }
@@ -365,6 +377,7 @@ async function _handleViaClaudeAccount(res, body, requestedModel, isStreaming, s
                 continue;
             }
             recordRequest({ provider: 'claude-pool', keyId: account.email, model: body.model, durationMs, success: false, error: error.message });
+            logRequest({ route: '/v1/messages', method: 'POST', provider: 'claude-pool', keyId: account.email, model: requestedModel, mappedModel: body.model, durationMs, status: 500, success: false, error: error.message });
             logger.error(`[Messages] Claude account error: ${account.email} - ${error.message}`);
             continue;
         }

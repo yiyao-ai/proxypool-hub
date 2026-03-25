@@ -234,11 +234,15 @@ export async function handleGeminiApiProxy(req, res) {
                     if (!upstreamRes.ok) {
                         const errorBody = await upstreamRes.text();
                         recordError(provider.id);
+                        recordUsageRequest({ provider: type, keyId: provider.id, model: mappedModel, durationMs, success: false, error: errorBody.slice(0, 200) });
+                        logRequest({ route: `/v1beta/models/${mappedModel}:${action}`, provider: type, keyId: provider.id, model: requestedModel, mappedModel, requestBody: geminiBody, responseBody: errorBody, durationMs, status: upstreamRes.status, success: false, error: errorBody.slice(0, 200) });
                         res.status(upstreamRes.status).type('json').send(errorBody);
                         return;
                     }
 
                     console.log(`[Gemini API Proxy] <<< OK | ${type}/${provider.name} | ${mappedModel} | ${durationMs}ms`);
+                    recordUsageRequest({ provider: type, keyId: provider.id, model: mappedModel, durationMs, success: true });
+                    logRequest({ route: `/v1beta/models/${mappedModel}:${action}`, provider: type, keyId: provider.id, model: requestedModel, mappedModel, requestBody: geminiBody, durationMs, status: 200, success: true });
 
                     // Stream passthrough: pipe upstream response directly to client
                     const contentType = upstreamRes.headers.get('content-type') || 'application/json';
@@ -273,6 +277,8 @@ export async function handleGeminiApiProxy(req, res) {
                 if (!response.ok) {
                     const errorBody = await response.text();
                     recordError(provider.id);
+                    recordUsageRequest({ provider: type, keyId: provider.id, model: mappedModel, durationMs, success: false, error: errorBody.slice(0, 200) });
+                    logRequest({ route: `/v1beta/models/${mappedModel}:${action}`, provider: type, keyId: provider.id, model: requestedModel, mappedModel, requestBody: geminiBody, responseBody: errorBody, durationMs, status: response.status, success: false, error: errorBody.slice(0, 200) });
                     logger.warn(`[Gemini API Proxy] Error ${response.status}: ${provider.name} - ${errorBody.slice(0, 200)}`);
                     continue;
                 }
@@ -285,6 +291,8 @@ export async function handleGeminiApiProxy(req, res) {
                 }
 
                 console.log(`[Gemini API Proxy] <<< OK | ${type}/${provider.name} | ${mappedModel} | ${durationMs}ms`);
+                recordUsageRequest({ provider: type, keyId: provider.id, model: mappedModel, durationMs, success: true });
+                logRequest({ route: `/v1beta/models/${mappedModel}:${action}`, provider: type, keyId: provider.id, model: requestedModel, mappedModel, requestBody: geminiBody, responseBody: responseBody, durationMs, status: 200, success: true });
 
                 if (isStreaming) {
                     _sendGeminiSSE(res, parsed);
