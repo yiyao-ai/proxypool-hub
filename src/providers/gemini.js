@@ -162,6 +162,144 @@ export class GeminiProvider extends BaseProvider {
         };
     }
 
+    // ─── Claude model → Gemini model mapping ──────────────────────────────
+
+    _mapToGeminiModel(model) {
+        if (!model) return DEFAULT_MODEL;
+        const m = model.toLowerCase();
+        if (m.includes('opus')) return 'gemini-2.5-pro';
+        if (m.includes('sonnet')) return DEFAULT_MODEL;
+        if (m.includes('haiku')) return 'gemini-2.0-flash';
+        return DEFAULT_MODEL;
+    }
+
+    // ─── Anthropic Messages → Gemini format ─────────────────────────────────
+
+    _convertAnthropicToGemini(messages, system) {
+        const contents = [];
+        let systemInstruction = null;
+
+        // Handle system prompt (string or content block array)
+        if (system) {
+            const text = typeof system === 'string'
+                ? system
+                : Array.isArray(system)
+                    ? system.filter(b => b.type === 'text').map(b => b.text).join('\n')
+                    : '';
+            if (text) systemInstruction = { parts: [{ text }] };
+        }
+
+        for (const msg of messages) {
+            const role = msg.role === 'assistant' ? 'model' : 'user';
+            const content = msg.content;
+
+            if (typeof content === 'string') {
+                contents.push({ role, parts: [{ text: content }] });
+            } else if (Array.isArray(content)) {
+                const parts = [];
+                for (const block of content) {
+                    if (block.type === 'text') {
+                        parts.push({ text: block.text });
+                    } else if (block.type === 'tool_use') {
+                        parts.push({ text: `[Tool call: ${block.name}(${JSON.stringify(block.input)})]` });
+                    } else if (block.type === 'tool_result') {
+                        const r = typeof block.content === 'string' ? block.content : JSON.stringify(block.content);
+                        parts.push({ text: `[Tool result: ${r}]` });
+                    } else if (block.type === 'thinking') {
+                        // skip thinking blocks
+                    }
+                }
+                if (parts.length > 0) contents.push({ role, parts });
+            }
+        }
+
+        // Merge consecutive same-role messages (Gemini requires alternating roles)
+        const merged = [];
+        for (const c of contents) {
+            if (merged.length > 0 && merged[merged.length - 1].role === c.role) {
+                merged[merged.length - 1].parts.push(...c.parts);
+            } else {
+                merged.push({ ...c, parts: [...c.parts] });
+            }
+        }
+
+        return { contents: merged, systemInstruction };
+    }
+
+    // ─── Gemini response → Anthropic Messages format ────────────────────────
+
+    _convertGeminiToAnthropic(geminiResponse, originalModel) {
+        const candidate = geminiResponse.candidates?.[0];
+        const parts = candidate?.content?.parts || [];
+        const usage = geminiResponse.usageMetadata || {};
+
+        const content = [];
+        for (const part of parts) {
+            if (part.text !== undefined && !part.thought) {
+                content.push({ type: 'text', text: part.text });
+            }
+        }
+        if (content.length === 0) {
+            content.push({ type: 'text', text: '' });
+        }
+
+        return {
+            id: `msg_gemini_${Date.now()}`,
+            type: 'message',
+            role: 'assistant',
+            content,
+            model: originalModel,
+            stop_reason: 'end_turn',
+            stop_sequence: null,
+            usage: {
+                input_tokens: usage.promptTokenCount || 0,
+                output_tokens: usage.candidatesTokenCount || 0
+            }
+        };
+    }
+
+    // ─── Anthropic Messages API passthrough (for /v1/messages endpoint) ──────
+
+    /**
+     * Accept an Anthropic Messages API body, convert to Gemini format,
+     * send to Gemini API, and return response in Anthropic Messages format.
+     */
+    async sendAnthropicRequest(body) {
+        const geminiModel = this._mapToGeminiModel(body.model);
+        const { contents, systemInstruction } = this._convertAnthropicToGemini(
+            body.messages || [], body.system
+        );
+
+        const geminiBody = {
+            contents,
+            generationConfig: {
+                maxOutputTokens: body.max_tokens || 8192,
+                temperature: body.temperature,
+                topP: body.top_p,
+            }
+        };
+        if (systemInstruction) geminiBody.systemInstruction = systemInstruction;
+
+        const url = `${this.baseUrl}/models/${geminiModel}:generateContent?key=${this.apiKey}`;
+        const response = await fetch(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(geminiBody)
+        });
+
+        if (!response.ok) return response;
+
+        const data = await response.json();
+        const anthropicResponse = this._convertGeminiToAnthropic(data, body.model);
+
+        return new Response(JSON.stringify(anthropicResponse), {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' }
+        });
+    }
+
+    // ─── OpenAI Chat Completions format (existing) ──────────────────────────
+
     async sendRequest(body) {
         const model = body.model || DEFAULT_MODEL;
         const { contents, systemInstruction } = this._convertMessages(body.messages || []);

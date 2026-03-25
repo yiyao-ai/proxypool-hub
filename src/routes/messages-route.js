@@ -9,7 +9,7 @@ import { listAccounts, getActiveAccount, save } from '../account-manager.js';
 import { loadAccounts as loadClaudeAccounts, refreshAccountToken, getAccount as getClaudeAccount } from '../claude-account-manager.js';
 import { sendClaudeMessage, sendClaudeStream } from '../claude-api.js';
 import { getServerSettings } from '../server-settings.js';
-import { selectKey, recordUsage, recordError, recordRateLimit } from '../api-key-manager.js';
+import { selectKey, getAllProviders, recordUsage, recordError, recordRateLimit } from '../api-key-manager.js';
 import { recordRequest } from '../usage-tracker.js';
 import { logRequest } from '../request-logger.js';
 
@@ -55,11 +55,16 @@ export async function handleMessages(req, res) {
     const hasAccounts = listAccounts().total > 0;
     const hasApiKeys = !!selectKey('anthropic');
     const hasClaudeAccounts = _getUsableClaudeAccounts().length > 0;
+    const hasCompatibleKeys = _getCompatibleProviders().length > 0;
 
     if (priority === 'apikey-first') {
-        // apikey-first: API Key → ChatGPT accounts → Claude accounts
+        // apikey-first: Anthropic Key → compatible keys → ChatGPT accounts → Claude accounts
         if (hasApiKeys) {
             const result = await _handleViaApiKey(req, res, body, requestedModel, startTime);
+            if (result !== false) return;
+        }
+        if (hasCompatibleKeys) {
+            const result = await _handleViaCompatibleKeys(res, body, requestedModel, isStreaming, startTime);
             if (result !== false) return;
         }
         if (hasAccounts) {
@@ -71,7 +76,7 @@ export async function handleMessages(req, res) {
             if (claudeResult !== false) return;
         }
     } else {
-        // account-first (default): ChatGPT accounts → Claude accounts → API Key
+        // account-first (default): ChatGPT accounts → Claude accounts → Anthropic Key → compatible keys
         if (hasAccounts) {
             const result = await _handleViaAccountPool(req, res, body, requestedModel, upstreamModel, isStreaming, startTime);
             if (result !== false) return;
@@ -84,9 +89,13 @@ export async function handleMessages(req, res) {
             const result = await _handleViaApiKey(req, res, body, requestedModel, startTime);
             if (result !== false) return;
         }
+        if (hasCompatibleKeys) {
+            const result = await _handleViaCompatibleKeys(res, body, requestedModel, isStreaming, startTime);
+            if (result !== false) return;
+        }
     }
 
-    if (!hasAccounts && !hasApiKeys && !hasClaudeAccounts) {
+    if (!hasAccounts && !hasApiKeys && !hasClaudeAccounts && !hasCompatibleKeys) {
         return sendAuthError(res, 'No accounts or API keys configured. Add them in the dashboard.');
     }
     return handleStreamError(res, new Error('All accounts and API keys exhausted'), requestedModel, startTime);
@@ -280,6 +289,182 @@ async function _sendKilo(res, anthropicRequest, kiloTarget, responseModel, start
         stop_sequence: null,
         usage: response.usage
     });
+}
+
+// ─── JSON → Anthropic SSE wrapper ──────────────────────────────────────────────
+
+/**
+ * Wrap a complete Anthropic Messages JSON response into SSE events.
+ * Used when the client expects streaming but the provider returned non-streaming JSON.
+ */
+function _sendAsAnthropicSSE(res, msg) {
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+    res.setHeader('X-Accel-Buffering', 'no');
+    res.flushHeaders();
+
+    const sse = (event, data) => res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+
+    // message_start
+    sse('message_start', {
+        type: 'message_start',
+        message: {
+            id: msg.id || `msg_proxy_${Date.now()}`,
+            type: 'message',
+            role: 'assistant',
+            content: [],
+            model: msg.model,
+            stop_reason: null,
+            stop_sequence: null,
+            usage: { input_tokens: msg.usage?.input_tokens || 0, output_tokens: 0 }
+        }
+    });
+
+    // content blocks
+    const content = msg.content || [];
+    for (let i = 0; i < content.length; i++) {
+        const block = content[i];
+        if (block.type === 'text') {
+            sse('content_block_start', { type: 'content_block_start', index: i, content_block: { type: 'text', text: '' } });
+            sse('content_block_delta', { type: 'content_block_delta', index: i, delta: { type: 'text_delta', text: block.text } });
+            sse('content_block_stop', { type: 'content_block_stop', index: i });
+        } else if (block.type === 'tool_use') {
+            sse('content_block_start', { type: 'content_block_start', index: i, content_block: { type: 'tool_use', id: block.id, name: block.name, input: {} } });
+            sse('content_block_delta', { type: 'content_block_delta', index: i, delta: { type: 'input_json_delta', partial_json: JSON.stringify(block.input || {}) } });
+            sse('content_block_stop', { type: 'content_block_stop', index: i });
+        }
+    }
+
+    // message_delta + message_stop
+    sse('message_delta', {
+        type: 'message_delta',
+        delta: { stop_reason: msg.stop_reason || 'end_turn', stop_sequence: null },
+        usage: { output_tokens: msg.usage?.output_tokens || 0 }
+    });
+    sse('message_stop', { type: 'message_stop' });
+
+    res.end();
+}
+
+// ─── Compatible API Keys (any provider with sendAnthropicRequest) ──────────────
+
+/**
+ * Get all available providers that support Anthropic Messages format passthrough.
+ * Excludes 'anthropic' type (handled separately by _handleViaApiKey).
+ * Any provider that implements sendAnthropicRequest() is automatically discovered.
+ */
+function _getCompatibleProviders() {
+    return getAllProviders().filter(p =>
+        p.isAvailable &&
+        p.type !== 'anthropic' &&
+        typeof p.sendAnthropicRequest === 'function'
+    );
+}
+
+/**
+ * Handle request via any compatible API key (Vertex AI, Gemini, etc.).
+ * Automatically discovers all providers that implement sendAnthropicRequest().
+ * Each provider handles its own format conversion internally.
+ * Returns false if no providers succeed.
+ */
+async function _handleViaCompatibleKeys(res, body, requestedModel, isStreaming, startTime) {
+    const providers = _getCompatibleProviders();
+    if (providers.length === 0) return false;
+
+    // Least-requests-first load balancing
+    providers.sort((a, b) => a.totalRequests - b.totalRequests);
+
+    const MAX_ATTEMPTS = Math.min(3, providers.length);
+
+    for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
+        const provider = providers[attempt];
+
+        try {
+            const response = await provider.sendAnthropicRequest(body);
+            const durationMs = Date.now() - startTime;
+
+            if (response.status === 429) {
+                const retryAfter = response.headers?.get?.('retry-after');
+                recordRateLimit(provider.id, retryAfter ? parseInt(retryAfter) * 1000 : 60000);
+                logger.warn(`[Messages] ${provider.type} rate limited: ${provider.name}`);
+                continue;
+            }
+
+            if (response.status === 401 || response.status === 403) {
+                recordError(provider.id);
+                logger.error(`[Messages] ${provider.type} auth failed: ${provider.name}`);
+                continue;
+            }
+
+            if (!response.ok) {
+                const errorBody = await response.text();
+                recordError(provider.id);
+                recordRequest({ provider: provider.type, keyId: provider.id, model: body.model, durationMs, success: false, error: errorBody.slice(0, 200) });
+                logRequest({ route: '/v1/messages', provider: provider.type, keyId: provider.id, model: body.model, requestBody: body, responseBody: errorBody, durationMs, status: response.status, success: false, error: errorBody.slice(0, 200) });
+                logger.warn(`[Messages] ${provider.type} error ${response.status}: ${provider.name} - ${errorBody.slice(0, 200)}`);
+                continue;
+            }
+
+            // Check if response is streaming (SSE) or JSON
+            const contentType = response.headers?.get?.('content-type') || '';
+            if (contentType.includes('text/event-stream')) {
+                // Native SSE: pipe directly to client
+                res.setHeader('Content-Type', 'text/event-stream');
+                res.setHeader('Cache-Control', 'no-cache');
+                res.setHeader('Connection', 'keep-alive');
+                res.setHeader('X-Accel-Buffering', 'no');
+                res.flushHeaders();
+
+                const reader = response.body.getReader();
+                try {
+                    while (true) {
+                        const { done, value } = await reader.read();
+                        if (done) break;
+                        res.write(value);
+                    }
+                } finally {
+                    res.end();
+                }
+
+                const streamDurationMs = Date.now() - startTime;
+                recordRequest({ provider: provider.type, keyId: provider.id, model: body.model, durationMs: streamDurationMs, success: true });
+                logRequest({ route: '/v1/messages', provider: provider.type, keyId: provider.id, model: requestedModel, mappedModel: body.model, durationMs: streamDurationMs, status: 200, success: true });
+                logger.info(`[Messages] OK via ${provider.type} (stream) | ${provider.name} | model=${body.model} | ${streamDurationMs}ms`);
+            } else {
+                // JSON response — read it
+                const responseBody = await response.text();
+
+                let inputTokens = 0, outputTokens = 0, parsed = null;
+                try {
+                    parsed = JSON.parse(responseBody);
+                    inputTokens = parsed.usage?.input_tokens || 0;
+                    outputTokens = parsed.usage?.output_tokens || 0;
+                } catch { /* ignore */ }
+
+                const cost = provider.estimateCost(body.model, inputTokens, outputTokens);
+                recordUsage(provider.id, { inputTokens, outputTokens, model: body.model });
+                recordRequest({ provider: provider.type, keyId: provider.id, model: body.model, inputTokens, outputTokens, cost, durationMs, success: true });
+                logRequest({ route: '/v1/messages', provider: provider.type, keyId: provider.id, model: requestedModel, mappedModel: body.model, inputTokens, outputTokens, cost, durationMs, status: 200, success: true });
+                logger.info(`[Messages] OK via ${provider.type} | ${provider.name} | model=${body.model} | ${inputTokens}+${outputTokens} tokens | $${cost.toFixed(4)} | ${durationMs}ms`);
+
+                if (isStreaming && parsed) {
+                    // Client expects SSE but provider returned JSON —
+                    // wrap the Anthropic Messages response in SSE events
+                    _sendAsAnthropicSSE(res, parsed);
+                } else {
+                    res.status(200).type('json').send(responseBody);
+                }
+            }
+            return;
+        } catch (error) {
+            recordError(provider.id);
+            recordRequest({ provider: provider.type, keyId: provider.id, model: body.model, durationMs: Date.now() - startTime, success: false, error: error.message });
+            logger.error(`[Messages] ${provider.type} network error: ${provider.name} - ${error.message}`);
+            continue;
+        }
+    }
+    return false;
 }
 
 // ─── Claude Account Pool ──────────────────────────────────────────────────────

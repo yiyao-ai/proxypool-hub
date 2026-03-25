@@ -144,17 +144,15 @@ export function setProxyMode(port, { apiType = 'anthropic-messages' } = {}) {
         ? 'claude-sonnet-4-6'
         : 'gpt-5.2';
 
-    // Set the custom provider (store previousModel inside provider entry to avoid unknown-key config errors)
+    const previousModel = config.agents.defaults.model.primary || '';
+
+    // Set the custom provider
     config.models.providers[PROVIDER_ID] = {
         baseUrl,
         apiKey: 'sk-ant-proxy',
         api: apiType,
-        models,
-        _previousModel: (!previousModel.startsWith(`${PROVIDER_ID}/`)) ? previousModel : (config.models.providers[PROVIDER_ID]?._previousModel || '')
+        models
     };
-
-    // Save previous model for later restoration (stored inside the provider entry to avoid unknown-key errors)
-    const previousModel = config.agents.defaults.model.primary || '';
 
     // Set default model to use our provider
     config.agents.defaults.model.primary = `${PROVIDER_ID}/${defaultModel}`;
@@ -203,10 +201,9 @@ export function setDirectMode() {
         }
     }
 
-    // Restore previous model if currently using our provider
+    // Reset default model if it's using our provider
     if (config.agents?.defaults?.model?.primary?.startsWith(`${PROVIDER_ID}/`)) {
-        const savedModel = config.models?.providers?.[PROVIDER_ID]?._previousModel;
-        config.agents.defaults.model.primary = savedModel || '';
+        config.agents.defaults.model.primary = '';
     }
 
     writeFileSync(OPENCLAW_CONFIG_FILE, JSON.stringify(config, null, 2), 'utf8');

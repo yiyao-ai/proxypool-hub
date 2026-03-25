@@ -194,11 +194,12 @@ export class VertexAIProvider extends BaseProvider {
     /**
      * Build Vertex AI endpoint URL for Claude models (rawPredict).
      */
-    _buildClaudeUrl(model) {
+    _buildClaudeUrl(model, { stream = false } = {}) {
         const ver = this._apiVersion(model);
         const loc = this._effectiveLocation(model);
         const domain = this._buildDomain(loc);
-        return `https://${domain}/${ver}/projects/${this.projectId}/locations/${loc}/publishers/anthropic/models/${model}:rawPredict`;
+        const method = stream ? 'streamRawPredict' : 'rawPredict';
+        return `https://${domain}/${ver}/projects/${this.projectId}/locations/${loc}/publishers/anthropic/models/${model}:${method}`;
     }
 
     // ─── Gemini format converters (reused from gemini.js) ────────────────────
@@ -511,6 +512,42 @@ export class VertexAIProvider extends BaseProvider {
         return new Response(JSON.stringify(this._convertAnthropicResponse(data, model)), {
             status: 200,
             headers: { 'Content-Type': 'application/json' }
+        });
+    }
+
+    // ─── Anthropic Messages passthrough (for /v1/messages endpoint) ────────
+
+    /**
+     * Accept an Anthropic Messages API body directly and forward to Vertex AI
+     * Claude rawPredict. No format conversion needed — just auth and URL.
+     * Returns a fetch Response object.
+     */
+    async sendAnthropicRequest(body) {
+        const token = await this._ensureToken();
+        const model = body.model || 'claude-sonnet-4-6';
+
+        if (!_isClaudeModel(model)) {
+            return new Response(JSON.stringify({
+                type: 'error',
+                error: { type: 'invalid_request_error', message: `Vertex AI rawPredict only supports Claude models, got: ${model}` }
+            }), { status: 400, headers: { 'Content-Type': 'application/json' } });
+        }
+
+        const isStream = body.stream === true;
+
+        // Build rawPredict body: same as Anthropic Messages but with vertex anthropic_version
+        const vertexBody = { ...body, anthropic_version: 'vertex-2023-10-16' };
+        // model is in the URL, not the body for rawPredict
+        delete vertexBody.model;
+
+        const url = this._buildClaudeUrl(model, { stream: isStream });
+        return fetch(url, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`
+            },
+            body: JSON.stringify(vertexBody)
         });
     }
 
