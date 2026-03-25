@@ -18,15 +18,16 @@ function showHelp() {
   console.log(`
 proxypool-hub v${packageJson.version}
 
-Proxy server for using ChatGPT Codex models with Claude Code CLI.
+Multi-protocol AI API proxy server with account pooling and visual dashboard.
+Supports Claude Code, Codex CLI, Gemini CLI, and OpenClaw.
 
 USAGE:
   proxypool-hub <command> [options]
 
 COMMANDS:
   start                 Start the proxy server (default port: 8081)
-  accounts              Manage ChatGPT accounts (interactive)
-  accounts add          Add a new ChatGPT account via OAuth
+  accounts              Manage accounts (interactive)
+  accounts add          Add a new account via OAuth
   accounts add --no-browser  Add account manually (headless/VM)
   accounts list         List all configured accounts
   accounts remove       Remove accounts interactively
@@ -45,22 +46,13 @@ EXAMPLES:
   PORT=3000 proxypool-hub start
   proxypool-hub accounts add
   proxypool-hub accounts add --no-browser
-  proxypool-hub accounts list
-  proxypool-hub accounts verify
 
-HEADLESS/VM USAGE:
-  1. Run: proxypool-hub accounts add --no-browser
-  2. Copy the URL shown and open in browser on another device
-  3. After login, paste the callback URL back in terminal
-
-CONFIGURATION:
-  Claude Code CLI (~/.claude/settings.json):
-    {
-      "env": {
-        "ANTHROPIC_BASE_URL": "http://localhost:8081",
-        "ANTHROPIC_API_KEY": "dummy"
-      }
-    }
+DASHBOARD:
+  Open http://localhost:8081 to:
+  - Manage ChatGPT & Claude accounts
+  - Configure CLI tools (Claude Code, Codex, Gemini, OpenClaw)
+  - Monitor usage, costs, and request logs
+  - Manage API keys and model mappings
 `);
 }
 
