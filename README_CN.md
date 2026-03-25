@@ -1,6 +1,6 @@
 # ProxyPool Hub
 
-![Architecture banner](./images/f757093f-507b-4453-994e-f8275f8b07a9.png)
+![ProxyPool Hub Dashboard](./images/dashboard.png)
 
 [![AGPL-3.0 License](https://img.shields.io/badge/License-AGPL--3.0-blue.svg)](https://www.gnu.org/licenses/agpl-3.0)
 [![Node.js Version](https://img.shields.io/badge/Node.js-18%2B-blue.svg)](https://nodejs.org/)
@@ -42,6 +42,26 @@
 - **模型映射** — 自定义每个 provider 解析到哪个上游模型
 - **API 网关** — 通过 API Key 将代理暴露给外部应用，带用量追踪
 - **国际化** — 中英文界面
+
+---
+
+## 界面预览
+
+| 仪表盘 | 账户管理 |
+|:-:|:-:|
+| ![Dashboard](./images/dashboard.png) | ![Accounts](./images/accounts.png) |
+
+| 设置与模型映射 | API Key 管理 |
+|:-:|:-:|
+| ![Settings](./images/settings.png) | ![API Keys](./images/apikeys.png) |
+
+| 用量统计 | 请求日志 |
+|:-:|:-:|
+| ![Usage](./images/usage_costs.png) | ![Request Logs](./images/request_logs.png) |
+
+### 操作演示
+
+![Demo](./images/demo.gif)
 
 ---
 

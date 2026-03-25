@@ -1,6 +1,6 @@
 # ProxyPool Hub
 
-![Architecture banner](./images/f757093f-507b-4453-994e-f8275f8b07a9.png)
+![ProxyPool Hub Dashboard](./images/dashboard.png)
 
 [![AGPL-3.0 License](https://img.shields.io/badge/License-AGPL--3.0-blue.svg)](https://www.gnu.org/licenses/agpl-3.0)
 [![Node.js Version](https://img.shields.io/badge/Node.js-18%2B-blue.svg)](https://nodejs.org/)
@@ -42,6 +42,26 @@
 - **Model Mapping** — Customize which upstream model each provider resolves to
 - **API Gateway** — Expose your proxy to external apps via API keys with usage tracking
 - **i18n** — English and Chinese interface
+
+---
+
+## Screenshots
+
+| Dashboard | Account Management |
+|:-:|:-:|
+| ![Dashboard](./images/dashboard.png) | ![Accounts](./images/accounts.png) |
+
+| Settings & Model Mapping | API Key Management |
+|:-:|:-:|
+| ![Settings](./images/settings.png) | ![API Keys](./images/apikeys.png) |
+
+| Usage & Costs | Request Logs |
+|:-:|:-:|
+| ![Usage](./images/usage_costs.png) | ![Request Logs](./images/request_logs.png) |
+
+### Demo
+
+![Demo](./images/demo.gif)
 
 ---
 
