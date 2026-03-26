@@ -226,6 +226,11 @@ const i18n = {
     apiKeyDeleteFailed: 'Failed to delete API key',
     apiKeyValid: 'API key is valid',
     apiKeyInvalid: 'API key is invalid or expired',
+    apiKeyUpdated: 'API key updated successfully',
+    testKey: 'Test',
+    editApiKey: 'Edit API Key',
+    editKeyHint: 'Leave empty to keep current key unchanged',
+    saveKey: 'Save',
     usageRefreshed: 'Usage data refreshed',
 
     // Azure OpenAI fields
@@ -537,6 +542,11 @@ const i18n = {
     apiKeyDeleteFailed: '删除 API 密钥失败',
     apiKeyValid: 'API 密钥有效',
     apiKeyInvalid: 'API 密钥无效或已过期',
+    apiKeyUpdated: 'API 密钥更新成功',
+    testKey: '测试',
+    editApiKey: '编辑 API 密钥',
+    editKeyHint: '留空则保持当前密钥不变',
+    saveKey: '保存',
     usageRefreshed: '用量数据已刷新',
 
     // Azure OpenAI fields

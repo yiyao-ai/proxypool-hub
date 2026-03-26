@@ -44,8 +44,8 @@ export function handleRemoveApiKey(req, res) {
 
 export function handleUpdateApiKey(req, res) {
     const { id } = req.params;
-    const { name, apiKey, baseUrl, enabled } = req.body;
-    const result = updateApiKey(id, { name, apiKey, baseUrl, enabled });
+    const { name, apiKey, baseUrl, enabled, deploymentName, apiVersion, projectId, location } = req.body;
+    const result = updateApiKey(id, { name, apiKey, baseUrl, enabled, deploymentName, apiVersion, projectId, location });
     if (!result.success) {
         return res.status(404).json(result);
     }

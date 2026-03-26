@@ -885,7 +885,7 @@ document.addEventListener('alpine:init', () => {
         async loadApiKeys() {
             const { ok, data } = await this.api('/api/keys');
             if (ok) {
-                this.apiKeysList = data.keys || [];
+                this.apiKeysList = (data.keys || []).map(k => ({ ...k, _testing: false }));
                 if (data.stats) {
                     this.apiKeyStats = {
                         totalKeys: data.stats.totalKeys || 0,
@@ -980,6 +980,93 @@ document.addEventListener('alpine:init', () => {
                 this.showToast(data?.error || this.t('apiKeyInvalid'), 'error');
             }
             this.loadApiKeys();
+        },
+
+        // ─── Test & Edit API Key ──────────────────────────────────────────
+
+        async testApiKey(id) {
+            const key = this.apiKeysList.find(k => k.id === id);
+            if (key) key._testing = true;
+            const { ok, data } = await this.api(`/api/keys/${id}/validate`, { method: 'POST' });
+            if (key) key._testing = false;
+            if (ok && data?.valid) {
+                this.showToast(this.t('apiKeyValid'), 'success');
+            } else {
+                this.showToast(data?.error || this.t('apiKeyInvalid'), 'error');
+            }
+        },
+
+        showEditKeyModal: false,
+        editKeyData: { id: '', name: '', type: '', apiKey: '', baseUrl: '', maskedKey: '', deploymentName: '', apiVersion: '', projectId: '', location: '' },
+        editKeyTesting: false,
+
+        openEditKeyModal(key) {
+            this.editKeyData = {
+                id: key.id,
+                name: key.name,
+                type: key.type,
+                apiKey: '',
+                baseUrl: key.baseUrl || '',
+                maskedKey: key.apiKey,
+                deploymentName: key.deploymentName || '',
+                apiVersion: key.apiVersion || '2024-10-21',
+                projectId: key.projectId || '',
+                location: key.location || 'us-central1',
+            };
+            this.showEditKeyModal = true;
+        },
+
+        _buildEditPatch() {
+            const d = this.editKeyData;
+            const patch = { name: d.name.trim() };
+            if (d.apiKey.trim()) patch.apiKey = d.apiKey.trim();
+            patch.baseUrl = d.baseUrl.trim() || undefined;
+            if (d.type === 'azure-openai') {
+                patch.deploymentName = d.deploymentName.trim();
+                patch.apiVersion = d.apiVersion.trim() || '2024-10-21';
+            }
+            if (d.type === 'vertex-ai') {
+                patch.projectId = d.projectId.trim();
+                patch.location = d.location.trim() || 'us-central1';
+            }
+            return patch;
+        },
+
+        async submitEditKey() {
+            const patch = this._buildEditPatch();
+            const { ok, data } = await this.api(`/api/keys/${this.editKeyData.id}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(patch),
+            });
+            if (ok && data?.success) {
+                this.showToast(this.t('apiKeyUpdated'), 'success');
+                this.showEditKeyModal = false;
+                this.loadApiKeys();
+            } else {
+                this.showToast(data?.error || this.t('apiKeyUpdateFailed'), 'error');
+            }
+        },
+
+        async testEditingKey() {
+            this.editKeyTesting = true;
+
+            // Save changes first, then validate
+            const patch = this._buildEditPatch();
+            await this.api(`/api/keys/${this.editKeyData.id}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(patch),
+            });
+
+            const { ok, data } = await this.api(`/api/keys/${this.editKeyData.id}/validate`, { method: 'POST' });
+            this.editKeyTesting = false;
+
+            if (ok && data?.valid) {
+                this.showToast(this.t('apiKeyValid'), 'success');
+            } else {
+                this.showToast(data?.error || this.t('apiKeyInvalid'), 'error');
+            }
         },
 
         // ─── Usage & Costs ────────────────────────────────────────────────

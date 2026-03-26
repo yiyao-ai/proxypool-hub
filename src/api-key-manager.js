@@ -141,6 +141,12 @@ export function updateApiKey(id, patch) {
     if (patch.apiKey !== undefined) key.apiKey = patch.apiKey;
     if (patch.baseUrl !== undefined) key.baseUrl = patch.baseUrl;
     if (patch.enabled !== undefined) key.enabled = patch.enabled;
+    // Azure OpenAI fields
+    if (patch.deploymentName !== undefined) key.deploymentName = patch.deploymentName;
+    if (patch.apiVersion !== undefined) key.apiVersion = patch.apiVersion;
+    // Vertex AI fields
+    if (patch.projectId !== undefined) key.projectId = patch.projectId;
+    if (patch.location !== undefined) key.location = patch.location;
 
     // Rebuild provider instance
     providerInstances.delete(id);
