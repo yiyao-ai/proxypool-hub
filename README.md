@@ -221,6 +221,13 @@ See [API Documentation](./docs/API.md) for the full reference.
 
 ---
 
+## Community
+
+- [GitHub Discussions](https://github.com/yiyao-ai/proxypool-hub/discussions) — Ask questions, share ideas, report issues
+- [Discord](https://discord.gg/GgxZSehxqG) — Real-time chat with the community
+
+---
+
 ## License
 
 This project is licensed under [AGPL-3.0](https://www.gnu.org/licenses/agpl-3.0).

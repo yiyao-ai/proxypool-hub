@@ -220,6 +220,13 @@ openai_base_url = "http://localhost:8081"
 
 ---
 
+## 社区
+
+- [GitHub Discussions](https://github.com/yiyao-ai/proxypool-hub/discussions) — 提问、交流、反馈
+- [Discord](https://discord.gg/GgxZSehxqG) — 实时聊天
+
+---
+
 ## 许可证
 
 本项目基于 [AGPL-3.0](https://www.gnu.org/licenses/agpl-3.0) 许可证开源。
