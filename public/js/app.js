@@ -42,6 +42,14 @@ document.addEventListener('alpine:init', () => {
         routingPriority: 'account-first',
         routingSaving: false,
 
+        // Proxy status
+        proxyStatus: {
+            claude: false,
+            codex: false,
+            gemini: false,
+            openclaw: false
+        },
+
         // Model mapping
         modelMappingData: null,
         modelMappingProviders: [],
@@ -167,7 +175,10 @@ document.addEventListener('alpine:init', () => {
             if (tab === 'accounts') { this.refreshAccounts(); this.refreshClaudeAccounts(); }
             if (tab === 'apikeys') this.loadApiKeys();
             if (tab === 'usage') this.loadUsageData();
-            if (tab === 'settings' && !this.modelMappingData) this.loadModelMappings();
+            if (tab === 'settings') {
+                if (!this.modelMappingData) this.loadModelMappings();
+                this.refreshProxyStatus();
+            }
         },
 
         async api(endpoint, options = {}) {
@@ -746,6 +757,19 @@ document.addEventListener('alpine:init', () => {
             this.testMappingResults = results;
         },
 
+        async refreshProxyStatus() {
+            const [claude, codex, gemini, openclaw] = await Promise.all([
+                this.api('/claude/config'),
+                this.api('/codex/config'),
+                this.api('/gemini-cli/config'),
+                this.api('/openclaw/config'),
+            ]);
+            this.proxyStatus.claude = !!(claude.ok && claude.data?.config?.env?.ANTHROPIC_BASE_URL?.includes('localhost'));
+            this.proxyStatus.codex = !!(codex.ok && codex.data?.chatgpt_base_url?.includes('localhost'));
+            this.proxyStatus.gemini = !!(gemini.ok && gemini.data?.patched);
+            this.proxyStatus.openclaw = !!(openclaw.ok && openclaw.data?.configured);
+        },
+
         async setClaudeCodeProxyTestConfig() {
             const { ok, data, error } = await this.api('/claude/config/set', {
                 method: 'POST',
@@ -756,9 +780,20 @@ document.addEventListener('alpine:init', () => {
             });
 
             if (ok && data?.success) {
+                this.proxyStatus.claude = true;
                 this.showToast(this.t('claudeSettingsUpdated'), 'success');
             } else {
                 this.showToast(data?.error || error || this.t('claudeSettingsFailed'), 'error');
+            }
+        },
+
+        async removeClaudeProxy() {
+            const { ok, data, error } = await this.api('/claude/config/direct', { method: 'POST' });
+            if (ok && data?.success) {
+                this.proxyStatus.claude = false;
+                this.showToast(this.t('claudeProxyRemoved'), 'success');
+            } else {
+                this.showToast(data?.error || error || this.t('removeProxyFailed'), 'error');
             }
         },
 
@@ -768,9 +803,20 @@ document.addEventListener('alpine:init', () => {
             });
 
             if (ok && data?.success) {
+                this.proxyStatus.codex = true;
                 this.showToast(this.t('codexSettingsUpdated'), 'success');
             } else {
                 this.showToast(data?.error || data?.warning || error || this.t('codexSettingsFailed'), 'error');
+            }
+        },
+
+        async removeCodexProxy() {
+            const { ok, data, error } = await this.api('/codex/config/direct', { method: 'POST' });
+            if (ok && data?.success) {
+                this.proxyStatus.codex = false;
+                this.showToast(this.t('codexProxyRemoved'), 'success');
+            } else {
+                this.showToast(data?.error || error || this.t('removeProxyFailed'), 'error');
             }
         },
 
@@ -780,9 +826,20 @@ document.addEventListener('alpine:init', () => {
             });
 
             if (ok && data?.success) {
+                this.proxyStatus.gemini = true;
                 this.showToast(this.t('geminiSettingsUpdated'), 'success');
             } else {
                 this.showToast(data?.error || error || this.t('geminiSettingsFailed'), 'error');
+            }
+        },
+
+        async removeGeminiProxy() {
+            const { ok, data, error } = await this.api('/gemini-cli/config/direct', { method: 'POST' });
+            if (ok && data?.success) {
+                this.proxyStatus.gemini = false;
+                this.showToast(this.t('geminiProxyRemoved'), 'success');
+            } else {
+                this.showToast(data?.error || error || this.t('removeProxyFailed'), 'error');
             }
         },
 
@@ -792,9 +849,20 @@ document.addEventListener('alpine:init', () => {
             });
 
             if (ok && data?.success) {
+                this.proxyStatus.openclaw = true;
                 this.showToast(this.t('openclawSettingsUpdated'), 'success');
             } else {
                 this.showToast(data?.error || error || this.t('openclawSettingsFailed'), 'error');
+            }
+        },
+
+        async removeOpenClawProxy() {
+            const { ok, data, error } = await this.api('/openclaw/config/direct', { method: 'POST' });
+            if (ok && data?.success) {
+                this.proxyStatus.openclaw = false;
+                this.showToast(this.t('openclawProxyRemoved'), 'success');
+            } else {
+                this.showToast(data?.error || error || this.t('removeProxyFailed'), 'error');
             }
         },
 

@@ -94,12 +94,19 @@ export async function setProxyMode(proxyUrl, models = {}) {
 export async function setDirectMode(apiKey) {
     const updates = {
         env: {
-            ANTHROPIC_API_KEY: apiKey,
             ANTHROPIC_AUTH_TOKEN: undefined,
             ANTHROPIC_BASE_URL: undefined,
-            ANTHROPIC_MODEL: undefined
+            ANTHROPIC_MODEL: undefined,
+            ANTHROPIC_DEFAULT_OPUS_MODEL: undefined,
+            ANTHROPIC_DEFAULT_SONNET_MODEL: undefined,
+            ANTHROPIC_DEFAULT_HAIKU_MODEL: undefined
         }
     };
+    if (apiKey) {
+        updates.env.ANTHROPIC_API_KEY = apiKey;
+    } else {
+        updates.env.ANTHROPIC_API_KEY = undefined;
+    }
 
     return await updateClaudeConfig(updates);
 }

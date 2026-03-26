@@ -59,14 +59,11 @@ export async function handleSetProxyMode(req, res, { port }) {
  */
 export async function handleSetDirectMode(req, res) {
   const { apiKey } = req.body || {};
-  if (!apiKey) {
-    return res.status(400).json({ success: false, error: 'API key required' });
-  }
   try {
-    const config = await setDirectMode(apiKey);
+    const config = await setDirectMode(apiKey || undefined);
     res.json({
       success: true,
-      message: 'Claude CLI configured to use direct Anthropic API',
+      message: 'Claude CLI proxy configuration removed',
       config
     });
   } catch (error) {

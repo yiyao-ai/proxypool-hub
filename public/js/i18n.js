@@ -57,6 +57,15 @@ const i18n = {
     openclawSettingsFailed: 'Failed to configure OpenClaw',
     openclawRestored: 'OpenClaw restored to direct connection',
 
+    // Proxy status
+    proxied: 'Proxied',
+    removeProxy: 'Remove Proxy',
+    claudeProxyRemoved: 'Claude Code proxy configuration removed',
+    codexProxyRemoved: 'Codex CLI proxy configuration removed',
+    geminiProxyRemoved: 'Gemini CLI proxy configuration removed',
+    openclawProxyRemoved: 'OpenClaw proxy configuration removed',
+    removeProxyFailed: 'Failed to remove proxy configuration',
+
     // Accounts
     accountManagement: 'Account Management',
     manageChatgptAccounts: 'Manage ChatGPT accounts',
@@ -397,6 +406,15 @@ const i18n = {
     openclawSettingsUpdated: 'OpenClaw 配置成功',
     openclawSettingsFailed: '配置 OpenClaw 失败',
     openclawRestored: 'OpenClaw 已恢复直连',
+
+    // Proxy status
+    proxied: '已代理',
+    removeProxy: '取消代理',
+    claudeProxyRemoved: 'Claude Code 代理配置已移除',
+    codexProxyRemoved: 'Codex CLI 代理配置已移除',
+    geminiProxyRemoved: 'Gemini CLI 代理配置已移除',
+    openclawProxyRemoved: 'OpenClaw 代理配置已移除',
+    removeProxyFailed: '移除代理配置失败',
 
     // Accounts
     accountManagement: '账户管理',
