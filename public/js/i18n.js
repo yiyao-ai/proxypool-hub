@@ -311,6 +311,10 @@ const i18n = {
     expired: 'Expired',
     inactive: 'Inactive',
 
+    // Feedback
+    feedback: 'Feedback & Bug Report',
+    discussions: 'Community Discussions',
+
     // Tool Installer
     toolInstaller: 'Tool Installer',
     toolInstallerDesc: 'ONE-CLICK CLI TOOL INSTALLATION',
@@ -648,6 +652,10 @@ const i18n = {
     allTokensRefreshed: '所有令牌已刷新',
     expired: '已过期',
     inactive: '未激活',
+
+    // Feedback
+    feedback: '反馈与报告问题',
+    discussions: '社区讨论',
 
     // Tool Installer
     toolInstaller: '工具安装',

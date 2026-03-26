@@ -1,0 +1,40 @@
+name: Question / Help
+description: Ask a question about setup or usage
+title: "[Question] "
+labels: ["question"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Have a question? We're happy to help!
+        For general discussions, consider using [GitHub Discussions](https://github.com/yiyao-ai/proxypool-hub/discussions) instead.
+
+  - type: textarea
+    id: question
+    attributes:
+      label: Your Question
+      description: What do you need help with?
+    validations:
+      required: true
+
+  - type: textarea
+    id: context
+    attributes:
+      label: What have you tried?
+      description: Any steps you've already taken to solve this
+
+  - type: input
+    id: version
+    attributes:
+      label: ProxyPool Hub Version
+      placeholder: "e.g. 1.0.5"
+
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating System
+      options:
+        - Windows
+        - macOS
+        - Linux
+        - N/A
