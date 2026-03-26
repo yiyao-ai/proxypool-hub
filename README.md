@@ -225,6 +225,9 @@ See [API Documentation](./docs/API.md) for the full reference.
 
 - [GitHub Discussions](https://github.com/yiyao-ai/proxypool-hub/discussions) — Ask questions, share ideas, report issues
 - [Discord](https://discord.gg/GgxZSehxqG) — Real-time chat with the community
+- **WeChat** — Scan to add the author, note "ProxyPool Hub" to join the group
+
+  <img src="./images/wechat.jpg" alt="WeChat" width="200">
 
 ---
 

@@ -224,6 +224,9 @@ openai_base_url = "http://localhost:8081"
 
 - [GitHub Discussions](https://github.com/yiyao-ai/proxypool-hub/discussions) — 提问、交流、反馈
 - [Discord](https://discord.gg/GgxZSehxqG) — 实时聊天
+- **微信** — 扫码添加作者微信，备注「ProxyPool Hub」拉你进群
+
+  <img src="./images/wechat.jpg" alt="微信" width="200">
 
 ---
 
