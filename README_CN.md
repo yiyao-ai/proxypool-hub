@@ -230,6 +230,14 @@ openai_base_url = "http://localhost:8081"
 
 ---
 
+## 支持项目
+
+如果这个项目对你有帮助，欢迎赞助支持：
+
+[![赞助](https://img.shields.io/badge/%E7%88%B1%E5%8F%91%E7%94%B5-%E8%B5%9E%E5%8A%A9-purple)](https://afdian.com/a/yiyaoai)
+
+---
+
 ## 许可证
 
 本项目基于 [AGPL-3.0](https://www.gnu.org/licenses/agpl-3.0) 许可证开源。

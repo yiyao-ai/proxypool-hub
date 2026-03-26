@@ -231,6 +231,14 @@ See [API Documentation](./docs/API.md) for the full reference.
 
 ---
 
+## Support
+
+If this project helps you, consider supporting its development:
+
+[![Sponsor](https://img.shields.io/badge/Sponsor-afdian-purple)](https://afdian.com/a/yiyaoai)
+
+---
+
 ## License
 
 This project is licensed under [AGPL-3.0](https://www.gnu.org/licenses/agpl-3.0).
