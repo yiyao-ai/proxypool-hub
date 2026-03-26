@@ -24,7 +24,8 @@
 ### Account & Key Management
 - **ChatGPT Account Pool** — OAuth login, multi-account rotation (sticky / round-robin / random), auto token refresh
 - **Claude Account Pool** — OAuth PKCE login, token refresh with source writeback to Claude Code credentials
-- **API Key Pool** — Support for OpenAI, Azure OpenAI, Anthropic, Google Gemini, Vertex AI keys with automatic failover
+- **API Key Pool** — Support for OpenAI, Azure OpenAI, Anthropic, Google Gemini, Vertex AI, MiniMax, Moonshot, ZhipuAI keys with automatic failover and load balancing
+- **Key Validation** — One-click connectivity test for each API key
 - **Smart Token Refresh** — Only refreshes when tokens are about to expire (< 5 min), syncs back to source CLI tools
 
 ### Free Model Routing
@@ -38,6 +39,8 @@
 
 ### Web Dashboard
 - **One-click CLI Configuration** — Configure Claude Code, Codex CLI, Gemini CLI, OpenClaw with a single button
+- **One-click Tool Installer** — Detect and install Node.js, Claude Code, Codex CLI, Gemini CLI, OpenClaw from the dashboard — auto-detects OS, installs Node.js first, then uses npm for all CLI tools
+- **API Key Test & Edit** — Test API key connectivity with one click, edit key details including provider-specific fields (Azure deployment name/API version, Vertex project ID/location)
 - **Account Management UI** — Add, remove, enable/disable, switch accounts visually
 - **Model Mapping** — Customize which upstream model each provider resolves to
 - **API Gateway** — Expose your proxy to external apps via API keys with usage tracking

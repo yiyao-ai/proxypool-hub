@@ -24,7 +24,8 @@
 ### 账户与密钥管理
 - **ChatGPT 账户池** — OAuth 登录、多账户轮换（固定/轮询/随机）、自动 token 刷新
 - **Claude 账户池** — OAuth PKCE 登录、token 刷新后自动回写至 Claude Code 凭证文件
-- **API Key 池** — 支持 OpenAI、Azure OpenAI、Anthropic、Google Gemini、Vertex AI 密钥，自动故障转移
+- **API Key 池** — 支持 OpenAI、Azure OpenAI、Anthropic、Google Gemini、Vertex AI、MiniMax、Moonshot、ZhipuAI 密钥，自动故障转移与负载均衡
+- **密钥验证** — 一键测试每个 API Key 的连通性
 - **智能 Token 刷新** — 仅在 token 即将过期时（< 5 分钟）才刷新，刷新后同步回源 CLI 工具
 
 ### 免费模型路由
@@ -38,6 +39,8 @@
 
 ### Web 仪表盘
 - **一键 CLI 配置** — 一个按钮配置 Claude Code、Codex CLI、Gemini CLI、OpenClaw
+- **一键工具安装** — 从仪表盘检测并安装 Node.js、Claude Code、Codex CLI、Gemini CLI、OpenClaw —— 自动识别操作系统，先安装 Node.js，再通过 npm 安装所有 CLI 工具
+- **API Key 测试与编辑** — 一键测试 API Key 连通性，编辑密钥详情（含 Azure 部署名称/API 版本、Vertex 项目 ID/区域等特定字段）
 - **账户管理 UI** — 可视化添加、删除、启用/禁用、切换账户
 - **模型映射** — 自定义每个 provider 解析到哪个上游模型
 - **API 网关** — 通过 API Key 将代理暴露给外部应用，带用量追踪
