@@ -365,6 +365,11 @@
                     </div>
 
                     <div class="mt-4 flex justify-end gap-2">
+                        <button class="btn btn-sm bg-space-700 hover:bg-space-600 border border-space-border text-white font-sans gap-1"
+                            @click="configAndLaunch('claude')" :title="t('configAndLaunch')">
+                            <svg class="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 20 20"><path d="M6.3 2.841A1.5 1.5 0 004 4.12V15.88a1.5 1.5 0 002.3 1.279l9.344-5.88a1.5 1.5 0 000-2.557L6.3 2.84z"/></svg>
+                            <span x-text="t('launchTool')"></span>
+                        </button>
                         <button x-show="proxyStatus.claude" class="btn btn-sm bg-red-500/20 hover:bg-red-500/40 border border-red-500/30 text-red-400 font-sans"
                             @click="removeClaudeProxy()" x-text="t('removeProxy')">
                         </button>
@@ -391,6 +396,11 @@
                         <div class="text-neon-green">codex</div>
                     </div>
                     <div class="mt-4 flex justify-end gap-2">
+                        <button class="btn btn-sm bg-space-700 hover:bg-space-600 border border-space-border text-white font-sans gap-1"
+                            @click="configAndLaunch('codex')" :title="t('configAndLaunch')">
+                            <svg class="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 20 20"><path d="M6.3 2.841A1.5 1.5 0 004 4.12V15.88a1.5 1.5 0 002.3 1.279l9.344-5.88a1.5 1.5 0 000-2.557L6.3 2.84z"/></svg>
+                            <span x-text="t('launchTool')"></span>
+                        </button>
                         <button x-show="proxyStatus.codex" class="btn btn-sm bg-red-500/20 hover:bg-red-500/40 border border-red-500/30 text-red-400 font-sans"
                             @click="removeCodexProxy()" x-text="t('removeProxy')">
                         </button>
@@ -416,6 +426,11 @@
                         <div class="text-gray-500 text-xs mt-2">Select "Gemini API key" when prompted for auth</div>
                     </div>
                     <div class="mt-4 flex justify-end gap-2">
+                        <button class="btn btn-sm bg-space-700 hover:bg-space-600 border border-space-border text-white font-sans gap-1"
+                            @click="configAndLaunch('gemini')" :title="t('configAndLaunch')">
+                            <svg class="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 20 20"><path d="M6.3 2.841A1.5 1.5 0 004 4.12V15.88a1.5 1.5 0 002.3 1.279l9.344-5.88a1.5 1.5 0 000-2.557L6.3 2.84z"/></svg>
+                            <span x-text="t('launchTool')"></span>
+                        </button>
                         <button x-show="proxyStatus.gemini" class="btn btn-sm bg-red-500/20 hover:bg-red-500/40 border border-red-500/30 text-red-400 font-sans"
                             @click="removeGeminiProxy()" x-text="t('removeProxy')">
                         </button>
@@ -448,6 +463,11 @@
                         <div class="text-neon-green">openclaw</div>
                     </div>
                     <div class="mt-4 flex justify-end gap-2">
+                        <button class="btn btn-sm bg-space-700 hover:bg-space-600 border border-space-border text-white font-sans gap-1"
+                            @click="configAndLaunch('openclaw')" :title="t('configAndLaunch')">
+                            <svg class="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 20 20"><path d="M6.3 2.841A1.5 1.5 0 004 4.12V15.88a1.5 1.5 0 002.3 1.279l9.344-5.88a1.5 1.5 0 000-2.557L6.3 2.84z"/></svg>
+                            <span x-text="t('launchTool')"></span>
+                        </button>
                         <button x-show="proxyStatus.openclaw" class="btn btn-sm bg-red-500/20 hover:bg-red-500/40 border border-red-500/30 text-red-400 font-sans"
                             @click="removeOpenClawProxy()" x-text="t('removeProxy')">
                         </button>

@@ -324,6 +324,12 @@ const i18n = {
     feedback: 'Feedback & Bug Report',
     discussions: 'Community Discussions',
 
+    // Tool Launcher
+    launchTool: 'Launch',
+    configAndLaunch: 'Auto-configure proxy and launch in new terminal',
+    toolLaunched: 'Terminal opened — tool is launching',
+    toolLaunchFailed: 'Failed to launch tool',
+
     // Tool Installer
     toolInstaller: 'Tool Installer',
     toolInstallerDesc: 'ONE-CLICK CLI TOOL INSTALLATION',
@@ -674,6 +680,12 @@ const i18n = {
     // Feedback
     feedback: '反馈与报告问题',
     discussions: '社区讨论',
+
+    // Tool Launcher
+    launchTool: '一键启动',
+    configAndLaunch: '自动配置代理并在新终端中启动',
+    toolLaunched: '终端已打开 — 工具正在启动',
+    toolLaunchFailed: '启动工具失败',
 
     // Tool Installer
     toolInstaller: '工具安装',

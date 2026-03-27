@@ -8,6 +8,7 @@
  */
 
 import { detectAllTools, getNodeInstallInfo, installTool, installNode } from '../tool-installer.js';
+import { launchTool } from '../tool-launcher.js';
 
 export function handleGetToolsStatus(req, res) {
     const status = detectAllTools();
@@ -31,6 +32,16 @@ export async function handleInstallTool(req, res) {
 
 export async function handleInstallNode(req, res) {
     const result = await installNode();
+    if (result.success) {
+        res.json(result);
+    } else {
+        res.status(400).json(result);
+    }
+}
+
+export function handleLaunchTool(req, res) {
+    const { toolId } = req.params;
+    const result = launchTool(toolId);
     if (result.success) {
         res.json(result);
     } else {

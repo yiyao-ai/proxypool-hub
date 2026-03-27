@@ -145,6 +145,7 @@ document.addEventListener('alpine:init', () => {
             this.loadAccountStrategySetting();
             this.loadRoutingPrioritySetting();
             this.loadKiloModels();
+            this.refreshProxyStatus();
 
             window.addEventListener('resize', () => {
                 this.sidebarOpen = window.innerWidth >= 1024;
@@ -175,6 +176,7 @@ document.addEventListener('alpine:init', () => {
             if (tab === 'accounts') { this.refreshAccounts(); this.refreshClaudeAccounts(); }
             if (tab === 'apikeys') this.loadApiKeys();
             if (tab === 'usage') this.loadUsageData();
+            if (tab === 'dashboard') this.refreshProxyStatus();
             if (tab === 'settings') {
                 if (!this.modelMappingData) this.loadModelMappings();
                 this.refreshProxyStatus();
@@ -864,6 +866,30 @@ document.addEventListener('alpine:init', () => {
             } else {
                 this.showToast(data?.error || error || this.t('removeProxyFailed'), 'error');
             }
+        },
+
+        async launchTool(toolId) {
+            const { ok, data } = await this.api(`/api/tools/launch/${toolId}`, { method: 'POST' });
+            if (ok && data?.success) {
+                this.showToast(this.t('toolLaunched'), 'success');
+            } else {
+                this.showToast(data?.error || this.t('toolLaunchFailed'), 'error');
+            }
+        },
+
+        async configAndLaunch(toolId) {
+            // Refresh real proxy status from server before deciding
+            await this.refreshProxyStatus();
+            if (!this.proxyStatus[toolId]) {
+                const configMethods = {
+                    claude: () => this.setClaudeCodeProxyTestConfig(),
+                    codex: () => this.setCodexProxyConfig(),
+                    gemini: () => this.setGeminiCliProxyConfig(),
+                    openclaw: () => this.setOpenClawProxyConfig(),
+                };
+                await configMethods[toolId]?.();
+            }
+            await this.launchTool(toolId);
         },
 
         showToast(message, type = 'success') {

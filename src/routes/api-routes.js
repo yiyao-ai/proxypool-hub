@@ -27,7 +27,7 @@ import { handleGeminiApiProxy } from './gemini-api-route.js';
 import { handleGetGeminiCliConfig, handleSetGeminiCliProxy, handleSetGeminiCliDirect } from './gemini-config-route.js';
 import { handleGetOpenClawConfig, handleSetOpenClawProxy, handleSetOpenClawDirect } from './openclaw-config-route.js';
 import { handleGetRequestLogs, handleGetLogDates, handleGetLogSettings, handleUpdateLogSettings } from './request-logs-route.js';
-import { handleGetToolsStatus, handleGetNodeInfo, handleInstallTool, handleInstallNode } from './tools-route.js';
+import { handleGetToolsStatus, handleGetNodeInfo, handleInstallTool, handleInstallNode, handleLaunchTool } from './tools-route.js';
 import {
   handleListAccounts,
   handleAccountStatus,
@@ -206,6 +206,7 @@ export function registerApiRoutes(app, { port }) {
   app.get('/api/tools/node-info', handleGetNodeInfo);
   app.post('/api/tools/install/:toolId', handleInstallTool);
   app.post('/api/tools/install-node', handleInstallNode);
+  app.post('/api/tools/launch/:toolId', handleLaunchTool);
 
   // ─── API Gateway (proxy via API keys) ────────────────────────────────────
   app.post('/api/gateway/chat', handleGatewayChat);
