@@ -110,21 +110,38 @@ function _parseResetTime(response, errorText) {
 /**
  * Map an incoming model ID to an appropriate Claude model.
  * Used when Claude accounts serve Codex/OpenAI-format requests.
+ *
+ * Uses the tier-based system from model-mapping.js so that mappings
+ * automatically stay current when model discovery updates them.
+ * Falls back to keyword matching if module not loaded yet.
  */
 export function mapToClaudeModel(modelId) {
-    if (!modelId) return 'claude-sonnet-4-20250514';
+    if (!modelId) return 'claude-sonnet-4-6';
     const id = modelId.toLowerCase();
 
     // Already a Claude model — pass through
     if (id.startsWith('claude-')) return modelId;
 
-    // Small / mini / lite → Haiku
-    if (id.includes('mini') || id.includes('haiku') || id.includes('lite') || id.includes('flash')) {
-        return 'claude-haiku-4-5-20251001';
+    // Use tier system via lazy-loaded module
+    if (_modelMapping) {
+        const tier = _modelMapping.recognizeTier(modelId);
+        const mappings = _modelMapping.getMappings();
+        const anthropicMap = mappings.providers?.anthropic;
+        if (anthropicMap?.[tier]) return anthropicMap[tier];
     }
 
-    // Default to Sonnet
-    return 'claude-sonnet-4-20250514';
+    // Keyword fallback
+    if (id.includes('mini') || id.includes('haiku') || id.includes('lite') || id.includes('nano')) {
+        return 'claude-haiku-4-5';
+    }
+    if (id.includes('opus') || id.includes('pro') || id.includes('codex')) {
+        return 'claude-opus-4-6';
+    }
+    return 'claude-sonnet-4-6';
 }
+
+// Lazy import to avoid circular dependency at module load time
+let _modelMapping = null;
+import('./model-mapping.js').then(mod => { _modelMapping = mod; }).catch(() => {});
 
 export default { sendClaudeMessage, sendClaudeStream, mapToClaudeModel };

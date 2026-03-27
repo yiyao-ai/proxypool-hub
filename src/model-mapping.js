@@ -67,8 +67,9 @@ const DEFAULT_PROVIDER_MAPPINGS = {
 };
 
 // ─── Known models per provider (for UI dropdowns) ───────────────────────────
+// Static defaults — dynamically updated by model-discovery.js via refreshProviderModels().
 
-const PROVIDER_MODELS = {
+const STATIC_PROVIDER_MODELS = {
     gemini: [
         'gemini-3.1-pro-preview', 'gemini-3-flash-preview', 'gemini-3.1-flash-lite-preview',
         'gemini-2.5-pro', 'gemini-2.5-flash', 'gemini-2.0-flash',
@@ -93,6 +94,9 @@ const PROVIDER_MODELS = {
         'claude-sonnet-4-6', 'claude-opus-4-6', 'claude-haiku-4-5',
     ],
 };
+
+// Dynamic model lists populated by model-discovery.js
+const dynamicProviderModels = {};
 
 // ─── Tier recognition — keyword-based, version-agnostic ─────────────────────
 
@@ -127,6 +131,9 @@ export function recognizeTier(model) {
     }
     // gpt-5.3+, gpt-6+, etc. with "codex" suffix are flagship
     if (m.includes('codex') && m.includes('gpt-')) return 'flagship';
+
+    // Experimental / open-source models — treat as standard but deprioritized
+    if (m.includes('-oss') || m.includes('oss-')) return 'standard';
 
     // Standard models
     if (m.includes('sonnet')) return 'standard';
@@ -261,12 +268,71 @@ export function resetMappings() {
 
 /**
  * Get tier info, provider models list, and defaults (for UI).
+ * Merges static and dynamically discovered models for each provider.
  */
 export function getMappingsMeta() {
+    // Merge static + dynamic model lists, deduplicating
+    const mergedModels = {};
+    const allProviders = new Set([...Object.keys(STATIC_PROVIDER_MODELS), ...Object.keys(dynamicProviderModels)]);
+    for (const provider of allProviders) {
+        const staticList = STATIC_PROVIDER_MODELS[provider] || [];
+        const dynamicList = dynamicProviderModels[provider] || [];
+        const seen = new Set();
+        mergedModels[provider] = [...dynamicList, ...staticList].filter(id => {
+            if (seen.has(id)) return false;
+            seen.add(id);
+            return true;
+        });
+    }
+
     return {
         tiers: TIER_INFO,
         tierOrder: TIERS,
-        providerModels: PROVIDER_MODELS,
+        providerModels: mergedModels,
         defaults: DEFAULT_PROVIDER_MAPPINGS,
     };
+}
+
+// ─── Dynamic discovery integration ──────────────────────────────────────────
+
+/**
+ * Update the dynamic model list for a provider (called by model-discovery.js).
+ * These models appear in the UI dropdown alongside the static defaults.
+ * @param {string} providerType
+ * @param {Array} models - [{id, name, ...}]
+ */
+export function refreshProviderModels(providerType, models) {
+    dynamicProviderModels[providerType] = models.map(m => m.id || m);
+}
+
+/**
+ * Auto-update tier mappings from discovered models.
+ * Only updates tiers where the user has NOT manually overridden the default.
+ * @param {string} providerType
+ * @param {object} tierMap - { flagship: 'model-id', standard: 'model-id', ... }
+ */
+export function autoUpdateMappings(providerType, tierMap) {
+    if (!tierMap || Object.keys(tierMap).length === 0) return;
+
+    const mappings = loadMappings();
+    const defaults = DEFAULT_PROVIDER_MAPPINGS[providerType] || {};
+    const current = mappings.providers[providerType] || {};
+
+    let updated = false;
+    for (const tier of TIERS) {
+        if (!tierMap[tier]) continue;
+        // Only auto-update if the current value is the hardcoded default
+        // (user hasn't manually changed it)
+        if (current[tier] === defaults[tier] || !current[tier]) {
+            if (current[tier] !== tierMap[tier]) {
+                current[tier] = tierMap[tier];
+                updated = true;
+            }
+        }
+    }
+
+    if (updated) {
+        mappings.providers[providerType] = current;
+        saveMappings();
+    }
 }

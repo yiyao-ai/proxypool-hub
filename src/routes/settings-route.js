@@ -10,6 +10,8 @@
 
 import { getServerSettings, setServerSettings } from '../server-settings.js';
 import { fetchFreeModels } from '../kilo-models.js';
+import { getDiscoveredModels, discoverModels } from '../model-discovery.js';
+import { getMappingsMeta } from '../model-mapping.js';
 
 const VALID_STRATEGIES = ['sticky', 'round-robin'];
 const VALID_ROUTING = ['account-first', 'apikey-first'];
@@ -158,6 +160,45 @@ export function handleSetEnableFreeModels(req, res) {
   res.json({ success: true, enableFreeModels: settings.enableFreeModels });
 }
 
+/**
+ * GET /settings/discovered-models
+ * Returns discovered models cache + mapping metadata.
+ */
+export function handleGetDiscoveredModels(req, res) {
+  const discovered = getDiscoveredModels();
+  const meta = getMappingsMeta();
+  res.json({
+    success: true,
+    discovered,
+    providerModels: meta.providerModels,
+    tiers: meta.tiers,
+    tierOrder: meta.tierOrder,
+    defaults: meta.defaults
+  });
+}
+
+/**
+ * POST /settings/refresh-models
+ * Manually trigger model discovery refresh.
+ */
+export async function handleRefreshDiscoveredModels(req, res) {
+  const discovered = await discoverModels();
+  const meta = getMappingsMeta();
+  res.json({
+    success: true,
+    discovered: {
+      providers: discovered.providers,
+      lastRun: discovered.lastRun,
+      cacheAge: discovered.lastRun ? Date.now() - discovered.lastRun : null,
+      stale: discovered.lastRun ? (Date.now() - discovered.lastRun) > (30 * 60 * 1000) : true
+    },
+    providerModels: meta.providerModels,
+    tiers: meta.tiers,
+    tierOrder: meta.tierOrder,
+    defaults: meta.defaults
+  });
+}
+
 export default {
   handleGetHaikuModel,
   handleSetHaikuModel,
@@ -167,5 +208,7 @@ export default {
   handleGetRoutingPriority,
   handleSetRoutingPriority,
   handleGetEnableFreeModels,
-  handleSetEnableFreeModels
+  handleSetEnableFreeModels,
+  handleGetDiscoveredModels,
+  handleRefreshDiscoveredModels
 };

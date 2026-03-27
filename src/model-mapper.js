@@ -1,24 +1,34 @@
 /**
  * Model Mapper
- * Maps Anthropic/Claude model names to upstream OpenAI/Kilo model identifiers.
+ *
+ * Maps any incoming model name to upstream routing info using a tier-based system.
+ * Delegates to model-mapping.js for tier recognition and provider model resolution.
+ *
+ * Flow:
+ *   1. recognizeTier(requestedModel) → flagship / standard / fast / reasoning
+ *   2. fast tier + enableFreeModels → route to Kilo (free)
+ *   3. Otherwise → resolveModel('openai', requestedModel) for ChatGPT account pool
+ *
+ * The legacy CLAUDE_MODEL_MAP is kept as a fallback for the first ~30s of startup
+ * before model discovery has run.
  */
 
 import { getServerSettings } from './server-settings.js';
+import { recognizeTier, resolveModel } from './model-mapping.js';
+
+// ─── Legacy static map (fallback only) ──────────────────────────────────────
+// Kept so that the very first requests after cold start still route correctly
+// before model-discovery.js has populated dynamic tier mappings.
 
 const CLAUDE_MODEL_MAP = {
-  // Current Claude 4.6 models (Feb 2026)
   'claude-opus-4-6': 'gpt-5.3-codex',
   'claude-opus-4-6-20250219': 'gpt-5.3-codex',
   'claude-sonnet-4-6': 'gpt-5.2',
   'claude-sonnet-4-6-20250219': 'gpt-5.2',
   'claude-haiku-4-5': 'kilo',
   'claude-haiku-4-5-20250219': 'kilo',
-  
-  // 1M context variants
   'claude-opus-4-6-1m': 'gpt-5.3-codex',
   'claude-sonnet-4-6-1m': 'gpt-5.2',
-  
-  // Legacy Claude 4.5 models (deprecated but still supported)
   'claude-opus-4-5': 'gpt-5.3-codex',
   'claude-opus-4-5-20250514': 'gpt-5.3-codex',
   'claude-sonnet-4-5': 'gpt-5.2',
@@ -26,19 +36,13 @@ const CLAUDE_MODEL_MAP = {
   'claude-sonnet-4-20250514': 'gpt-5.2',
   'claude-haiku-4-20250514': 'kilo',
   'claude-haiku-3-5-20250514': 'kilo',
-  
-  // Legacy Claude 3.x models
   'claude-3-5-sonnet-20240620': 'gpt-5.2',
   'claude-3-opus-20240229': 'gpt-5.3-codex',
   'claude-3-sonnet-20240229': 'gpt-5.2',
   'claude-3-haiku-20240307': 'kilo',
-  
-  // Short aliases
   'sonnet': 'gpt-5.2',
   'opus': 'gpt-5.3-codex',
   'haiku': 'kilo',
-  
-  // Direct OpenAI models
   'gpt-5.3-codex': 'gpt-5.3-codex',
   'gpt-5.2-codex': 'gpt-5.2-codex',
   'gpt-5.1-codex-max': 'gpt-5.1-codex-max',
@@ -51,49 +55,41 @@ const CLAUDE_MODEL_MAP = {
   'gpt-5-codex-mini': 'gpt-5-codex-mini'
 };
 
+// ─── Tier-based model resolution ────────────────────────────────────────────
+
 /**
- * Maps a Claude/Anthropic model name to the upstream model identifier.
- * Falls back to 'gpt-5.2' for unknown models.
- * @param {string} model
- * @returns {string}
+ * Resolve the upstream model for a requested model name using the tier system.
+ * Falls back to the legacy static map if model-mapping returns the input unchanged
+ * (meaning no mapping was found — e.g. before discovery runs).
+ *
+ * @param {string} model - The requested model name
+ * @returns {string} The upstream model identifier
  */
-export function mapClaudeModel(model) {
+function resolveUpstreamModel(model) {
   if (!model) return 'gpt-5.2';
 
-  if (CLAUDE_MODEL_MAP[model]) {
+  // If it's a direct OpenAI model, pass through
+  const lower = model.toLowerCase();
+  if (lower.startsWith('gpt-') || /^o[134](-|$)/.test(lower)) {
+    return model;
+  }
+
+  // Use the tier-based mapping system (model-mapping.js)
+  const resolved = resolveModel('openai', model);
+
+  // If resolveModel returned the input unchanged, it means no mapping was found.
+  // Fall back to the legacy static map.
+  if (resolved === model && CLAUDE_MODEL_MAP[model]) {
     return CLAUDE_MODEL_MAP[model];
   }
 
-  const modelLower = model.toLowerCase();
-
-  if (modelLower.startsWith('claude-')) {
-    const cleanModel = modelLower.replace(/^claude-/, '');
-    if (cleanModel.includes('opus')) return 'gpt-5.3-codex';
-    if (cleanModel.includes('sonnet')) return 'gpt-5.2';
-    if (cleanModel.includes('haiku')) return 'kilo';
-  }
-
-  for (const [key, value] of Object.entries(CLAUDE_MODEL_MAP)) {
-    if (modelLower.includes(key.toLowerCase())) {
-      return value;
-    }
-  }
-
-  return 'gpt-5.2';
+  return resolved;
 }
 
-/**
- * Returns true if the mapped model should be routed through Kilo.
- * @param {string} mappedModel
- * @returns {boolean}
- */
-export function isKiloModel(mappedModel) {
-  return mappedModel === 'kilo';
-}
+// ─── Kilo (free model) resolution ───────────────────────────────────────────
 
 /**
  * Resolves the actual Kilo model identifier based on server settings.
- * The setting stores the full Kilo model ID (e.g. 'minimax/minimax-m2.5:free').
  * @returns {string}
  */
 export function resolveKiloModel() {
@@ -101,23 +97,45 @@ export function resolveKiloModel() {
   return settings.haikuKiloModel || 'minimax/minimax-m2.5:free';
 }
 
+// ─── Main routing entry point ───────────────────────────────────────────────
+
 /**
  * Resolves all model routing info from a requested model name.
- * When enableFreeModels is false in settings, Kilo (free model) routing is suppressed
- * and the request falls through to the account/API-key path instead.
+ *
+ * Uses tier-based classification:
+ *   - fast tier + enableFreeModels → route to Kilo (free model)
+ *   - Otherwise → resolve to upstream OpenAI model via tier system
+ *
  * @param {string} requestedModel
  * @returns {{ mappedModel: string, isKilo: boolean, kiloTarget: string|null, upstreamModel: string }}
  */
 export function resolveModelRouting(requestedModel) {
-  const mappedModel = mapClaudeModel(requestedModel || 'gpt-5.2');
+  const model = requestedModel || 'gpt-5.2';
+  const tier = recognizeTier(model);
   const settings = getServerSettings();
   const freeEnabled = settings.enableFreeModels !== false;
-  const isKilo = freeEnabled && isKiloModel(mappedModel);
-  const kiloTarget = isKilo ? resolveKiloModel() : null;
-  // When free models are disabled and the mapped model would have been 'kilo',
-  // fall back to 'gpt-5.2' so the request routes through accounts/API keys properly.
-  const upstreamModel = isKilo ? kiloTarget : (mappedModel === 'kilo' ? 'gpt-5.2' : mappedModel);
-  return { mappedModel, isKilo, kiloTarget, upstreamModel };
+
+  // Fast tier + free models enabled → route to Kilo
+  if (tier === 'fast' && freeEnabled) {
+    const kiloTarget = resolveKiloModel();
+    return { mappedModel: 'kilo', isKilo: true, kiloTarget, upstreamModel: kiloTarget };
+  }
+
+  // All other cases → resolve to upstream OpenAI model
+  const upstreamModel = resolveUpstreamModel(model);
+  return { mappedModel: upstreamModel, isKilo: false, kiloTarget: null, upstreamModel };
+}
+
+// ─── Legacy compatibility exports ───────────────────────────────────────────
+
+/** @deprecated Use resolveModelRouting() instead */
+export function mapClaudeModel(model) {
+  return resolveUpstreamModel(model);
+}
+
+/** @deprecated Use resolveModelRouting() instead */
+export function isKiloModel(mappedModel) {
+  return mappedModel === 'kilo';
 }
 
 export default { mapClaudeModel, isKiloModel, resolveKiloModel, resolveModelRouting, CLAUDE_MODEL_MAP };

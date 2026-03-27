@@ -76,6 +76,25 @@ export class AnthropicProvider extends BaseProvider {
         }
     }
 
+    async listModels() {
+        try {
+            const response = await fetch(`${this.baseUrl}/v1/models`, {
+                headers: {
+                    'x-api-key': this.apiKey,
+                    'anthropic-version': API_VERSION
+                }
+            });
+            if (!response.ok) return [];
+            const data = await response.json();
+            return (data.data || []).map(m => ({
+                id: m.id,
+                name: m.display_name || m.id
+            }));
+        } catch {
+            return [];
+        }
+    }
+
     estimateCost(model, inputTokens, outputTokens) {
         const resolvedModel = MODEL_ALIASES[model] || model;
         const pricing = PRICING[resolvedModel];

@@ -86,6 +86,24 @@ export class AzureOpenAIProvider extends BaseProvider {
         }
     }
 
+    async listModels() {
+        try {
+            const base = this.baseUrl.replace(/\/+$/, '');
+            const url = `${base}/openai/models?api-version=${this.apiVersion}`;
+            const response = await fetch(url, {
+                headers: { 'api-key': this.apiKey }
+            });
+            if (!response.ok) return [];
+            const data = await response.json();
+            return (data.data || []).map(m => ({
+                id: m.id,
+                name: m.id
+            }));
+        } catch {
+            return [];
+        }
+    }
+
     estimateCost(model, inputTokens, outputTokens) {
         const pricing = PRICING[model] || PRICING[this.deploymentName];
         if (!pricing) return 0;

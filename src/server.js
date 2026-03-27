@@ -12,6 +12,7 @@ import { registerApiRoutes } from './routes/api-routes.js';
 import { handleResponses } from './routes/responses-route.js';
 import { setRequestLoggingEnabled } from './request-logger.js';
 import { getServerSettings } from './server-settings.js';
+import { startModelDiscovery } from './model-discovery.js';
 
 export function createServer({ port }) {
   ensureAccountsPersist();
@@ -24,6 +25,9 @@ export function createServer({ port }) {
   // Sync request logging state from persisted settings
   const settings = getServerSettings();
   setRequestLoggingEnabled(settings.enableRequestLogging !== false);
+
+  // Start automatic model discovery (initial + periodic refresh)
+  startModelDiscovery();
 
   const app = express();
   app.disable('x-powered-by');

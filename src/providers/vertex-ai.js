@@ -563,6 +563,27 @@ export class VertexAIProvider extends BaseProvider {
         return this._sendGeminiRequest(body, token);
     }
 
+    async listModels() {
+        try {
+            const token = await this._ensureToken();
+            const loc = this.location === 'global' ? 'us-central1' : this.location;
+            const domain = this._buildDomain(loc);
+            const url = `https://${domain}/v1/projects/${this.projectId}/locations/${loc}/publishers/google/models`;
+            const response = await fetch(url, {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            if (!response.ok) return [];
+            const data = await response.json();
+            return (data.models || data.publisherModels || []).map(m => {
+                const fullName = m.name || '';
+                const id = fullName.split('/').pop() || fullName;
+                return { id, name: m.displayName || id };
+            });
+        } catch {
+            return [];
+        }
+    }
+
     async validateKey() {
         try {
             const token = await this._ensureToken();
