@@ -152,6 +152,13 @@
                         <span x-text="t('dashboard')"></span>
                     </button>
                     <button class="nav-item flex items-center gap-3 px-6 py-3 text-sm font-medium text-gray-400 hover:text-white hover:bg-white/5"
+                        :class="{'active': activeTab === 'chat'}" @click="setActiveTab('chat')">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 10h.01M12 10h.01M16 10h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+                        </svg>
+                        <span x-text="t('chat')"></span>
+                    </button>
+                    <button class="nav-item flex items-center gap-3 px-6 py-3 text-sm font-medium text-gray-400 hover:text-white hover:bg-white/5"
                         :class="{'active': activeTab === 'accounts'}" @click="setActiveTab('accounts')">
                         <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
@@ -474,6 +481,156 @@
                         <button class="btn btn-sm bg-orange-500 hover:bg-orange-600 border-none text-white font-sans"
                             @click="setOpenClawProxyConfig()" x-text="t('updateOpenClawSettings')">
                         </button>
+                    </div>
+                </div>
+            </div>
+
+            <div x-show="activeTab === 'chat'" x-transition class="view-container">
+                <div class="flex gap-6 items-start overflow-hidden">
+                    <div class="view-card flex-1 flex flex-col min-h-[720px]">
+                        <div class="flex items-start justify-between gap-4 mb-5">
+                            <div>
+                                <h1 class="text-2xl font-bold text-white tracking-tight" x-text="t('chat')"></h1>
+                                <p class="text-sm text-gray-400 mt-1" x-text="t('chatDesc')"></p>
+                            </div>
+                            <div class="flex items-center gap-2">
+                                <button class="btn btn-sm bg-space-700 hover:bg-space-600 border border-space-border text-white"
+                                    @click="toggleChatHistory()">
+                                    <span x-text="t('chatHistory')"></span>
+                                </button>
+                                <button class="btn btn-sm bg-neon-cyan hover:bg-cyan-600 border-none text-white"
+                                    @click="newChatSession()" x-text="t('newChat')"></button>
+                            </div>
+                        </div>
+
+                        <div class="rounded-2xl border border-space-border/30 bg-space-900/40 p-3 mb-4">
+                            <div class="grid grid-cols-[180px_minmax(0,1fr)_auto] items-end gap-3">
+                                <div class="min-w-0">
+                                    <label class="text-[11px] font-mono text-gray-400 uppercase tracking-wider" x-text="t('chatSource')"></label>
+                                    <select x-model="chatSourceId" @change="syncActiveChatSession()"
+                                        class="input mt-1.5 h-10 bg-space-800 border-space-border text-white font-mono text-xs">
+                                        <template x-for="source in chatSources" :key="source.id">
+                                            <option :value="source.id" x-text="source.label"></option>
+                                        </template>
+                                    </select>
+                                </div>
+                                <div class="min-w-0">
+                                    <label class="text-[11px] font-mono text-gray-400 uppercase tracking-wider" x-text="t('chatModel')"></label>
+                                    <input type="text" list="chat-model-options" x-model="chatModel" @change="syncActiveChatSession()"
+                                        class="input mt-1.5 h-10 bg-space-800 border-space-border text-white font-mono text-xs"
+                                        :placeholder="t('chatModelPlaceholder')">
+                                    <datalist id="chat-model-options">
+                                        <template x-for="model in chatModels" :key="model">
+                                            <option :value="model"></option>
+                                        </template>
+                                    </datalist>
+                                </div>
+                                <button class="btn btn-sm bg-space-800 hover:bg-space-700 border border-space-border text-gray-200 mb-[1px] whitespace-nowrap"
+                                    @click="toggleSystemPrompt()">
+                                    <span x-text="chatSystemPromptOpen ? t('hidePrompt') : t('showPrompt')"></span>
+                                </button>
+                            </div>
+
+                            <div class="mt-2 text-[11px] text-gray-500" x-show="chatSourceLoading" x-text="t('loadingChatSources')"></div>
+
+                            <div x-show="chatSystemPromptOpen" x-transition class="mt-3 pt-3 border-t border-space-border/20">
+                                <label class="text-[11px] font-mono text-gray-400 uppercase tracking-wider" x-text="t('systemPromptOptional')"></label>
+                                <textarea x-model="chatSystemPrompt" @input.debounce.300ms="syncActiveChatSession()" rows="3"
+                                    class="input mt-1.5 bg-space-800 border-space-border text-white font-mono text-xs resize-y"
+                                    :placeholder="t('systemPromptPlaceholder')"></textarea>
+                            </div>
+                        </div>
+
+                        <div class="flex items-center justify-between gap-4 mb-4">
+                            <div class="text-sm text-gray-400 min-w-0">
+                                <span x-text="t('chatUsing')"></span>
+                                <span class="text-white font-mono ml-2 truncate inline-block max-w-[340px] align-bottom" x-text="chatSourceLabel(chatSourceId)"></span>
+                            </div>
+                            <div class="text-xs font-mono text-gray-500" x-text="chatMessages.length + ' ' + t('messagesLower')"></div>
+                        </div>
+
+                        <div class="flex-1 min-h-0 overflow-y-auto custom-scrollbar rounded-2xl border border-space-border/30 bg-space-950/40 p-4 space-y-4">
+                            <template x-if="chatMessages.length === 0">
+                                <div class="h-full min-h-[320px] flex items-center justify-center text-center text-gray-500">
+                                    <div>
+                                        <div class="text-sm" x-text="t('chatEmptyTitle')"></div>
+                                        <div class="text-xs mt-2 font-mono" x-text="t('chatEmptyDesc')"></div>
+                                    </div>
+                                </div>
+                            </template>
+
+                            <template x-for="(message, index) in chatMessages" :key="index">
+                                <div class="flex" :class="message.role === 'user' ? 'justify-end' : 'justify-start'">
+                                    <div class="max-w-[90%] rounded-2xl px-4 py-3 border"
+                                        :class="message.role === 'user'
+                                            ? 'bg-neon-cyan/15 border-neon-cyan/30 text-white'
+                                            : (message.isError ? 'bg-red-500/10 border-red-500/30 text-red-200' : 'bg-space-800/70 border-space-border/40 text-gray-100')">
+                                        <div class="flex items-center gap-2 mb-2">
+                                            <span class="text-[10px] font-mono uppercase tracking-wider"
+                                                :class="message.role === 'user' ? 'text-neon-cyan' : (message.isError ? 'text-red-300' : 'text-gray-400')"
+                                                x-text="message.role === 'user' ? t('you') : t('assistant')"></span>
+                                            <span class="text-[10px] font-mono text-gray-500" x-show="message.mappedModel" x-text="message.mappedModel"></span>
+                                        </div>
+                                        <pre class="whitespace-pre-wrap break-words text-sm font-sans" x-text="message.content"></pre>
+                                        <div class="mt-3 text-[10px] font-mono text-gray-500" x-show="message.usage">
+                                            <span x-text="'in ' + (message.usage?.prompt_tokens || 0)"></span>
+                                            <span class="mx-2">&middot;</span>
+                                            <span x-text="'out ' + (message.usage?.completion_tokens || 0)"></span>
+                                            <span class="mx-2">&middot;</span>
+                                            <span x-text="'total ' + (message.usage?.total_tokens || 0)"></span>
+                                        </div>
+                                    </div>
+                                </div>
+                            </template>
+                        </div>
+
+                        <div class="mt-4 space-y-3">
+                            <textarea x-model="chatInput" rows="4"
+                                class="input bg-space-800 border-space-border text-white font-sans text-sm resize-y"
+                                :placeholder="t('chatInputPlaceholder')"
+                                @keydown.ctrl.enter.prevent="sendChatMessage()"
+                                @keydown.meta.enter.prevent="sendChatMessage()"></textarea>
+                            <div class="flex items-center justify-between gap-4">
+                                <div class="text-xs text-gray-500" x-text="t('chatShortcutHint')"></div>
+                                <button class="btn bg-neon-cyan hover:bg-cyan-600 border-none text-white"
+                                    @click="sendChatMessage()" :disabled="chatLoading || !chatSourceId">
+                                    <span x-text="chatLoading ? t('sending') : t('send')"></span>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="overflow-hidden shrink-0 transition-all duration-300 ease-out"
+                        :class="chatHistoryOpen ? 'w-[320px] opacity-100 translate-x-0' : 'w-0 opacity-0 translate-x-4 pointer-events-none'">
+                        <div class="view-card w-[320px] max-h-[720px]">
+                            <div class="flex items-center justify-between gap-3 mb-3">
+                                <div class="text-xs font-mono text-gray-400 uppercase tracking-wider" x-text="t('historyPanel')"></div>
+                                <div class="flex items-center gap-2">
+                                    <div class="text-[11px] font-mono text-gray-500" x-text="chatSessions.length + ' ' + t('sessions')"></div>
+                                    <button class="text-xs text-gray-500 hover:text-white" @click="toggleChatHistory()">&times;</button>
+                                </div>
+                            </div>
+                            <div class="space-y-2 max-h-[640px] overflow-y-auto custom-scrollbar pr-1">
+                                <template x-for="session in chatSessions" :key="session.id">
+                                    <div class="rounded-xl border px-3 py-2 transition-all cursor-pointer"
+                                        :class="session.id === activeChatSessionId ? 'border-neon-cyan/40 bg-neon-cyan/10' : 'border-space-border/30 bg-space-900/40 hover:bg-space-800/50'"
+                                        @click="openChatSession(session.id)">
+                                        <div class="flex items-start justify-between gap-2">
+                                            <div class="min-w-0">
+                                                <div class="text-sm text-white truncate" x-text="chatSessionTitle(session)"></div>
+                                                <div class="text-[11px] font-mono text-gray-500 truncate mt-1" x-text="chatSourceLabel(session.sourceId || '')"></div>
+                                            </div>
+                                            <button class="text-xs text-gray-500 hover:text-red-300" @click.stop="removeChatSession(session.id)">&times;</button>
+                                        </div>
+                                        <div class="mt-2 text-[11px] text-gray-500 flex items-center gap-2">
+                                            <span x-text="session.model || 'gpt-5.2'"></span>
+                                            <span>&middot;</span>
+                                            <span x-text="(session.messages || []).length + ' ' + t('messagesLower')"></span>
+                                        </div>
+                                    </div>
+                                </template>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>

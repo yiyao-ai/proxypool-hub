@@ -176,6 +176,13 @@ export function getAllProviders() {
     return data.keys.map(k => getProvider(k)).filter(Boolean);
 }
 
+export function getProviderById(id) {
+    const data = loadKeys();
+    const key = data.keys.find(k => k.id === id);
+    if (!key) return null;
+    return getProvider(key);
+}
+
 /**
  * Select the best available key for a given provider type.
  * Strategy: pick the key with the fewest requests (simple load balancing).

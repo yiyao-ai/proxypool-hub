@@ -76,6 +76,20 @@ document.addEventListener('alpine:init', () => {
         testPrompt: 'Say hello',
         testResponse: '',
         testing: false,
+        chatSources: [],
+        chatModels: [],
+        chatSourceId: '',
+        chatModel: 'gpt-5.2',
+        chatSystemPrompt: '',
+        chatInput: '',
+        chatMessages: [],
+        chatSessions: [],
+        activeChatSessionId: '',
+        chatStorageKey: 'proxypool-hub-chat-sessions-v1',
+        chatHistoryOpen: false,
+        chatSystemPromptOpen: false,
+        chatLoading: false,
+        chatSourceLoading: false,
 
         haikuTestPrompt: 'Say hello',
         haikuTestResponse: '',
@@ -149,6 +163,9 @@ document.addEventListener('alpine:init', () => {
             this.loadFreeModelsSetting();
             this.loadKiloModels();
             this.refreshProxyStatus();
+            this.loadChatSessions();
+            this.loadChatSources();
+            this.loadChatModels();
 
             window.addEventListener('resize', () => {
                 this.sidebarOpen = window.innerWidth >= 1024;
@@ -180,6 +197,10 @@ document.addEventListener('alpine:init', () => {
             if (tab === 'apikeys') this.loadApiKeys();
             if (tab === 'usage') this.loadUsageData();
             if (tab === 'dashboard') this.refreshProxyStatus();
+            if (tab === 'chat') {
+                this.loadChatSources();
+                this.loadChatModels();
+            }
             if (tab === 'settings') {
                 if (!this.modelMappingData) this.loadModelMappings();
                 this.refreshProxyStatus();
@@ -608,6 +629,191 @@ document.addEventListener('alpine:init', () => {
             } else {
                 this.testResponse = data?.error?.message || this.t('requestFailed');
             }
+        },
+
+        async loadChatSources() {
+            this.chatSourceLoading = true;
+            const { ok, data } = await this.api('/api/chat/sources');
+            if (ok && Array.isArray(data?.sources)) {
+                this.chatSources = data.sources;
+                if (!this.chatSourceId || !this.chatSources.some((source) => source.id === this.chatSourceId)) {
+                    this.chatSourceId = this.chatSources[0]?.id || '';
+                    this.syncActiveChatSession();
+                }
+            }
+            this.chatSourceLoading = false;
+        },
+
+        async loadChatModels() {
+            const { ok, data } = await this.api('/v1/models');
+            if (ok && Array.isArray(data?.data)) {
+                this.chatModels = data.data.map((item) => item.id).filter(Boolean);
+            }
+        },
+
+        loadChatSessions() {
+            try {
+                const raw = localStorage.getItem(this.chatStorageKey);
+                const parsed = raw ? JSON.parse(raw) : [];
+                this.chatSessions = Array.isArray(parsed) ? parsed : [];
+            } catch {
+                this.chatSessions = [];
+            }
+
+            if (this.chatSessions.length === 0) {
+                this.newChatSession();
+                return;
+            }
+
+            this.openChatSession(this.chatSessions[0].id);
+        },
+
+        persistChatSessions() {
+            localStorage.setItem(this.chatStorageKey, JSON.stringify(this.chatSessions.slice(0, 30)));
+        },
+
+        chatSessionTitle(session) {
+            return session?.title || this.t('newChat');
+        },
+
+        buildChatSessionTitle(messages) {
+            const firstUserMessage = messages.find((message) => message.role === 'user' && message.content);
+            if (!firstUserMessage) return this.t('newChat');
+            return firstUserMessage.content.trim().slice(0, 24) || this.t('newChat');
+        },
+
+        newChatSession() {
+            const sessionId = 'chat_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+            const session = {
+                id: sessionId,
+                title: this.t('newChat'),
+                sourceId: this.chatSourceId || this.chatSources[0]?.id || '',
+                model: this.chatModel || 'gpt-5.2',
+                systemPrompt: '',
+                messages: [],
+                updatedAt: new Date().toISOString()
+            };
+
+            this.chatSessions.unshift(session);
+            this.openChatSession(sessionId);
+            this.persistChatSessions();
+            this.chatHistoryOpen = false;
+        },
+
+        openChatSession(sessionId) {
+            const session = this.chatSessions.find((item) => item.id === sessionId);
+            if (!session) return;
+
+            this.activeChatSessionId = session.id;
+            this.chatSourceId = session.sourceId || this.chatSources[0]?.id || '';
+            this.chatModel = session.model || 'gpt-5.2';
+            this.chatSystemPrompt = session.systemPrompt || '';
+            this.chatMessages = Array.isArray(session.messages) ? session.messages : [];
+            this.chatInput = '';
+            if (window.innerWidth < 1280) {
+                this.chatHistoryOpen = false;
+            }
+        },
+
+        syncActiveChatSession() {
+            const session = this.chatSessions.find((item) => item.id === this.activeChatSessionId);
+            if (!session) return;
+
+            session.sourceId = this.chatSourceId || '';
+            session.model = this.chatModel || 'gpt-5.2';
+            session.systemPrompt = this.chatSystemPrompt || '';
+            session.messages = [...this.chatMessages];
+            session.title = this.buildChatSessionTitle(session.messages);
+            session.updatedAt = new Date().toISOString();
+
+            this.chatSessions.sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt));
+            this.persistChatSessions();
+        },
+
+        removeChatSession(sessionId) {
+            const index = this.chatSessions.findIndex((item) => item.id === sessionId);
+            if (index < 0) return;
+
+            this.chatSessions.splice(index, 1);
+
+            if (this.activeChatSessionId === sessionId) {
+                if (this.chatSessions.length === 0) {
+                    this.activeChatSessionId = '';
+                    this.chatMessages = [];
+                    this.chatSystemPrompt = '';
+                    this.chatInput = '';
+                    this.newChatSession();
+                    return;
+                }
+                this.openChatSession(this.chatSessions[0].id);
+            }
+
+            this.persistChatSessions();
+        },
+
+        async sendChatMessage() {
+            if (this.chatLoading || !this.chatInput.trim() || !this.chatSourceId) return;
+
+            const userMessage = {
+                role: 'user',
+                content: this.chatInput.trim()
+            };
+
+            this.chatMessages.push(userMessage);
+            this.chatInput = '';
+            this.syncActiveChatSession();
+            this.chatLoading = true;
+
+            const requestMessages = [];
+            if (this.chatSystemPrompt.trim()) {
+                requestMessages.push({ role: 'system', content: this.chatSystemPrompt.trim() });
+            }
+            for (const message of this.chatMessages) {
+                requestMessages.push({ role: message.role, content: message.content });
+            }
+
+            const { ok, data, error } = await this.api('/api/chat/complete', {
+                method: 'POST',
+                body: JSON.stringify({
+                    sourceId: this.chatSourceId,
+                    model: this.chatModel.trim() || 'gpt-5.2',
+                    messages: requestMessages
+                })
+            });
+
+            this.chatLoading = false;
+
+            if (ok && data?.reply) {
+                this.chatMessages.push({
+                    role: 'assistant',
+                    content: data.reply.content || '',
+                    usage: data.reply.usage || null,
+                    model: data.model || this.chatModel,
+                    mappedModel: data.mappedModel || null,
+                    sourceLabel: data.source?.label || ''
+                });
+                this.syncActiveChatSession();
+                return;
+            }
+
+            this.chatMessages.push({
+                role: 'assistant',
+                content: data?.error || error || this.t('requestFailed'),
+                isError: true
+            });
+            this.syncActiveChatSession();
+        },
+
+        chatSourceLabel(sourceId) {
+            return this.chatSources.find((source) => source.id === sourceId)?.label || sourceId;
+        },
+
+        toggleChatHistory() {
+            this.chatHistoryOpen = !this.chatHistoryOpen;
+        },
+
+        toggleSystemPrompt() {
+            this.chatSystemPromptOpen = !this.chatSystemPromptOpen;
         },
 
         async loadHaikuModelSetting() {
