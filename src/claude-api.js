@@ -8,7 +8,23 @@ import { logger } from './utils/logger.js';
 
 const CLAUDE_API_URL = 'https://api.anthropic.com/v1/messages';
 const ANTHROPIC_VERSION = '2023-06-01';
-const OAUTH_BETA_HEADER = 'oauth-2025-04-20';
+const REQUIRED_BETA_FLAGS = ['oauth-2025-04-20', 'prompt-caching-2024-07-31'];
+
+/**
+ * Merge client-provided beta flags with our required ones.
+ * Deduplicates and preserves order (client flags first, then ours).
+ */
+function _buildBetaHeader(clientBeta) {
+    const flags = new Set();
+    if (clientBeta) {
+        for (const f of clientBeta.split(',')) {
+            const trimmed = f.trim();
+            if (trimmed) flags.add(trimmed);
+        }
+    }
+    for (const f of REQUIRED_BETA_FLAGS) flags.add(f);
+    return [...flags].join(',');
+}
 
 // Fields accepted by the Anthropic Messages API
 const ALLOWED_BODY_FIELDS = new Set([
@@ -28,7 +44,64 @@ function _sanitizeBody(body) {
             cleaned[key] = body[key];
         }
     }
+    // Fix messages to conform to Anthropic API rules:
+    // 1. First message must be role "user"
+    // 2. Messages must alternate user/assistant (no consecutive same-role)
+    if (cleaned.messages && Array.isArray(cleaned.messages)) {
+        cleaned.messages = _fixMessageOrder(cleaned.messages);
+    }
     return cleaned;
+}
+
+/**
+ * Fix message array to satisfy Anthropic Messages API constraints:
+ * - First message must have role "user"
+ * - Roles must strictly alternate (user, assistant, user, ...)
+ * - Consecutive same-role messages are merged into one
+ */
+function _fixMessageOrder(messages) {
+    if (!messages.length) return messages;
+
+    // Strip leading assistant messages (API requires first = user)
+    let start = 0;
+    while (start < messages.length && messages[start].role !== 'user') {
+        start++;
+    }
+    if (start >= messages.length) {
+        // No user messages at all — nothing we can do
+        return messages;
+    }
+    const trimmed = messages.slice(start);
+
+    // Merge consecutive same-role messages
+    const merged = [];
+    for (const msg of trimmed) {
+        if (merged.length > 0 && merged[merged.length - 1].role === msg.role) {
+            // Merge content into the previous message
+            const prev = merged[merged.length - 1];
+            prev.content = _mergeContent(prev.content, msg.content);
+        } else {
+            // Clone to avoid mutating the original
+            merged.push({ ...msg, content: _cloneContent(msg.content) });
+        }
+    }
+
+    return merged;
+}
+
+function _mergeContent(existing, incoming) {
+    const toArray = (c) => {
+        if (typeof c === 'string') return [{ type: 'text', text: c }];
+        if (Array.isArray(c)) return c;
+        return [c];
+    };
+    return [...toArray(existing), ...toArray(incoming)];
+}
+
+function _cloneContent(content) {
+    if (typeof content === 'string') return content;
+    if (Array.isArray(content)) return [...content];
+    return content;
 }
 
 /**
@@ -37,20 +110,23 @@ function _sanitizeBody(body) {
  * @param {string} accessToken - Claude OAuth access token
  * @returns {Promise<object>} Parsed Anthropic response
  */
-export async function sendClaudeMessage(body, accessToken) {
+export async function sendClaudeMessage(body, accessToken, { clientBeta } = {}) {
+    const sanitized = { ..._sanitizeBody(body), stream: false };
     const response = await fetch(CLAUDE_API_URL, {
         method: 'POST',
         headers: {
             'Authorization': `Bearer ${accessToken}`,
             'anthropic-version': ANTHROPIC_VERSION,
-            'anthropic-beta': OAUTH_BETA_HEADER,
+            'anthropic-beta': _buildBetaHeader(clientBeta),
             'Content-Type': 'application/json'
         },
-        body: JSON.stringify({ ..._sanitizeBody(body), stream: false })
+        body: JSON.stringify(sanitized)
     });
 
     if (!response.ok) {
-        _throwApiError(response, await response.text());
+        const errorText = await response.text();
+        logger.error(`[ClaudeAPI] Error response: ${errorText.slice(0, 1000)}`);
+        _throwApiError(response, errorText);
     }
 
     return await response.json();
@@ -63,20 +139,23 @@ export async function sendClaudeMessage(body, accessToken) {
  * @param {string} accessToken - Claude OAuth access token
  * @returns {Promise<Response>} Raw fetch response with SSE body
  */
-export async function sendClaudeStream(body, accessToken) {
+export async function sendClaudeStream(body, accessToken, { clientBeta } = {}) {
+    const sanitized = { ..._sanitizeBody(body), stream: true };
     const response = await fetch(CLAUDE_API_URL, {
         method: 'POST',
         headers: {
             'Authorization': `Bearer ${accessToken}`,
             'anthropic-version': ANTHROPIC_VERSION,
-            'anthropic-beta': OAUTH_BETA_HEADER,
+            'anthropic-beta': _buildBetaHeader(clientBeta),
             'Content-Type': 'application/json'
         },
-        body: JSON.stringify({ ..._sanitizeBody(body), stream: true })
+        body: JSON.stringify(sanitized)
     });
 
     if (!response.ok) {
-        _throwApiError(response, await response.text());
+        const errorText = await response.text();
+        logger.error(`[ClaudeAPI] Stream error response: ${errorText.slice(0, 1000)}`);
+        _throwApiError(response, errorText);
     }
 
     return response;
@@ -90,6 +169,19 @@ function _throwApiError(response, errorText) {
     if (response.status === 429) {
         const resetMs = _parseResetTime(response, errorText);
         throw new Error(`RATE_LIMITED:${resetMs}:${errorText}`);
+    }
+    // Detect generic 400 "Error" — Claude OAuth returns this when the account
+    // has exhausted its model quota (e.g., no more Opus/Sonnet usage left).
+    if (response.status === 400) {
+        try {
+            const parsed = JSON.parse(errorText);
+            if (parsed?.error?.message === 'Error' && parsed?.error?.type === 'invalid_request_error') {
+                throw new Error(`MODEL_QUOTA_EXHAUSTED: Account usage limit likely reached for this model tier`);
+            }
+        } catch (e) {
+            if (e.message.startsWith('MODEL_QUOTA_EXHAUSTED')) throw e;
+            // not JSON or different format — fall through to generic handler
+        }
     }
     throw new Error(`CLAUDE_API_ERROR: ${response.status} - ${errorText.slice(0, 500)}`);
 }

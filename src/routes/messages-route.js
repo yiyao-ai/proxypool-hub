@@ -41,6 +41,7 @@ export async function handleMessages(req, res) {
     const body = req.body;
     const requestedModel = body.model || 'gpt-5.2';
     const isStreaming = body.stream !== false;
+    const clientBeta = req.headers['anthropic-beta'] || '';
 
     const { isKilo, kiloTarget, upstreamModel } = resolveModelRouting(requestedModel);
 
@@ -72,7 +73,7 @@ export async function handleMessages(req, res) {
             if (poolResult !== false) return;
         }
         if (hasClaudeAccounts) {
-            const claudeResult = await _handleViaClaudeAccount(res, body, requestedModel, isStreaming, startTime);
+            const claudeResult = await _handleViaClaudeAccount(res, body, requestedModel, isStreaming, startTime, clientBeta);
             if (claudeResult !== false) return;
         }
     } else {
@@ -82,7 +83,7 @@ export async function handleMessages(req, res) {
             if (result !== false) return;
         }
         if (hasClaudeAccounts) {
-            const result = await _handleViaClaudeAccount(res, body, requestedModel, isStreaming, startTime);
+            const result = await _handleViaClaudeAccount(res, body, requestedModel, isStreaming, startTime, clientBeta);
             if (result !== false) return;
         }
         if (hasApiKeys) {
@@ -98,6 +99,14 @@ export async function handleMessages(req, res) {
     if (!hasAccounts && !hasApiKeys && !hasClaudeAccounts && !hasCompatibleKeys) {
         return sendAuthError(res, 'No accounts or API keys configured. Add them in the dashboard.');
     }
+
+    // Check if the failure was due to model quota exhaustion
+    const model = body.model || requestedModel;
+    const allOnCooldown = hasClaudeAccounts && _getUsableClaudeAccounts().every(a => _isModelCooledDown(a.email, model));
+    if (allOnCooldown) {
+        return handleStreamError(res, new Error('MODEL_QUOTA_EXHAUSTED: All accounts have exhausted quota for this model. Try a different model or wait.'), requestedModel, startTime);
+    }
+
     return handleStreamError(res, new Error('All accounts and API keys exhausted'), requestedModel, startTime);
 }
 
@@ -421,10 +430,11 @@ async function _handleViaCompatibleKeys(res, body, requestedModel, isStreaming, 
                     while (true) {
                         const { done, value } = await reader.read();
                         if (done) break;
+                        if (res.writableEnded || res.destroyed) break;
                         res.write(value);
                     }
                 } finally {
-                    res.end();
+                    if (!res.writableEnded) { try { res.end(); } catch { /* ignore */ } }
                 }
 
                 const streamDurationMs = Date.now() - startTime;
@@ -482,16 +492,47 @@ function _getUsableClaudeAccounts() {
  * Handle request via Claude account pool.
  * Body is already in Anthropic Messages format — direct passthrough.
  */
-async function _handleViaClaudeAccount(res, body, requestedModel, isStreaming, startTime) {
+// Per-model cooldown tracking for Claude OAuth quota exhaustion.
+// Key: "email:model" → timestamp when cooldown expires
+const _modelCooldowns = new Map();
+const MODEL_COOLDOWN_MS = 30 * 1000; // 30 seconds
+
+function _isModelCooledDown(email, model) {
+    const key = `${email}:${model}`;
+    const expiresAt = _modelCooldowns.get(key);
+    if (!expiresAt) return false;
+    if (Date.now() >= expiresAt) {
+        _modelCooldowns.delete(key);
+        return false;
+    }
+    return true;
+}
+
+function _setModelCooldown(email, model) {
+    _modelCooldowns.set(`${email}:${model}`, Date.now() + MODEL_COOLDOWN_MS);
+}
+
+async function _handleViaClaudeAccount(res, body, requestedModel, isStreaming, startTime, clientBeta) {
     const accounts = _getUsableClaudeAccounts();
+    const apiOpts = { clientBeta };
+    const model = body.model || requestedModel;
+
+    // Skip all accounts if every one is cooled down for this model
+    const available = accounts.filter(a => !_isModelCooledDown(a.email, model));
+    if (available.length === 0 && accounts.length > 0) {
+        logger.warn(`[Messages] All Claude accounts on cooldown for model=${model}, skipping`);
+        return false;
+    }
 
     for (const account of accounts) {
+        if (_isModelCooledDown(account.email, model)) continue;
+
         try {
             const claudeBody = { ...body, max_tokens: body.max_tokens || 8192 };
             logger.info(`[Messages] >>> Claude account | ${account.email} | model=${claudeBody.model}`);
 
             if (isStreaming) {
-                const upstream = await sendClaudeStream(claudeBody, account.accessToken);
+                const upstream = await sendClaudeStream(claudeBody, account.accessToken, apiOpts);
 
                 // Pipe Anthropic SSE directly — no format conversion needed
                 res.setHeader('Content-Type', 'text/event-stream');
@@ -507,11 +548,22 @@ async function _handleViaClaudeAccount(res, body, requestedModel, isStreaming, s
                         if (done) break;
                         res.write(value);
                     }
-                } finally {
-                    res.end();
+                } catch (streamErr) {
+                    // Stream failed mid-flight — write SSE error and close
+                    logger.error(`[Messages] Claude stream interrupted: ${account.email} - ${streamErr.message}`);
+                    if (!res.writableEnded) {
+                        try {
+                            res.write(`event: error\ndata: ${JSON.stringify({ type: 'error', error: { type: 'api_error', message: streamErr.message } })}\n\n`);
+                        } catch { /* ignore */ }
+                    }
+                    recordRequest({ provider: 'claude-pool', keyId: account.email, model: body.model, durationMs: Date.now() - startTime, success: false, error: streamErr.message });
+                    logRequest({ route: '/v1/messages', method: 'POST', provider: 'claude-pool', keyId: account.email, model: requestedModel, mappedModel: body.model, durationMs: Date.now() - startTime, status: 500, success: false, error: streamErr.message });
+                    if (!res.writableEnded) { try { res.end(); } catch { /* ignore */ } }
+                    return true; // Response already committed, do not retry
                 }
+                if (!res.writableEnded) { try { res.end(); } catch { /* ignore */ } }
             } else {
-                const result = await sendClaudeMessage(claudeBody, account.accessToken);
+                const result = await sendClaudeMessage(claudeBody, account.accessToken, apiOpts);
                 res.json(result);
             }
 
@@ -522,6 +574,16 @@ async function _handleViaClaudeAccount(res, body, requestedModel, isStreaming, s
             return true;
         } catch (error) {
             const durationMs = Date.now() - startTime;
+
+            // If headers were already sent (stream started), the response is committed — don't retry
+            if (res.headersSent) {
+                recordRequest({ provider: 'claude-pool', keyId: account.email, model: body.model, durationMs, success: false, error: error.message });
+                logRequest({ route: '/v1/messages', method: 'POST', provider: 'claude-pool', keyId: account.email, model: requestedModel, mappedModel: body.model, durationMs, status: 500, success: false, error: error.message });
+                logger.error(`[Messages] Claude account error (stream committed): ${account.email} - ${error.message}`);
+                if (!res.writableEnded) { try { res.end(); } catch { /* ignore */ } }
+                return true; // Response handled, do not retry
+            }
+
             if (error.message.includes('AUTH_EXPIRED')) {
                 logger.warn(`[Messages] Claude account auth expired: ${account.email}, attempting token refresh...`);
                 try {
@@ -532,16 +594,24 @@ async function _handleViaClaudeAccount(res, body, requestedModel, isStreaming, s
                             logger.info(`[Messages] Token refreshed for ${account.email}, retrying...`);
                             const claudeBody = { ...body, max_tokens: body.max_tokens || 8192 };
                             if (isStreaming) {
-                                const upstream = await sendClaudeStream(claudeBody, refreshed.accessToken);
+                                const upstream = await sendClaudeStream(claudeBody, refreshed.accessToken, apiOpts);
                                 res.setHeader('Content-Type', 'text/event-stream');
                                 res.setHeader('Cache-Control', 'no-cache');
                                 res.setHeader('Connection', 'keep-alive');
                                 res.setHeader('X-Accel-Buffering', 'no');
                                 res.flushHeaders();
                                 const reader = upstream.body.getReader();
-                                try { while (true) { const { done, value } = await reader.read(); if (done) break; res.write(value); } } finally { res.end(); }
+                                try {
+                                    while (true) { const { done, value } = await reader.read(); if (done) break; res.write(value); }
+                                } catch (streamErr) {
+                                    logger.error(`[Messages] Claude stream interrupted (after refresh): ${account.email} - ${streamErr.message}`);
+                                    if (!res.writableEnded) { try { res.write(`event: error\ndata: ${JSON.stringify({ type: 'error', error: { type: 'api_error', message: streamErr.message } })}\n\n`); } catch { /* ignore */ } }
+                                    if (!res.writableEnded) { try { res.end(); } catch { /* ignore */ } }
+                                    return true;
+                                }
+                                if (!res.writableEnded) { try { res.end(); } catch { /* ignore */ } }
                             } else {
-                                const result = await sendClaudeMessage(claudeBody, refreshed.accessToken);
+                                const result = await sendClaudeMessage(claudeBody, refreshed.accessToken, apiOpts);
                                 res.json(result);
                             }
                             const retryDurationMs = Date.now() - startTime;
@@ -560,6 +630,13 @@ async function _handleViaClaudeAccount(res, body, requestedModel, isStreaming, s
             if (error.message.startsWith('RATE_LIMITED:')) {
                 logger.warn(`[Messages] Claude account rate limited: ${account.email}`);
                 continue;
+            }
+            if (error.message.startsWith('MODEL_QUOTA_EXHAUSTED')) {
+                _setModelCooldown(account.email, model);
+                logger.warn(`[Messages] Claude account quota exhausted: ${account.email} | model=${model} | cooldown ${MODEL_COOLDOWN_MS / 1000}s`);
+                recordRequest({ provider: 'claude-pool', keyId: account.email, model: body.model, durationMs, success: false, error: 'quota_exhausted' });
+                logRequest({ route: '/v1/messages', method: 'POST', provider: 'claude-pool', keyId: account.email, model: requestedModel, mappedModel: body.model, durationMs, status: 429, success: false, error: 'Model quota exhausted' });
+                continue; // try next account, but don't retry this one
             }
             recordRequest({ provider: 'claude-pool', keyId: account.email, model: body.model, durationMs, success: false, error: error.message });
             logRequest({ route: '/v1/messages', method: 'POST', provider: 'claude-pool', keyId: account.email, model: requestedModel, mappedModel: body.model, durationMs, status: 500, success: false, error: error.message });

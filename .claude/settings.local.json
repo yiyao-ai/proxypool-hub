@@ -21,7 +21,10 @@
       "WebSearch",
       "WebFetch(domain:www.npmjs.com)",
       "WebFetch(domain:docs.openclaw.ai)",
-      "Bash(ls:*)"
+      "Bash(ls:*)",
+      "Bash(where openclaw:*)",
+      "Bash(find C:Usersgdf_lAppDataRoamingnpmnode_modulesopenclawdist -type f -name *.js -o -name *.mjs)",
+      "Bash(xargs grep:*)"
     ],
     "deny": [
       "Skill(superpowers:*)"

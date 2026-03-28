@@ -27,10 +27,15 @@ export function initSSEResponse(res) {
  */
 export async function pipeSSEStream(res, eventStream) {
   for await (const event of eventStream) {
+    if (res.writableEnded || res.destroyed) break;
     res.write(formatSSEEvent(event));
   }
-  res.write('data: [DONE]\n\n');
-  res.end();
+  if (!res.writableEnded && !res.destroyed) {
+    try {
+      res.write('data: [DONE]\n\n');
+      res.end();
+    } catch { /* client disconnected */ }
+  }
 }
 
 /**
@@ -46,14 +51,21 @@ export function handleStreamError(res, error, model, startTime) {
   const duration = Date.now() - startTime;
   logger.response(500, { model, error: error.message, duration });
 
+  // Response already fully closed — nothing we can do, just log and bail
+  if (res.writableEnded || res.destroyed) {
+    return;
+  }
+
   if (res.headersSent) {
-    res.write(
-      `event: error\ndata: ${JSON.stringify({
-        type: 'error',
-        error: { type: 'api_error', message: error.message }
-      })}\n\n`
-    );
-    res.end();
+    try {
+      res.write(
+        `event: error\ndata: ${JSON.stringify({
+          type: 'error',
+          error: { type: 'api_error', message: error.message }
+        })}\n\n`
+      );
+    } catch { /* ignore write errors on closing streams */ }
+    try { res.end(); } catch { /* ignore */ }
     return;
   }
 
@@ -80,10 +92,10 @@ export function handleStreamError(res, error, model, startTime) {
     });
   }
 
-  if (error.message.includes('RESOURCE_EXHAUSTED')) {
+  if (error.message.includes('RESOURCE_EXHAUSTED') || error.message.includes('MODEL_QUOTA_EXHAUSTED')) {
     return res.status(429).json({
       type: 'error',
-      error: { type: 'rate_limit_error', message: error.message }
+      error: { type: 'rate_limit_error', message: 'Model usage quota exhausted. Try a different model or wait for quota to reset.' }
     });
   }
 
