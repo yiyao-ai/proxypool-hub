@@ -1678,7 +1678,7 @@
                                 <span class="text-[10px] font-bold uppercase px-1.5 py-0.5 rounded"
                                     :class="entry.success ? 'bg-green-500/10 text-green-400 border border-green-500/30' : 'bg-red-500/10 text-red-400 border border-red-500/30'"
                                     x-text="entry.success ? 'OK' : 'ERR'"></span>
-                                <span class="text-xs font-mono text-gray-500 w-[140px] shrink-0" x-text="entry.timestamp?.replace('T', ' ').slice(0, 19)"></span>
+                                <span class="text-xs font-mono text-gray-500 w-[155px] shrink-0" x-text="entry.timestamp ? new Date(entry.timestamp).toLocaleString([], {hour12:false, year:'numeric', month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit', second:'2-digit'}) : ''"></span>
                                 <span class="text-xs font-mono text-neon-cyan truncate max-w-[200px]" x-text="entry.route"></span>
                                 <span class="text-[10px] font-mono text-gray-400 px-1.5 py-0.5 bg-space-800 rounded" x-text="entry.provider"></span>
                                 <span class="text-xs font-mono text-white truncate" x-text="entry.mappedModel || entry.model"></span>

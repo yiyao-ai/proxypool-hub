@@ -45,7 +45,7 @@ class Logger extends EventEmitter {
     }
 
     _formatTimestamp() {
-        return new Date().toISOString().replace('T', ' ').slice(0, 19);
+        return new Date().toISOString();
     }
 
     _formatMessage(args) {
@@ -94,7 +94,8 @@ class Logger extends EventEmitter {
 
         this.emit('log', logEntry);
 
-        const consoleMessage = `${COLORS.gray}${timestamp}${COLORS.reset} ${color}${icon}${COLORS.reset} ${message}`;
+        const consoleTime = timestamp.replace('T', ' ').slice(0, 19);
+        const consoleMessage = `${COLORS.gray}${consoleTime}${COLORS.reset} ${color}${icon}${COLORS.reset} ${message}`;
 
         switch (level) {
             case 'ERROR':
