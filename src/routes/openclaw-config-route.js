@@ -22,9 +22,8 @@ export function handleGetOpenClawConfig(req, res) {
  */
 export function handleSetOpenClawProxy(req, res, { port }) {
     try {
-        const { apiType } = req.body || {};
-        const result = setProxyMode(port, { apiType: apiType || 'anthropic-messages' });
-        logger.info(`[OpenClawConfig] Proxy configured: ${result.baseUrl} (${result.apiType})`);
+        const result = setProxyMode(port);
+        logger.info(`[OpenClawConfig] Proxy configured: ${result.baseUrl} — ${result.models.length} models`);
 
         res.json({
             success: true,
