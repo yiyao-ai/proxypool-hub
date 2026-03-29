@@ -73,7 +73,7 @@ export async function handleMessages(req, res) {
             if (poolResult !== false) return;
         }
         if (hasClaudeAccounts) {
-            const claudeResult = await _handleViaClaudeAccount(res, body, requestedModel, isStreaming, startTime, clientBeta);
+            const claudeResult = await _handleViaClaudeAccount(req, res, body, requestedModel, isStreaming, startTime, clientBeta);
             if (claudeResult !== false) return;
         }
     } else {
@@ -83,7 +83,7 @@ export async function handleMessages(req, res) {
             if (result !== false) return;
         }
         if (hasClaudeAccounts) {
-            const result = await _handleViaClaudeAccount(res, body, requestedModel, isStreaming, startTime, clientBeta);
+            const result = await _handleViaClaudeAccount(req, res, body, requestedModel, isStreaming, startTime, clientBeta);
             if (result !== false) return;
         }
         if (hasApiKeys) {
@@ -512,10 +512,10 @@ function _setModelCooldown(email, model) {
     _modelCooldowns.set(`${email}:${model}`, Date.now() + MODEL_COOLDOWN_MS);
 }
 
-async function _handleViaClaudeAccount(res, body, requestedModel, isStreaming, startTime, clientBeta) {
+async function _handleViaClaudeAccount(req, res, body, requestedModel, isStreaming, startTime, clientBeta) {
     const accounts = _getUsableClaudeAccounts();
-    const apiOpts = { clientBeta };
     const model = body.model || requestedModel;
+    const apiOptsBase = { clientBeta };
 
     // Skip all accounts if every one is cooled down for this model
     const available = accounts.filter(a => !_isModelCooledDown(a.email, model));
@@ -527,8 +527,15 @@ async function _handleViaClaudeAccount(res, body, requestedModel, isStreaming, s
     for (const account of accounts) {
         if (_isModelCooledDown(account.email, model)) continue;
 
+        const abortController = new AbortController();
+        const onClientClose = () => {
+            if (!abortController.signal.aborted) abortController.abort('client_disconnected');
+        };
+        req.on('close', onClientClose);
+
         try {
             const claudeBody = { ...body, max_tokens: body.max_tokens || 8192 };
+            const apiOpts = { ...apiOptsBase, signal: abortController.signal };
             logger.info(`[Messages] >>> Claude account | ${account.email} | model=${claudeBody.model}`);
 
             if (isStreaming) {
@@ -546,7 +553,8 @@ async function _handleViaClaudeAccount(res, body, requestedModel, isStreaming, s
                     while (true) {
                         const { done, value } = await reader.read();
                         if (done) break;
-                        res.write(value);
+                        if (res.writableEnded || res.destroyed) break;
+                        try { res.write(value); } catch { break; }
                     }
                 } catch (streamErr) {
                     // Stream failed mid-flight — write SSE error and close
@@ -593,6 +601,7 @@ async function _handleViaClaudeAccount(res, body, requestedModel, isStreaming, s
                         if (refreshed && refreshed.accessToken) {
                             logger.info(`[Messages] Token refreshed for ${account.email}, retrying...`);
                             const claudeBody = { ...body, max_tokens: body.max_tokens || 8192 };
+                            const apiOpts = { ...apiOptsBase, signal: abortController.signal };
                             if (isStreaming) {
                                 const upstream = await sendClaudeStream(claudeBody, refreshed.accessToken, apiOpts);
                                 res.setHeader('Content-Type', 'text/event-stream');
@@ -602,7 +611,12 @@ async function _handleViaClaudeAccount(res, body, requestedModel, isStreaming, s
                                 res.flushHeaders();
                                 const reader = upstream.body.getReader();
                                 try {
-                                    while (true) { const { done, value } = await reader.read(); if (done) break; res.write(value); }
+                                    while (true) {
+                                        const { done, value } = await reader.read();
+                                        if (done) break;
+                                        if (res.writableEnded || res.destroyed) break;
+                                        try { res.write(value); } catch { break; }
+                                    }
                                 } catch (streamErr) {
                                     logger.error(`[Messages] Claude stream interrupted (after refresh): ${account.email} - ${streamErr.message}`);
                                     if (!res.writableEnded) { try { res.write(`event: error\ndata: ${JSON.stringify({ type: 'error', error: { type: 'api_error', message: streamErr.message } })}\n\n`); } catch { /* ignore */ } }
@@ -642,6 +656,8 @@ async function _handleViaClaudeAccount(res, body, requestedModel, isStreaming, s
             logRequest({ route: '/v1/messages', method: 'POST', provider: 'claude-pool', keyId: account.email, model: requestedModel, mappedModel: body.model, durationMs, status: 500, success: false, error: error.message });
             logger.error(`[Messages] Claude account error: ${account.email} - ${error.message}`);
             continue;
+        } finally {
+            req.off('close', onClientClose);
         }
     }
 

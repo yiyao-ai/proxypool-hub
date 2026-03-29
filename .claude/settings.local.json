@@ -24,7 +24,14 @@
       "Bash(ls:*)",
       "Bash(where openclaw:*)",
       "Bash(find C:Usersgdf_lAppDataRoamingnpmnode_modulesopenclawdist -type f -name *.js -o -name *.mjs)",
-      "Bash(xargs grep:*)"
+      "Bash(xargs grep:*)",
+      "mcp__bb-browser__browser_click",
+      "mcp__bb-browser__browser_snapshot",
+      "mcp__bb-browser__browser_fill",
+      "mcp__bb-browser__browser_press",
+      "mcp__bb-browser__browser_screenshot",
+      "mcp__bb-browser__browser_eval",
+      "mcp__plugin_context7_context7__query-docs"
     ],
     "deny": [
       "Skill(superpowers:*)"

@@ -30,14 +30,14 @@ function _buildBetaHeader(clientBeta) {
 const ALLOWED_BODY_FIELDS = new Set([
     'model', 'messages', 'max_tokens', 'metadata', 'stop_sequences',
     'stream', 'system', 'temperature', 'thinking', 'tool_choice', 'tools',
-    'top_k', 'top_p', 'service_tier'
+    'top_k', 'top_p', 'service_tier', 'budget_tokens', 'speed'
 ]);
 
 /**
  * Strip non-standard fields from request body to avoid 400 errors.
  * Claude Code sends internal fields like context_management that the API rejects.
  */
-function _sanitizeBody(body) {
+export function sanitizeClaudeBody(body) {
     const cleaned = {};
     for (const key of Object.keys(body)) {
         if (ALLOWED_BODY_FIELDS.has(key)) {
@@ -111,7 +111,7 @@ function _cloneContent(content) {
  * @returns {Promise<object>} Parsed Anthropic response
  */
 export async function sendClaudeMessage(body, accessToken, { clientBeta } = {}) {
-    const sanitized = { ..._sanitizeBody(body), stream: false };
+    const sanitized = { ...sanitizeClaudeBody(body), stream: false };
     const response = await fetch(CLAUDE_API_URL, {
         method: 'POST',
         headers: {
@@ -139,8 +139,8 @@ export async function sendClaudeMessage(body, accessToken, { clientBeta } = {}) 
  * @param {string} accessToken - Claude OAuth access token
  * @returns {Promise<Response>} Raw fetch response with SSE body
  */
-export async function sendClaudeStream(body, accessToken, { clientBeta } = {}) {
-    const sanitized = { ..._sanitizeBody(body), stream: true };
+export async function sendClaudeStream(body, accessToken, { clientBeta, signal } = {}) {
+    const sanitized = { ...sanitizeClaudeBody(body), stream: true };
     const response = await fetch(CLAUDE_API_URL, {
         method: 'POST',
         headers: {
@@ -149,7 +149,8 @@ export async function sendClaudeStream(body, accessToken, { clientBeta } = {}) {
             'anthropic-beta': _buildBetaHeader(clientBeta),
             'Content-Type': 'application/json'
         },
-        body: JSON.stringify(sanitized)
+        body: JSON.stringify(sanitized),
+        signal
     });
 
     if (!response.ok) {
@@ -236,4 +237,4 @@ export function mapToClaudeModel(modelId) {
 let _modelMapping = null;
 import('./model-mapping.js').then(mod => { _modelMapping = mod; }).catch(() => {});
 
-export default { sendClaudeMessage, sendClaudeStream, mapToClaudeModel };
+export default { sendClaudeMessage, sendClaudeStream, mapToClaudeModel, sanitizeClaudeBody };
