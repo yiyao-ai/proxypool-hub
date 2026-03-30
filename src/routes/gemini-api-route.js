@@ -12,6 +12,8 @@ import { resolveModel } from '../model-mapping.js';
 import { logger } from '../utils/logger.js';
 import { recordRequest as recordUsageRequest } from '../usage-tracker.js';
 import { logRequest } from '../request-logger.js';
+import { getServerSettings } from '../server-settings.js';
+import { detectRequestApp, resolveAssignedCredential } from '../app-routing.js';
 
 const DEFAULT_GEMINI_BASE = 'https://generativelanguage.googleapis.com/v1beta';
 
@@ -159,6 +161,8 @@ function _chatToGeminiResponse(chatResponse) {
 export async function handleGeminiApiProxy(req, res) {
     const startTime = Date.now();
     const path = req.params[0] || req.params['0'] || '';
+    const settings = getServerSettings();
+    const appId = detectRequestApp(req);
 
     // GET /v1beta/models — list models (no wildcard match)
     if (req.method === 'GET' && !path) {
@@ -195,6 +199,19 @@ export async function handleGeminiApiProxy(req, res) {
         return res.status(401).json({
             error: { code: 401, message: 'No API keys configured. Add keys at http://localhost:8081', status: 'UNAUTHENTICATED' }
         });
+    }
+
+    if (settings.routingMode === 'app-assigned') {
+        const assignment = resolveAssignedCredential(settings, appId);
+        if (assignment.matched) {
+            const assigned = await _handleAssignedGeminiRequest(req, res, requestedModel, action, isStreaming, geminiBody, assignment);
+            if (assigned !== false) return;
+            if (!assignment.fallbackToDefault) {
+                return res.status(503).json({
+                    error: { code: 503, message: `Assigned credential unavailable for ${appId}: ${assignment.unavailableReason || 'request_failed'}`, status: 'UNAVAILABLE' }
+                });
+            }
+        }
     }
 
     const MAX_KEY_RETRIES = 3;
@@ -311,6 +328,44 @@ export async function handleGeminiApiProxy(req, res) {
     res.status(503).json({
         error: { code: 503, message: 'All API keys exhausted. Try again later.', status: 'UNAVAILABLE' }
     });
+}
+
+async function _handleAssignedGeminiRequest(req, res, requestedModel, action, isStreaming, geminiBody, assignment) {
+    if (assignment.credentialType !== 'api-key' || !assignment.credential) return false;
+    const provider = assignment.credential;
+
+    try {
+        const mappedModel = resolveModel(provider.type, requestedModel);
+        if (provider.type === 'gemini') {
+            const baseUrl = provider.baseUrl || DEFAULT_GEMINI_BASE;
+            const url = `${baseUrl}/models/${mappedModel}:${action}?key=${provider.apiKey}`;
+            const upstreamRes = await fetch(url, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(geminiBody)
+            });
+            if (!upstreamRes.ok) return false;
+            const contentType = upstreamRes.headers.get('content-type') || 'application/json';
+            res.writeHead(200, { 'Content-Type': contentType });
+            const reader = upstreamRes.body.getReader();
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+                res.write(value);
+            }
+            res.end();
+            return true;
+        }
+
+        const response = await _proxyViaConversion(provider, mappedModel, geminiBody);
+        if (!response.ok) return false;
+        const responseBody = await response.text();
+        const parsed = JSON.parse(responseBody);
+        if (isStreaming) _sendGeminiSSE(res, parsed); else res.json(parsed);
+        return true;
+    } catch {
+        return false;
+    }
 }
 
 /**

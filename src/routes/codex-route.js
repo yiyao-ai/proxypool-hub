@@ -20,6 +20,7 @@ import { recordRequest } from '../usage-tracker.js';
 import { sendResponsesSSE } from '../utils/responses-sse.js';
 import { resolveModel } from '../model-mapping.js';
 import { logRequest } from '../request-logger.js';
+import { detectRequestApp, resolveAssignedCredential } from '../app-routing.js';
 
 const UPSTREAM_BASE = 'https://chatgpt.com/backend-api';
 const MAX_RETRIES = 5;
@@ -126,11 +127,23 @@ export async function handleCodexResponses(req, res) {
     console.log('='.repeat(70));
 
     const settings = getServerSettings();
+    const appId = detectRequestApp(req);
     const priority = settings.routingPriority || 'account-first';
     const hasAccounts = listAccounts().total > 0;
     const apiKeyTypes = ['openai', 'azure-openai', 'gemini', 'vertex-ai'];
     const hasApiKeys = hasKeysForTypes(apiKeyTypes);
     const hasClaudeAccounts = _getUsableClaudeAccounts().length > 0;
+
+    if (settings.routingMode === 'app-assigned') {
+        const assignment = resolveAssignedCredential(settings, appId);
+        if (assignment.matched) {
+            const result = await _handleCodexAssignment(req, res, body, modelId, isStreaming, startTime, assignment);
+            if (result !== false) return;
+            if (!assignment.fallbackToDefault) {
+                return sendCodexError(res, 503, `Assigned credential unavailable for ${appId}: ${assignment.unavailableReason || 'request_failed'}`);
+            }
+        }
+    }
 
     if (priority === 'apikey-first' && hasApiKeys) {
         const result = await _handleCodexViaApiKey(res, body, modelId, isStreaming, apiKeyTypes, startTime);
@@ -172,6 +185,108 @@ export async function handleCodexResponses(req, res) {
     return sendCodexError(res, 503, 'All accounts and API keys exhausted.');
 }
 
+async function _handleCodexAssignment(req, res, body, modelId, isStreaming, startTime, assignment) {
+    if (!assignment.credential) return false;
+
+    if (assignment.credentialType === 'chatgpt-account') {
+        return _handleCodexViaAssignedAccount(req, res, body, modelId, isStreaming, startTime, assignment.credential.email);
+    }
+    if (assignment.credentialType === 'claude-account') {
+        return _handleCodexViaAssignedClaudeAccount(res, body, modelId, isStreaming, startTime, assignment.credential.email);
+    }
+    return _handleCodexViaAssignedApiKey(res, body, modelId, isStreaming, startTime, assignment.credential);
+}
+
+async function _handleCodexViaAssignedApiKey(res, body, modelId, isStreaming, startTime, provider) {
+    const chatBody = _codexToChatBody(body);
+
+    try {
+        const mappedModel = resolveModel(provider.type, modelId);
+        const mappedBody = { ...chatBody, model: mappedModel };
+        const response = await provider.sendRequest(mappedBody);
+        if (!response.ok) return false;
+        const responseBody = await response.text();
+        const chatResponse = JSON.parse(responseBody);
+        const durationMs = Date.now() - startTime;
+        const inputTokens = chatResponse.usage?.prompt_tokens || 0;
+        const outputTokens = chatResponse.usage?.completion_tokens || 0;
+        const cost = provider.estimateCost(mappedModel, inputTokens, outputTokens);
+        recordUsage(provider.id, { inputTokens, outputTokens, model: mappedModel });
+        recordRequest({ provider: provider.type, keyId: provider.id, model: mappedModel, inputTokens, outputTokens, cost, durationMs, success: true });
+        logRequest({ route: '/backend-api/codex/responses', provider: provider.type, keyId: provider.id, model: modelId, mappedModel, requestBody: body, responseBody, inputTokens, outputTokens, cost, durationMs, status: 200, success: true });
+        const codexResponse = _chatToCodexResponse(chatResponse, modelId);
+        if (isStreaming) sendResponsesSSE(res, codexResponse); else res.json(codexResponse);
+        return true;
+    } catch {
+        return false;
+    }
+}
+
+async function _handleCodexViaAssignedAccount(req, res, body, modelId, isStreaming, startTime, email) {
+    const creds = await getCredentialsForAccount(email);
+    if (!creds) return false;
+
+    try {
+        const upstreamResponse = await fetch(`${UPSTREAM_BASE}/codex/responses`, {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${creds.accessToken}`,
+                'ChatGPT-Account-ID': creds.accountId,
+                'Content-Type': 'application/json',
+                'Accept': isStreaming ? 'text/event-stream' : 'application/json'
+            },
+            body: JSON.stringify(body)
+        });
+        if (!upstreamResponse.ok) return false;
+
+        if (isStreaming) {
+            res.setHeader('Content-Type', 'text/event-stream');
+            res.setHeader('Cache-Control', 'no-cache');
+            res.setHeader('Connection', 'keep-alive');
+            res.setHeader('X-Accel-Buffering', 'no');
+            res.flushHeaders();
+            const reader = upstreamResponse.body.getReader();
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+                res.write(value);
+            }
+            res.end();
+        } else {
+            const responseBody = await upstreamResponse.text();
+            res.setHeader('Content-Type', 'application/json');
+            res.send(responseBody);
+        }
+
+        const duration = Date.now() - startTime;
+        recordRequest({ provider: 'chatgpt-pool', keyId: creds.email, model: modelId, durationMs: duration, success: true });
+        logRequest({ route: '/backend-api/codex/responses', method: 'POST', provider: 'chatgpt-pool', keyId: creds.email, model: modelId, durationMs: duration, status: 200, success: true });
+        return true;
+    } catch {
+        return false;
+    }
+}
+
+async function _handleCodexViaAssignedClaudeAccount(res, body, modelId, isStreaming, startTime, email) {
+    const account = getClaudeAccount(email);
+    if (!account?.accessToken || account.enabled === false) return false;
+    const anthropicBody = _codexToAnthropicBody(body);
+
+    try {
+        const claudeResponse = await sendClaudeMessage(anthropicBody, account.accessToken);
+        const durationMs = Date.now() - startTime;
+        const codexFormat = _anthropicToCodexFormat(claudeResponse, modelId);
+        const inputTokens = claudeResponse.usage?.input_tokens || 0;
+        const outputTokens = claudeResponse.usage?.output_tokens || 0;
+        recordRequest({ provider: 'claude-pool', keyId: account.email, model: anthropicBody.model, inputTokens, outputTokens, durationMs, success: true });
+        logRequest({ route: '/backend-api/codex/responses', provider: 'claude-pool', keyId: account.email, model: modelId, mappedModel: anthropicBody.model, requestBody: body, inputTokens, outputTokens, durationMs, status: 200, success: true });
+        if (isStreaming) sendResponsesSSE(res, codexFormat); else res.json(codexFormat);
+        return true;
+    } catch {
+        return false;
+    }
+}
+
 // ─── Codex Responses API ↔ Chat Completions format converters ─────────────────
 
 function _codexToChatBody(body) {
@@ -181,8 +296,30 @@ function _codexToChatBody(body) {
         messages.push({ role: 'system', content: body.instructions });
     }
 
+    const convertBlock = (c) => {
+        if (!c) return null;
+        if (c.type === 'text' || (c.text && c.type !== 'input_image')) {
+            return { type: 'text', text: c.text || '' };
+        }
+        if (c.type === 'input_image' || c.type === 'image') {
+            if (c.data) {
+                return { type: 'image_url', image_url: { url: `data:${c.media_type || 'image/jpeg'};base64,${c.data}` } };
+            }
+            if (c.image_url) {
+                return { type: 'image_url', image_url: { url: c.image_url } };
+            }
+            if (c.url) {
+                return { type: 'image_url', image_url: { url: c.url } };
+            }
+            return null;
+        }
+        if (c.type === 'image_url' || c.image_url) {
+            return { type: 'image_url', image_url: c.image_url || { url: c.url } };
+        }
+        return null;
+    };
+
     if (Array.isArray(body.input)) {
-        // Build call_id → function name lookup for tool result messages
         const callIdToName = {};
         for (const item of body.input) {
             if (item.type === 'function_call' && item.name) {
@@ -190,17 +327,14 @@ function _codexToChatBody(body) {
             }
         }
 
-        // Group consecutive function_calls into a single assistant message
-        // so that Azure/OpenAI doesn't reject due to missing tool responses.
         let pendingToolCalls = null;
 
         for (const item of body.input) {
             if (item.type === 'function_call') {
-                // Accumulate into a single assistant message
                 if (!pendingToolCalls) {
                     pendingToolCalls = {
                         role: 'assistant',
-                        content: '',
+                        content: null,
                         tool_calls: []
                     };
                 }
@@ -210,7 +344,6 @@ function _codexToChatBody(body) {
                     function: { name: item.name, arguments: item.arguments || '{}' }
                 });
             } else {
-                // Flush any pending tool calls before adding a non-function_call item
                 if (pendingToolCalls) {
                     messages.push(pendingToolCalls);
                     pendingToolCalls = null;
@@ -218,28 +351,45 @@ function _codexToChatBody(body) {
 
                 if (item.type === 'message') {
                     const role = item.role === 'developer' ? 'system' : item.role;
-                    let content = '';
+                    let content;
+                    
                     if (typeof item.content === 'string') {
                         content = item.content;
                     } else if (Array.isArray(item.content)) {
-                        content = item.content.map(c => c.text || '').join('\n');
+                        content = item.content.map(convertBlock).filter(Boolean);
+                        if (content.length > 0 && content.every(c => c.type === 'text')) {
+                            content = content.map(c => c.text).join('\n');
+                        }
+                    } else if (item.content && typeof item.content === 'object') {
+                        content = [convertBlock(item.content)].filter(Boolean);
                     }
-                    messages.push({ role, content });
+                    
+                    if (content) messages.push({ role, content });
+                } else if (item.type === 'input_image') {
+                    const converted = convertBlock(item);
+                    if (converted) {
+                        messages.push({ role: 'user', content: [converted] });
+                    }
                 } else if (item.type === 'function_call_output') {
                     const callId = item.call_id || item.id || '';
+                    let toolContent = item.output || '';
+                    if (Array.isArray(toolContent)) {
+                        toolContent = toolContent.map(convertBlock).filter(Boolean);
+                        if (toolContent.length > 0 && toolContent.every(c => c.type === 'text')) {
+                            toolContent = toolContent.map(c => c.text).join('\n');
+                        }
+                    }
                     messages.push({
                         role: 'tool',
                         tool_call_id: callId,
                         name: callIdToName[callId] || 'unknown',
-                        content: item.output || ''
+                        content: toolContent
                     });
                 }
             }
         }
-        // Flush any remaining pending tool calls
         if (pendingToolCalls) {
             messages.push(pendingToolCalls);
-            pendingToolCalls = null;
         }
     } else if (typeof body.input === 'string') {
         messages.push({ role: 'user', content: body.input });
@@ -660,7 +810,33 @@ function _codexToAnthropicBody(body) {
                 if (typeof item.content === 'string') {
                     content = item.content;
                 } else if (Array.isArray(item.content)) {
-                    content = item.content.map(c => ({ type: 'text', text: c.text || '' }));
+                    content = item.content.map(c => {
+                        if (c.type === 'text') {
+                            return { type: 'text', text: c.text || '' };
+                        } else if (c.type === 'input_image' || c.type === 'image') {
+                            if (c.data) {
+                                return {
+                                    type: 'image',
+                                    source: { type: 'base64', media_type: c.media_type || 'image/jpeg', data: c.data }
+                                };
+                            }
+                            const url = c.image_url || c.url;
+                            if (url) {
+                                const base64Match = url.match(/^data:([^;]+);base64,(.+)$/);
+                                if (base64Match) {
+                                    return {
+                                        type: 'image',
+                                        source: { type: 'base64', media_type: base64Match[1], data: base64Match[2] }
+                                    };
+                                }
+                                return { type: 'image', source: { type: 'url', url } };
+                            }
+                            return null;
+                        } else if (c.text) {
+                            return { type: 'text', text: c.text };
+                        }
+                        return null;
+                    }).filter(Boolean);
                 } else {
                     content = '';
                 }
@@ -695,11 +871,52 @@ function _codexToAnthropicBody(body) {
                     }]
                 });
             } else if (item.type === 'function_call_output') {
+                let toolContent = item.output || '';
+                if (Array.isArray(toolContent)) {
+                    toolContent = toolContent.map(c => {
+                        if (c.type === 'text') return { type: 'text', text: c.text || '' };
+                        if (c.type === 'input_image' || c.type === 'image') {
+                            if (c.data) {
+                                return { type: 'image', source: { type: 'base64', media_type: c.media_type || 'image/jpeg', data: c.data } };
+                            }
+                            const url = c.image_url || c.url;
+                            if (url) {
+                                const b64 = url.match(/^data:([^;]+);base64,(.+)$/);
+                                if (b64) return { type: 'image', source: { type: 'base64', media_type: b64[1], data: b64[2] } };
+                                return { type: 'image', source: { type: 'url', url } };
+                            }
+                            return null;
+                        }
+                        if (c.text) return { type: 'text', text: c.text };
+                        return null;
+                    }).filter(Boolean);
+                }
                 pendingToolResults.push({
                     type: 'tool_result',
                     tool_use_id: item.call_id || item.id || '',
-                    content: item.output || ''
+                    content: toolContent
                 });
+            } else if (item.type === 'input_image') {
+                let imageBlock = null;
+                if (item.data) {
+                    imageBlock = { type: 'image', source: { type: 'base64', media_type: item.media_type || 'image/jpeg', data: item.data } };
+                } else {
+                    const url = item.image_url || item.url;
+                    if (url) {
+                        const base64Match = url.match(/^data:([^;]+);base64,(.+)$/);
+                        if (base64Match) {
+                            imageBlock = { type: 'image', source: { type: 'base64', media_type: base64Match[1], data: base64Match[2] } };
+                        } else {
+                            imageBlock = { type: 'image', source: { type: 'url', url } };
+                        }
+                    }
+                }
+                if (imageBlock) {
+                    if (pendingToolResults.length > 0) {
+                        messages.push({ role: 'user', content: pendingToolResults.splice(0) });
+                    }
+                    messages.push({ role: 'user', content: [imageBlock] });
+                }
             }
         }
         if (pendingToolResults.length > 0) {

@@ -144,9 +144,34 @@ function convertMessages(messages = []) {
 
     for (const msg of cleanedMessages) {
         if (msg.role === 'user') {
-            const textParts = normalizeTextBlocks(msg.content);
-            if (textParts.length > 0) {
-                output.push({ role: 'user', content: textParts.join('\n\n') });
+            let content;
+            if (typeof msg.content === 'string') {
+                content = msg.content;
+            } else if (Array.isArray(msg.content)) {
+                content = msg.content.map(block => {
+                    if (block.type === 'text') {
+                        return { type: 'text', text: block.text };
+                    } else if (block.type === 'image') {
+                        if (block.source && block.source.type === 'base64') {
+                            return {
+                                type: 'image_url',
+                                image_url: {
+                                    url: `data:image/jpeg;base64,${block.source.data}`
+                                }
+                            };
+                        }
+                    }
+                    return null;
+                }).filter(Boolean);
+
+                // If it's just text blocks, flatten to string for better compatibility
+                if (content.every(c => c.type === 'text')) {
+                    content = content.map(c => c.text).join('\n\n');
+                }
+            }
+
+            if (content) {
+                output.push({ role: 'user', content });
             }
 
             if (Array.isArray(msg.content)) {

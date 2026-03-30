@@ -7,7 +7,7 @@
 import { sendMessage } from '../direct-api.js';
 import { sendKiloMessage } from '../kilo-api.js';
 import { resolveModelRouting } from '../model-mapper.js';
-import { getCredentialsOrError, sendAuthError } from '../middleware/credentials.js';
+import { getCredentialsOrError, getCredentialsForAccount, sendAuthError } from '../middleware/credentials.js';
 import { handleStreamError } from '../middleware/sse.js';
 import { logger } from '../utils/logger.js';
 import { listAccounts } from '../account-manager.js';
@@ -16,6 +16,7 @@ import { selectKey, recordUsage, recordError, recordRateLimit, hasKeysForTypes, 
 import { recordRequest } from '../usage-tracker.js';
 import { resolveModel } from '../model-mapping.js';
 import { logRequest } from '../request-logger.js';
+import { detectRequestApp, resolveAssignedCredential } from '../app-routing.js';
 
 /**
  * POST /v1/chat/completions
@@ -44,11 +45,23 @@ export async function handleChatCompletion(req, res) {
   }
 
   const settings = getServerSettings();
+  const appId = detectRequestApp(req);
   const priority = settings.routingPriority || 'account-first';
   const hasAccounts = listAccounts().total > 0;
   // Try openai, azure-openai, gemini, vertex-ai keys for chat completions
   const chatKeyTypes = ['openai', 'azure-openai', 'gemini', 'vertex-ai'];
   const hasApiKeys = hasKeysForTypes(chatKeyTypes);
+
+  if (settings.routingMode === 'app-assigned') {
+    const assignment = resolveAssignedCredential(settings, appId);
+    if (assignment.matched) {
+      const assigned = await _handleChatAssignment(req, res, body, requestedModel, upstreamModel, startTime, assignment);
+      if (assigned !== false) return;
+      if (!assignment.fallbackToDefault) {
+        return res.status(503).json({ error: { message: `Assigned credential unavailable for ${appId}: ${assignment.unavailableReason || 'request_failed'}`, type: 'service_unavailable' } });
+      }
+    }
+  }
 
   if (priority === 'apikey-first' && hasApiKeys) {
     const result = await _handleChatViaApiKey(res, body, requestedModel, chatKeyTypes, startTime);
@@ -77,6 +90,56 @@ export async function handleChatCompletion(req, res) {
     return res.status(429).json({ error: { message: `All API keys are rate-limited. Try again in ${waitSec}s.`, type: 'rate_limit_error' } });
   }
   return res.status(503).json({ error: { message: 'All accounts and API keys exhausted. Try again later.', type: 'service_unavailable' } });
+}
+
+async function _handleChatAssignment(req, res, body, requestedModel, upstreamModel, startTime, assignment) {
+  if (!assignment.credential) return false;
+
+  if (assignment.credentialType === 'chatgpt-account') {
+    const creds = await getCredentialsForAccount(assignment.credential.email);
+    if (!creds) return false;
+    const anthropicRequest = _buildAnthropicRequest(body, upstreamModel);
+    try {
+      const response = await sendMessage(anthropicRequest, creds.accessToken, creds.accountId);
+      res.json(_buildOpenAIResponse(response, requestedModel));
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  if (assignment.credentialType === 'api-key') {
+    return _handleChatViaAssignedApiKey(res, body, requestedModel, startTime, assignment.credential);
+  }
+
+  return false;
+}
+
+async function _handleChatViaAssignedApiKey(res, body, requestedModel, startTime, provider) {
+  try {
+    const mappedModel = resolveModel(provider.type, body.model);
+    const mappedBody = { ...body, model: mappedModel };
+    const response = await provider.sendRequest(mappedBody);
+    if (!response.ok) return false;
+    const responseBody = await response.text();
+    let inputTokens = 0, outputTokens = 0;
+    try {
+      const parsed = JSON.parse(responseBody);
+      inputTokens = parsed.usage?.prompt_tokens || 0;
+      outputTokens = parsed.usage?.completion_tokens || 0;
+    } catch {
+      return false;
+    }
+    const durationMs = Date.now() - startTime;
+    const cost = provider.estimateCost(mappedModel, inputTokens, outputTokens);
+    recordUsage(provider.id, { inputTokens, outputTokens, model: mappedModel });
+    recordRequest({ provider: provider.type, keyId: provider.id, model: mappedModel, inputTokens, outputTokens, cost, durationMs, success: true });
+    logRequest({ route: '/v1/chat/completions', provider: provider.type, keyId: provider.id, model: body.model, mappedModel, requestBody: body, responseBody, inputTokens, outputTokens, cost, durationMs, status: 200, success: true });
+    res.status(200).type('json').send(responseBody);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 /**

@@ -202,6 +202,41 @@ const i18n = {
     apikeyFirst: 'API Key First',
     routingUpdated: 'Routing priority updated',
     routingUpdateFailed: 'Failed to update routing priority',
+    routingMode: 'Routing Mode',
+    routingModeLabel: 'Application Routing',
+    routingModeDesc: 'Switch between the original automatic flow and manual per-app credential assignments',
+    automaticRouting: 'Automatic',
+    appAssignedRouting: 'App Assigned',
+    routingModeUpdated: 'Routing mode updated',
+    routingModeUpdateFailed: 'Failed to update routing mode',
+    appRoutingTitle: 'App Assignments',
+    appRoutingDesc: 'Bind each supported app to a fixed ChatGPT account, Claude account, or API key.',
+    bindingEnabled: 'Enable binding',
+    bindingType: 'Binding Type',
+    bindingTarget: 'Binding Target',
+    fallbackBehavior: 'Fallback',
+    fallbackToDefault: 'Fallback to default routing when unavailable',
+    selectBindingType: 'Select binding type',
+    selectBindingTarget: 'Select target',
+    appRoutingSelectApp: 'Select App',
+    appRoutingSaved: 'App routing saved',
+    appRoutingSaveFailed: 'Failed to save app routing',
+    bindingListTitle: 'Bindings',
+    noBindingsYet: 'No bindings configured. Select a type and target above, then click Save.',
+    moveUp: 'Move up',
+    moveDown: 'Move down',
+    removeBinding: 'Remove',
+    configuredApps: 'Configured Apps',
+    bindingCount: 'bindings',
+    'bindingTypeLabel_chatgpt-account': 'ChatGPT Account',
+    'bindingTypeLabel_claude-account': 'Claude Account',
+    'bindingTypeLabel_api-key': 'API Key',
+    appLabel_codex: 'Codex',
+    'appLabel_claude-code': 'Claude Code',
+    'appLabel_gemini-cli': 'Gemini CLI',
+    appLabel_openclaw: 'OpenClaw',
+    'appLabel_unknown-openai-client': 'Unknown OpenAI Client',
+    'appLabel_unknown-anthropic-client': 'Unknown Anthropic Client',
 
     freeModelsSwitch: 'Free Models',
     freeModelsLabel: 'Enable System Free Models',
@@ -357,7 +392,7 @@ const i18n = {
     // Tool Launcher
     launchTool: 'Launch',
     configAndLaunch: 'Auto-configure proxy and launch in new terminal',
-    toolLaunched: 'Terminal opened — tool is launching',
+    toolLaunched: 'Terminal opened - tool is launching',
     toolLaunchFailed: 'Failed to launch tool',
 
     // Tool Installer
@@ -397,47 +432,42 @@ const i18n = {
   },
 
   zh: {
-    chat: '\u5bf9\u8bdd',
-    chatDesc: '\u4f7f\u7528\u5df2\u914d\u7f6e\u7684\u8d26\u6237\u6216 API Key \u8fdb\u884c\u6307\u5b9a\u6e90\u5bf9\u8bdd\u3002',
-    newChat: '\u65b0\u5efa\u5bf9\u8bdd',
-    chatSource: '\u5bf9\u8bdd\u6765\u6e90',
-    loadingChatSources: '\u6b63\u5728\u52a0\u8f7d\u5bf9\u8bdd\u6765\u6e90...',
-    chatModel: '\u6a21\u578b',
-    chatModelPlaceholder: '\u9009\u62e9\u6216\u8f93\u5165\u6a21\u578b ID',
-    systemPromptOptional: '\u7cfb\u7edf\u63d0\u793a\u8bcd',
-    systemPromptPlaceholder: '\u53ef\u9009\uff0c\u7528\u4e8e\u8bbe\u5b9a\u672c\u6b21\u5bf9\u8bdd\u7684\u7cfb\u7edf\u6307\u4ee4',
-    chatUsing: '\u5f53\u524d\u6765\u6e90',
-    messagesLower: '\u6761\u6d88\u606f',
-    chatEmptyTitle: '\u6682\u65e0\u6d88\u606f',
-    chatEmptyDesc: '\u9009\u62e9\u4e00\u4e2a\u6765\u6e90\uff0c\u8f93\u5165\u95ee\u9898\u540e\u5373\u53ef\u5f00\u59cb\u5bf9\u8bdd\u3002',
-    chatInputPlaceholder: '\u5728\u8fd9\u91cc\u8f93\u5165\u4f60\u7684\u6d88\u606f...',
-    chatShortcutHint: 'Ctrl/Cmd + Enter \u53d1\u9001',
-    send: '\u53d1\u9001',
-    sending: '\u53d1\u9001\u4e2d...',
-    you: '\u4f60',
-    assistant: '\u52a9\u624b',
-    chatHistory: '\u5386\u53f2\u5bf9\u8bdd',
-    sessions: '\u4e2a\u4f1a\u8bdd',
-    historyPanel: '\u5386\u53f2\u4fa7\u680f',
-    showPrompt: '\u7cfb\u7edf\u63d0\u793a\u8bcd',
-    hidePrompt: '\u6536\u8d77\u63d0\u793a\u8bcd',
-    // Header
+    chat: '对话',
+    chatDesc: '使用已配置的账户或 API Key 进行指定源对话。',
+    newChat: '新建对话',
+    chatSource: '对话来源',
+    loadingChatSources: '正在加载对话来源...',
+    chatModel: '模型',
+    chatModelPlaceholder: '选择或输入模型 ID',
+    systemPromptOptional: '系统提示词',
+    systemPromptPlaceholder: '可选，用于设定本次对话的系统指令',
+    chatUsing: '当前来源',
+    messagesLower: '条消息',
+    chatEmptyTitle: '暂无消息',
+    chatEmptyDesc: '选择一个来源，输入问题后即可开始对话。',
+    chatInputPlaceholder: '在这里输入你的消息...',
+    chatShortcutHint: 'Ctrl/Cmd + Enter 发送',
+    send: '发送',
+    sending: '发送中...',
+    you: '你',
+    assistant: '助手',
+    chatHistory: '历史对话',
+    sessions: '个会话',
+    historyPanel: '历史侧栏',
+    showPrompt: '系统提示词',
+    hidePrompt: '收起提示词',
     codexProxy: 'PROXYPOOL HUB',
     claudeProxySystem: 'AI 代理系统',
     starOnGithub: '在 GitHub 上加星',
     online: '在线',
     offline: '离线',
     refreshData: '刷新数据',
-
-    // Sidebar
     main: '主菜单',
     dashboard: '仪表盘',
     accounts: '账户',
     system: '系统',
     logs: '日志',
     settings: '设置',
-
-    // Dashboard
     chatgptProxySystem: 'CHATGPT 代理系统',
     live: '实时',
     totalAccounts: '账户总数',
@@ -477,8 +507,6 @@ const i18n = {
     openclawSettingsUpdated: 'OpenClaw 配置成功',
     openclawSettingsFailed: '配置 OpenClaw 失败',
     openclawRestored: 'OpenClaw 已恢复直连',
-
-    // Proxy status
     proxied: '已代理',
     removeProxy: '取消代理',
     claudeProxyRemoved: 'Claude Code 代理配置已移除',
@@ -486,8 +514,6 @@ const i18n = {
     geminiProxyRemoved: 'Gemini CLI 代理配置已移除',
     openclawProxyRemoved: 'OpenClaw 代理配置已移除',
     removeProxyFailed: '移除代理配置失败',
-
-    // Accounts
     accountManagement: '账户管理',
     manageChatgptAccounts: '管理 ChatGPT 账户',
     searchAccounts: '搜索账户...',
@@ -513,15 +539,11 @@ const i18n = {
     noAccountsMatch: '没有匹配的账户',
     clearSearch: '清除搜索',
     nAccounts: '个账户',
-
-    // Logs
     serverLogs: '服务器日志',
     realtimeLogStream: '实时日志流',
     entries: '条记录',
     searchLogs: '搜索日志...',
     noLogsMatch: '没有匹配的日志',
-
-    // Settings
     serverConfiguration: '服务器配置',
     serverInfo: '服务器信息',
     serverUrl: '服务器地址',
@@ -537,30 +559,22 @@ const i18n = {
     strategyDesc: '速率限制时如何选择账户',
     sticky: '粘性',
     roundRobin: '轮询',
-
-    // Add Account Modal
     addNewAccount: '添加新账户',
     addAccountDesc: '连接 ChatGPT 账户以使用代理。该账户将用于 API 调用。',
     connectViaOauth: '通过 OAuth 连接',
     manualAuth: '手动授权 (无界面)',
     importFromCodexApp: '从 Codex 应用导入',
     cancel: '取消',
-
-    // Manual OAuth
     manualOauthDesc: '适用于没有浏览器的无界面服务器：',
     manualStep1: '1. 在其他设备上打开此链接：',
     manualStep2: '2. 授权后，粘贴回调 URL 或代码：',
     manualPlaceholder: 'http://localhost:1455/auth/callback?code=... 或直接粘贴 code',
     back: '返回',
-
-    // Delete Modal
     deleteAccount: '删除账户',
     confirmDeletePrefix: '确定要删除',
     confirmDeleteSuffix: '吗？',
     deleteWarning: '此操作不可撤销。所有配置将被永久删除。',
     delete: '删除',
-
-    // Quota Modal
     quotaDistribution: '配额详情',
     usage: '使用情况',
     remaining: '剩余',
@@ -568,14 +582,10 @@ const i18n = {
     resetWindow: '重置周期',
     resetsAt: '重置时间',
     close: '关闭',
-
-    // Dynamic
     resetDueNow: '即将重置',
-    resetsInDH: (d, h) => `${d}天${h}小时后重置`,
-    resetsInHM: (h, m) => `${h}小时${m}分钟后重置`,
-    resetsInM: (m) => `${m}分钟后重置`,
-
-    // Toast messages
+    resetsInDH: (d, h) => `重置剩余 ${d}d ${h}h`,
+    resetsInHM: (h, m) => `重置剩余 ${h}h ${m}m`,
+    resetsInM: (m) => `重置剩余 ${m}m`,
     copiedToClipboard: '已复制到剪贴板',
     failedToCopy: '复制失败',
     refreshingAllTokens: '正在刷新所有 Token...',
@@ -590,8 +600,6 @@ const i18n = {
     failedUpdateHaiku: '更新 Haiku 模型失败',
     strategySetTo: (s) => `账户策略已设置为${s === 'sticky' ? '粘性' : '轮询'}`,
     failedUpdateStrategy: '更新策略失败',
-
-    // Routing priority
     routingPriority: '请求路由',
     routingPriorityLabel: '优先模式',
     routingPriorityDesc: '当账号池和 API 密钥池同时可用时，优先使用哪一种',
@@ -599,17 +607,48 @@ const i18n = {
     apikeyFirst: 'API 密钥优先',
     routingUpdated: '路由优先级已更新',
     routingUpdateFailed: '更新路由优先级失败',
-
+    routingMode: '路由模式',
+    routingModeLabel: '应用路由',
+    routingModeDesc: '在原有自动路由和按应用手动分配凭证之间切换',
+    automaticRouting: '自动',
+    appAssignedRouting: '按应用分配',
+    routingModeUpdated: '路由模式已更新',
+    routingModeUpdateFailed: '更新路由模式失败',
+    appRoutingTitle: '应用分配',
+    appRoutingDesc: '为每个支持的应用绑定固定的 ChatGPT 账号、Claude 账号或 API Key。',
+    bindingEnabled: '启用绑定',
+    bindingType: '绑定类型',
+    bindingTarget: '绑定目标',
+    fallbackBehavior: '回退策略',
+    fallbackToDefault: '不可用时回退到默认路由',
+    selectBindingType: '选择绑定类型',
+    selectBindingTarget: '选择绑定目标',
+    appRoutingSelectApp: '选择应用',
+    appRoutingSaved: '应用分配已保存',
+    appRoutingSaveFailed: '保存应用分配失败',
+    bindingListTitle: '绑定列表',
+    noBindingsYet: '暂无绑定，请在上方选择类型和目标后点击保存。',
+    moveUp: '上移',
+    moveDown: '下移',
+    removeBinding: '移除',
+    configuredApps: '已配置的应用',
+    bindingCount: '条绑定',
+    'bindingTypeLabel_chatgpt-account': 'ChatGPT 账号',
+    'bindingTypeLabel_claude-account': 'Claude 账号',
+    'bindingTypeLabel_api-key': 'API Key',
+    appLabel_codex: 'Codex',
+    'appLabel_claude-code': 'Claude Code',
+    'appLabel_gemini-cli': 'Gemini CLI',
+    appLabel_openclaw: 'OpenClaw',
+    'appLabel_unknown-openai-client': '未知 OpenAI 客户端',
+    'appLabel_unknown-anthropic-client': '未知 Anthropic 客户端',
     freeModelsSwitch: '免费模型',
     freeModelsLabel: '启用系统免费模型',
     freeModelsDesc: '关闭后，所有请求仅通过你的账户/API 密钥路由',
     freeModelsUpdated: '免费模型设置已更新',
     freeModelsUpdateFailed: '更新免费模型设置失败',
-
     claudeSettingsUpdated: '已更新 Claude Code settings.json（API 地址 + API 密钥）。',
     claudeSettingsFailed: '更新 Claude Code settings.json 失败',
-
-    // Model Mapping
     modelMapping: '模型映射',
     modelMappingDesc: '通过能力分级自动将 CLI 模型名映射到各服务商原生模型。适用于任何 CLI 工具（Codex、Claude Code 等）。',
     tier: '级别',
@@ -619,8 +658,6 @@ const i18n = {
     modelMappingReset: '模型映射已重置为默认值',
     updateFailed: '更新失败',
     noProvidersConfigured: '尚未配置 API 密钥供应商。请先添加 API 密钥以配置模型映射。',
-
-    // API Keys page
     apiKeys: 'API 密钥',
     manageApiKeys: '管理 API 密钥',
     addApiKey: '添加密钥',
@@ -668,8 +705,6 @@ const i18n = {
     editKeyHint: '留空则保持当前密钥不变',
     saveKey: '保存',
     usageRefreshed: '用量数据已刷新',
-
-    // Azure OpenAI fields
     azureEndpoint: '资源端点',
     azureEndpointHint: '例如 https://my-resource.openai.azure.com',
     azureDeployment: '部署名称',
@@ -677,16 +712,12 @@ const i18n = {
     azureApiVersion: 'API 版本',
     azureEndpointRequired: 'Azure 端点 URL 不能为空',
     azureDeploymentRequired: '部署名称不能为空',
-
-    // Vertex AI fields
     vertexProjectId: 'GCP 项目 ID',
     vertexLocation: '区域（Region）',
     vertexLocationHint: '例如 us-central1、europe-west1、asia-east1',
     vertexProjectRequired: 'GCP 项目 ID 不能为空',
     vertexServiceAccountJson: '服务账号 JSON',
     vertexServiceAccountHint: '粘贴服务账号 JSON 文件的完整内容，密钥将安全存储。',
-
-    // Usage page
     usageStats: '用量与费用',
     usageMonitoring: '用量监控',
     today: '今日',
@@ -717,9 +748,6 @@ const i18n = {
     days7: '7 天',
     days14: '14 天',
     days30: '30 天',
-
-    // Language
-    // Request Logs
     requestLogs: '请求日志',
     requestLogsDesc: '请求与响应记录',
     allProviders: '全部供应商',
@@ -732,8 +760,6 @@ const i18n = {
     next: '下一页',
     requestLoggingEnabled: '请求日志已启用',
     requestLoggingDisabled: '请求日志已禁用',
-
-    // Claude Accounts
     claudeAccounts: 'Claude 账户',
     claudeAccountManagement: 'Claude 账户管理',
     manageClaudeAccounts: '管理 Claude 账户',
@@ -745,20 +771,13 @@ const i18n = {
     subscription: '订阅',
     confirmDeleteAccount: '确定要删除此账户吗？',
     allTokensRefreshed: '所有令牌已刷新',
-    expired: '已过期',
     inactive: '未激活',
-
-    // Feedback
     feedback: '反馈与报告问题',
     discussions: '社区讨论',
-
-    // Tool Launcher
     launchTool: '一键启动',
     configAndLaunch: '自动配置代理并在新终端中启动',
-    toolLaunched: '终端已打开 — 工具正在启动',
+    toolLaunched: '终端已打开 - 工具正在启动',
     toolLaunchFailed: '启动工具失败',
-
-    // Tool Installer
     toolInstaller: '工具安装',
     toolInstallerDesc: '一键安装 CLI 工具',
     detectedOS: '检测到的操作系统',
@@ -778,7 +797,6 @@ const i18n = {
     nodeRequiredFirst: '需要先安装 Node.js 才能安装 CLI 工具',
     tryManually: '请手动尝试',
     refresh: '刷新',
-    // Tool Updates
     checkUpdates: '检查更新',
     checkingUpdates: '检查中...',
     updateAvailable: '有新版本',
@@ -789,7 +807,6 @@ const i18n = {
     updateAllDesc: '更新所有有新版本的 CLI 工具',
     updateAllBtn: '全部更新',
     allToolsUpdated: '所有工具更新完成',
-
     langLabel: '中文',
   }
 };

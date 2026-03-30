@@ -12,6 +12,7 @@ import { getServerSettings, setServerSettings } from '../server-settings.js';
 import { fetchFreeModels } from '../kilo-models.js';
 import { getDiscoveredModels, discoverModels } from '../model-discovery.js';
 import { getMappingsMeta } from '../model-mapping.js';
+import { ROUTING_MODES, validateAppRoutingConfig, buildAssignableTargets } from '../app-routing.js';
 
 const VALID_STRATEGIES = ['sticky', 'round-robin'];
 const VALID_ROUTING = ['account-first', 'apikey-first'];
@@ -116,6 +117,63 @@ export function handleGetRoutingPriority(req, res) {
 }
 
 /**
+ * GET /settings/routing-mode
+ */
+export function handleGetRoutingMode(req, res) {
+  const settings = getServerSettings();
+  res.json({ success: true, routingMode: settings.routingMode || 'automatic' });
+}
+
+/**
+ * POST /settings/routing-mode
+ */
+export function handleSetRoutingMode(req, res) {
+  const { routingMode } = req.body || {};
+
+  if (!ROUTING_MODES.includes(routingMode)) {
+    return res.status(400).json({
+      success: false,
+      error: `Invalid routingMode. Use one of: ${ROUTING_MODES.join(', ')}`
+    });
+  }
+
+  const settings = setServerSettings({ routingMode });
+  res.json({ success: true, routingMode: settings.routingMode });
+}
+
+/**
+ * GET /settings/app-routing
+ */
+export function handleGetAppRouting(req, res) {
+  const settings = getServerSettings();
+  res.json({
+    success: true,
+    routingMode: settings.routingMode || 'automatic',
+    appRouting: settings.appRouting,
+    targets: buildAssignableTargets()
+  });
+}
+
+/**
+ * POST /settings/app-routing
+ */
+export function handleSetAppRouting(req, res) {
+  const { appRouting } = req.body || {};
+  const { normalized, errors } = validateAppRoutingConfig(appRouting);
+
+  if (errors.length > 0) {
+    return res.status(400).json({ success: false, error: errors.join('; ') });
+  }
+
+  const settings = setServerSettings({ appRouting: normalized });
+  res.json({
+    success: true,
+    appRouting: settings.appRouting,
+    targets: buildAssignableTargets()
+  });
+}
+
+/**
  * POST /settings/routing-priority
  */
 export function handleSetRoutingPriority(req, res) {
@@ -206,6 +264,10 @@ export default {
   handleGetAccountStrategy,
   handleSetAccountStrategy,
   handleGetRoutingPriority,
+  handleGetRoutingMode,
+  handleSetRoutingMode,
+  handleGetAppRouting,
+  handleSetAppRouting,
   handleSetRoutingPriority,
   handleGetEnableFreeModels,
   handleSetEnableFreeModels,

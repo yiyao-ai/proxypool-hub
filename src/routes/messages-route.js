@@ -12,6 +12,7 @@ import { getServerSettings } from '../server-settings.js';
 import { selectKey, getAllProviders, recordUsage, recordError, recordRateLimit } from '../api-key-manager.js';
 import { recordRequest } from '../usage-tracker.js';
 import { logRequest } from '../request-logger.js';
+import { detectRequestApp, resolveAssignedCredential } from '../app-routing.js';
 
 const MAX_RETRIES = 5;
 const MAX_WAIT_BEFORE_ERROR_MS = 120000;
@@ -52,11 +53,23 @@ export async function handleMessages(req, res) {
     }
 
     const settings = getServerSettings();
+    const appId = detectRequestApp(req);
     const priority = settings.routingPriority || 'account-first';
     const hasAccounts = listAccounts().total > 0;
     const hasApiKeys = !!selectKey('anthropic');
     const hasClaudeAccounts = _getUsableClaudeAccounts().length > 0;
     const hasCompatibleKeys = _getCompatibleProviders().length > 0;
+
+    if (settings.routingMode === 'app-assigned') {
+        const assignment = resolveAssignedCredential(settings, appId);
+        if (assignment.matched) {
+            const result = await _handleMessagesAssignment(req, res, body, requestedModel, upstreamModel, isStreaming, startTime, clientBeta, assignment);
+            if (result !== false) return;
+            if (!assignment.fallbackToDefault) {
+                return handleStreamError(res, new Error(`Assigned credential unavailable for ${appId}: ${assignment.unavailableReason || 'request_failed'}`), requestedModel, startTime);
+            }
+        }
+    }
 
     if (priority === 'apikey-first') {
         // apikey-first: Anthropic Key → compatible keys → ChatGPT accounts → Claude accounts
@@ -108,6 +121,109 @@ export async function handleMessages(req, res) {
     }
 
     return handleStreamError(res, new Error('All accounts and API keys exhausted'), requestedModel, startTime);
+}
+
+async function _handleMessagesAssignment(req, res, body, requestedModel, upstreamModel, isStreaming, startTime, clientBeta, assignment) {
+    if (!assignment.credential) return false;
+
+    if (assignment.credentialType === 'chatgpt-account') {
+        return _handleViaAssignedAccount(req, res, body, requestedModel, upstreamModel, isStreaming, startTime, assignment.credential.email);
+    }
+    if (assignment.credentialType === 'claude-account') {
+        return _handleViaAssignedClaudeAccount(req, res, body, requestedModel, isStreaming, startTime, clientBeta, assignment.credential.email);
+    }
+    return _handleViaAssignedApiKey(req, res, body, requestedModel, isStreaming, startTime, assignment.credential);
+}
+
+async function _handleViaAssignedApiKey(req, res, body, requestedModel, isStreaming, startTime, provider) {
+    try {
+        if (provider.type === 'anthropic') {
+            const response = await provider.sendRequest(body);
+            if (!response.ok) return false;
+            const responseBody = await response.text();
+            if (isStreaming) _sendAsAnthropicSSE(res, JSON.parse(responseBody)); else res.status(200).type('json').send(responseBody);
+            return true;
+        }
+
+        if (typeof provider.sendAnthropicRequest === 'function') {
+            const response = await provider.sendAnthropicRequest(body);
+            if (!response.ok) return false;
+            const contentType = response.headers?.get?.('content-type') || '';
+            if (contentType.includes('text/event-stream')) {
+                res.setHeader('Content-Type', 'text/event-stream');
+                res.setHeader('Cache-Control', 'no-cache');
+                res.setHeader('Connection', 'keep-alive');
+                res.setHeader('X-Accel-Buffering', 'no');
+                res.flushHeaders();
+                const reader = response.body.getReader();
+                while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+                    if (res.writableEnded || res.destroyed) break;
+                    res.write(value);
+                }
+                if (!res.writableEnded) res.end();
+                return true;
+            }
+
+            const responseBody = await response.text();
+            const parsed = JSON.parse(responseBody);
+            if (isStreaming) _sendAsAnthropicSSE(res, parsed); else res.status(200).type('json').send(responseBody);
+            return true;
+        }
+    } catch {
+        return false;
+    }
+
+    return false;
+}
+
+async function _handleViaAssignedAccount(req, res, body, requestedModel, upstreamModel, isStreaming, startTime, email) {
+    const creds = await getCredentialsForAccount(email);
+    if (!creds) return false;
+    const anthropicRequest = { ...body, model: upstreamModel };
+
+    try {
+        if (isStreaming) {
+            await _streamDirectWithRotation(res, anthropicRequest, creds, requestedModel, startTime, null);
+        } else {
+            await _sendDirectWithRotation(res, anthropicRequest, creds, requestedModel, startTime, null);
+        }
+        return true;
+    } catch {
+        return false;
+    }
+}
+
+async function _handleViaAssignedClaudeAccount(req, res, body, requestedModel, isStreaming, startTime, clientBeta, email) {
+    const account = getClaudeAccount(email);
+    if (!account?.accessToken || account.enabled === false) return false;
+
+    try {
+        const claudeBody = { ...body, max_tokens: body.max_tokens || 8192 };
+        if (isStreaming) {
+            const upstream = await sendClaudeStream(claudeBody, account.accessToken, { clientBeta });
+            res.setHeader('Content-Type', 'text/event-stream');
+            res.setHeader('Cache-Control', 'no-cache');
+            res.setHeader('Connection', 'keep-alive');
+            res.setHeader('X-Accel-Buffering', 'no');
+            res.flushHeaders();
+            const reader = upstream.body.getReader();
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+                if (res.writableEnded || res.destroyed) break;
+                res.write(value);
+            }
+            if (!res.writableEnded) res.end();
+        } else {
+            const result = await sendClaudeMessage(claudeBody, account.accessToken, { clientBeta });
+            res.json(result);
+        }
+        return true;
+    } catch {
+        return false;
+    }
 }
 
 /**

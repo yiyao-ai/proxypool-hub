@@ -103,13 +103,23 @@ function convertMessagesToInput(messages) {
 
     for (const msg of messages) {
         if (msg.role === 'user') {
-            const { textParts, toolResults } = convertUserContent(msg.content);
+            const { textParts, toolResults, imageParts } = convertUserContent(msg.content);
             
-            if (textParts.length > 0) {
+            if (textParts.length > 0 || (imageParts && imageParts.length > 0)) {
                 // API accepts: string OR array of {type: 'input_text', text: '...'}
-                const content = textParts.length === 1 
-                    ? textParts[0]  // Use string for single text
-                    : textParts.map(text => ({ type: 'input_text', text }));
+                // Or for multimodal: array of blocks
+                let content;
+                if (imageParts && imageParts.length > 0) {
+                    content = [
+                        ...textParts.map(text => ({ type: 'input_text', text })),
+                        ...imageParts
+                    ];
+                } else {
+                    content = textParts.length === 1 
+                        ? textParts[0]  // Use string for single text
+                        : textParts.map(text => ({ type: 'input_text', text }));
+                }
+
                 input.push({
                     type: 'message',
                     role: 'user',
@@ -156,6 +166,7 @@ function convertMessagesToInput(messages) {
 function convertUserContent(content) {
     const textParts = [];
     const toolResults = [];
+    const imageParts = [];
     
     if (typeof content === 'string') {
         textParts.push(content);
@@ -163,6 +174,14 @@ function convertUserContent(content) {
         for (const block of content) {
             if (block.type === 'text') {
                 textParts.push(block.text);
+            } else if (block.type === 'image') {
+                // Convert Anthropic image to Codex input_image
+                if (block.source && block.source.type === 'base64') {
+                    imageParts.push({
+                        type: 'input_image',
+                        data: block.source.data
+                    });
+                }
             } else if (block.type === 'tool_result') {
                 const outputContent = typeof block.content === 'string'
                     ? block.content

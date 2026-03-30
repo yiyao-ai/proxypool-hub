@@ -41,6 +41,14 @@ document.addEventListener('alpine:init', () => {
         strategySaving: false,
         routingPriority: 'account-first',
         routingSaving: false,
+        routingMode: 'automatic',
+        routingModeSaving: false,
+        appRouting: {},
+        appRoutingDraft: {},
+        appRoutingTargets: { appIds: [], bindingTypes: [], chatgptAccounts: [], claudeAccounts: [], apiKeys: [] },
+        appRoutingSaving: {},
+        selectedAppRoutingId: '',
+        appRoutingForm: { enabled: true, fallbackToDefault: true, bindings: [], currentType: null, currentTargetId: null },
         enableFreeModels: true,
         freeModelsSaving: false,
 
@@ -161,6 +169,8 @@ document.addEventListener('alpine:init', () => {
             this.loadHaikuModelSetting();
             this.loadAccountStrategySetting();
             this.loadRoutingPrioritySetting();
+            this.loadRoutingModeSetting();
+            this.loadAppRoutingSettings();
             this.loadFreeModelsSetting();
             this.loadKiloModels();
             this.refreshProxyStatus();
@@ -994,6 +1004,185 @@ document.addEventListener('alpine:init', () => {
             if (ok && data?.routingPriority) {
                 this.routingPriority = data.routingPriority;
             }
+        },
+
+        async loadRoutingModeSetting() {
+            const { ok, data } = await this.api('/settings/routing-mode');
+            if (ok && data?.routingMode) {
+                this.routingMode = data.routingMode;
+            }
+        },
+
+        async setRoutingMode(mode) {
+            if (this.routingModeSaving || this.routingMode === mode) return;
+            this.routingModeSaving = true;
+            const { ok, data } = await this.api('/settings/routing-mode', {
+                method: 'POST',
+                body: JSON.stringify({ routingMode: mode })
+            });
+            this.routingModeSaving = false;
+            if (ok && data?.routingMode) {
+                this.routingMode = data.routingMode;
+                this.showToast(this.t('routingModeUpdated'), 'success');
+            } else {
+                this.showToast(data?.error || this.t('routingModeUpdateFailed'), 'error');
+            }
+        },
+
+        async loadAppRoutingSettings() {
+            const { ok, data } = await this.api('/settings/app-routing');
+            if (ok && data) {
+                this.appRouting = data.appRouting || {};
+                this.appRoutingDraft = JSON.parse(JSON.stringify(this.appRouting));
+                this.appRoutingTargets = data.targets || this.appRoutingTargets;
+                if (data.routingMode) this.routingMode = data.routingMode;
+                if (!this.selectedAppRoutingId && this.appRoutingTargets.appIds?.length) {
+                    this.selectedAppRoutingId = this.appRoutingTargets.appIds[0];
+                }
+                this.loadAppRoutingForm(this.selectedAppRoutingId);
+            }
+        },
+
+        createEmptyAppRoutingForm() {
+            return {
+                enabled: false,
+                fallbackToDefault: true,
+                bindings: [],
+                currentType: null,
+                currentTargetId: null
+            };
+        },
+
+        loadAppRoutingForm(appId) {
+            this.selectedAppRoutingId = appId || this.selectedAppRoutingId || '';
+            const current = this.appRoutingDraft[this.selectedAppRoutingId];
+            if (current) {
+                this.appRoutingForm = {
+                    enabled: current.enabled === true,
+                    fallbackToDefault: current.fallbackToDefault !== false,
+                    bindings: (current.bindings || []).map((binding, index) => ({
+                        id: binding.id || ('binding-' + (index + 1)),
+                        type: binding.type || null,
+                        targetId: binding.targetId || null
+                    })),
+                    currentType: null,
+                    currentTargetId: null
+                };
+                return;
+            }
+            this.appRoutingForm = this.createEmptyAppRoutingForm();
+        },
+
+        getBindingOptions(bindingType) {
+            if (bindingType === 'chatgpt-account') return this.appRoutingTargets.chatgptAccounts || [];
+            if (bindingType === 'claude-account') return this.appRoutingTargets.claudeAccounts || [];
+            if (bindingType === 'api-key') return this.appRoutingTargets.apiKeys || [];
+            return [];
+        },
+
+        bindingOptionLabel(bindingType, option) {
+            if (!option) return '';
+            if (bindingType === 'api-key') return `${option.name} (${option.type})`;
+            return option.displayName ? `${option.displayName} (${option.email})` : option.email;
+        },
+
+        appRoutingSummary(appId) {
+            const config = this.appRouting[appId];
+            if (!config?.enabled || !Array.isArray(config.bindings) || config.bindings.length === 0) return '';
+            return config.bindings.map((binding) => {
+                const options = this.getBindingOptions(binding.type);
+                const option = options.find((item) => (item.id || item.email) === binding.targetId);
+                const label = option ? this.bindingOptionLabel(binding.type, option) : binding.targetId;
+                return `${binding.type}: ${label}`;
+            }).join(' | ');
+        },
+
+        updateAppRoutingFormField(field, value) {
+            const patch = { [field]: value };
+            if (field === 'currentType') patch.currentTargetId = null;
+            this.appRoutingForm = { ...this.appRoutingForm, ...patch };
+        },
+
+        async removeAppRoutingBinding(index) {
+            const appId = this.selectedAppRoutingId;
+            if (!appId) return;
+            const bindings = [...(this.appRoutingForm.bindings || [])];
+            if (!bindings[index]) return;
+            bindings.splice(index, 1);
+            const nextRouting = JSON.parse(JSON.stringify(this.appRoutingDraft || {}));
+            nextRouting[appId] = {
+                enabled: bindings.length > 0 ? this.appRoutingForm.enabled === true : false,
+                fallbackToDefault: this.appRoutingForm.fallbackToDefault !== false,
+                bindings
+            };
+            this.appRoutingDraft = nextRouting;
+            this.appRoutingForm = { ...this.appRoutingForm, bindings };
+            await this.saveAppRoutingConfig(appId, nextRouting);
+        },
+
+        async saveAppRoutingConfig(appId, nextRouting) {
+            if (!appId || this.appRoutingSaving[appId]) return false;
+            this.appRoutingSaving[appId] = true;
+            const { ok, data } = await this.api('/settings/app-routing', {
+                method: 'POST',
+                body: JSON.stringify({ appRouting: nextRouting })
+            });
+            this.appRoutingSaving[appId] = false;
+            if (ok && data?.appRouting) {
+                this.appRouting = data.appRouting;
+                this.appRoutingDraft = JSON.parse(JSON.stringify(data.appRouting));
+                this.appRoutingTargets = data.targets || this.appRoutingTargets;
+                this.loadAppRoutingForm(appId);
+                this.showToast(this.t('appRoutingSaved'), 'success');
+                return true;
+            }
+            this.showToast(data?.error || this.t('appRoutingSaveFailed'), 'error');
+            await this.loadAppRoutingSettings();
+            return false;
+        },
+
+        async moveAppRoutingBinding(index, direction) {
+            const appId = this.selectedAppRoutingId;
+            if (!appId) return;
+            const bindings = [...(this.appRoutingForm.bindings || [])];
+            const targetIndex = index + direction;
+            if (targetIndex < 0 || targetIndex >= bindings.length) return;
+            const item = bindings[index];
+            bindings.splice(index, 1);
+            bindings.splice(targetIndex, 0, item);
+            this.appRoutingForm = { ...this.appRoutingForm, bindings };
+            const nextRouting = JSON.parse(JSON.stringify(this.appRoutingDraft || {}));
+            nextRouting[appId] = {
+                enabled: this.appRoutingForm.enabled === true,
+                fallbackToDefault: this.appRoutingForm.fallbackToDefault !== false,
+                bindings
+            };
+            await this.saveAppRoutingConfig(appId, nextRouting);
+        },
+
+        async saveAppRouting() {
+            const appId = this.selectedAppRoutingId;
+            if (!appId || this.appRoutingSaving[appId]) return;
+            const { currentType, currentTargetId } = this.appRoutingForm;
+            if (!currentType || !currentTargetId) return;
+            const bindings = (this.appRoutingForm.bindings || []).map((b) => ({ ...b }));
+            const existingIndex = bindings.findIndex((b) => b.targetId === currentTargetId);
+            if (existingIndex >= 0) {
+                bindings[existingIndex] = { ...bindings[existingIndex], type: currentType, targetId: currentTargetId };
+            } else {
+                bindings.push({
+                    id: 'binding-' + Date.now() + '-' + Math.random().toString(16).slice(2, 8),
+                    type: currentType,
+                    targetId: currentTargetId
+                });
+            }
+            const nextRouting = JSON.parse(JSON.stringify(this.appRoutingDraft || {}));
+            nextRouting[appId] = {
+                enabled: this.appRoutingForm.enabled === true,
+                fallbackToDefault: this.appRoutingForm.fallbackToDefault !== false,
+                bindings
+            };
+            await this.saveAppRoutingConfig(appId, nextRouting);
         },
 
         async loadFreeModelsSetting() {

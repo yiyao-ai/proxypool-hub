@@ -21,6 +21,7 @@ import { decompress as fzstdDecompress } from 'fzstd';
 import { sendResponsesSSE } from '../utils/responses-sse.js';
 import { resolveModel } from '../model-mapping.js';
 import { logRequest } from '../request-logger.js';
+import { detectRequestApp, resolveAssignedCredential } from '../app-routing.js';
 
 const UPSTREAM_URL = 'https://chatgpt.com/backend-api/codex/responses';
 const UPSTREAM_COMPACT_URL = 'https://chatgpt.com/backend-api/codex/responses/compact';
@@ -173,14 +174,30 @@ export async function handleResponses(req, res) {
     const toolNames = parsed && Array.isArray(parsed.tools) ? parsed.tools.map(t => t.name || t.function?.name).filter(Boolean) : [];
     logger.info(`[Codex] >>> ${routeLabel} | model=${modelId} | ${rawBody.length}B | encoding=${contentEncoding || 'none'} | tools=${toolNames.length}`);
 
+
+
     const isStreaming = parsed ? parsed.stream !== false : true;
 
     const settings = getServerSettings();
+    const appId = detectRequestApp(req);
     const priority = settings.routingPriority || 'account-first';
     const hasAccounts = listAccounts().total > 0;
     const chatKeyTypes = ['openai', 'azure-openai', 'gemini', 'vertex-ai'];
     const hasApiKeys = hasKeysForTypes(chatKeyTypes);
     const hasClaudeAccounts = _getUsableClaudeAccounts().length > 0;
+
+    if (settings.routingMode === 'app-assigned') {
+        const assignment = resolveAssignedCredential(settings, appId);
+        if (assignment.matched) {
+            const result = await _handleResponsesAssignment(req, res, assignment, rawBody, contentEncoding, parsed, modelId, isStreaming, startTime, isCompact);
+            if (result !== false) return;
+            if (!assignment.fallbackToDefault) {
+                return res.status(503).json({
+                    error: { message: `Assigned credential unavailable for ${appId}: ${assignment.unavailableReason || 'request_failed'}` }
+                });
+            }
+        }
+    }
 
     if (priority === 'apikey-first') {
         // apikey-first: API Key → ChatGPT accounts → Claude accounts
@@ -223,6 +240,121 @@ export async function handleResponses(req, res) {
     return res.status(503).json({ error: { message: 'All accounts and API keys exhausted. Try again later.' } });
 }
 
+async function _handleResponsesAssignment(req, res, assignment, rawBody, contentEncoding, parsed, modelId, isStreaming, startTime, isCompact) {
+    if (!assignment.credential) return false;
+
+    if (assignment.credentialType === 'chatgpt-account') {
+        return _handleResponsesViaAssignedAccount(req, res, rawBody, contentEncoding, modelId, isStreaming, startTime, isCompact, assignment.credential.email);
+    }
+
+    if (assignment.credentialType === 'claude-account') {
+        if (!parsed) return false;
+        return _handleResponsesViaAssignedClaudeAccount(res, parsed, modelId, isStreaming, startTime, assignment.credential.email);
+    }
+
+    if (!parsed) return false;
+    return _handleResponsesViaAssignedApiKey(res, parsed, modelId, isStreaming, startTime, assignment.credential);
+}
+
+async function _handleResponsesViaAssignedApiKey(res, parsed, modelId, isStreaming, startTime, provider) {
+    const chatBody = _responsesToChatBody(parsed);
+
+    try {
+        const mappedModel = resolveModel(provider.type, modelId);
+        const mappedBody = { ...chatBody, model: mappedModel };
+        const response = await provider.sendRequest(mappedBody);
+        const durationMs = Date.now() - startTime;
+
+        if (!response.ok) {
+            if (response.status === 429) recordRateLimit(provider.id, 60000);
+            if (response.status === 401 || response.status === 403) recordError(provider.id);
+            return false;
+        }
+
+        const responseBody = await response.text();
+        let chatResponse;
+        try { chatResponse = JSON.parse(responseBody); } catch { return false; }
+
+        const inputTokens = chatResponse.usage?.prompt_tokens || 0;
+        const outputTokens = chatResponse.usage?.completion_tokens || 0;
+        const cost = provider.estimateCost(mappedModel, inputTokens, outputTokens);
+        recordUsage(provider.id, { inputTokens, outputTokens, model: mappedModel });
+        recordRequest({ provider: provider.type, keyId: provider.id, model: mappedModel, inputTokens, outputTokens, cost, durationMs, success: true });
+        logRequest({ route: '/responses', provider: provider.type, keyId: provider.id, model: modelId, mappedModel, requestBody: parsed, responseBody, inputTokens, outputTokens, cost, durationMs, status: 200, success: true });
+
+        const responsesFormat = _chatToResponsesFormat(chatResponse, modelId);
+        if (isStreaming) sendResponsesSSE(res, responsesFormat); else res.json(responsesFormat);
+        return true;
+    } catch {
+        return false;
+    }
+}
+
+async function _handleResponsesViaAssignedClaudeAccount(res, parsed, modelId, isStreaming, startTime, email) {
+    const account = getClaudeAccount(email);
+    if (!account?.accessToken || account.enabled === false) return false;
+
+    const anthropicBody = _responsesToAnthropicBody(parsed);
+    try {
+        const claudeResponse = await sendClaudeMessage(anthropicBody, account.accessToken);
+        const durationMs = Date.now() - startTime;
+        const responsesFormat = _anthropicToResponsesFormat(claudeResponse, modelId);
+        const inputTokens = claudeResponse.usage?.input_tokens || 0;
+        const outputTokens = claudeResponse.usage?.output_tokens || 0;
+        recordRequest({ provider: 'claude-pool', keyId: account.email, model: anthropicBody.model, inputTokens, outputTokens, durationMs, success: true });
+        logRequest({ route: '/responses', provider: 'claude-pool', keyId: account.email, model: modelId, mappedModel: anthropicBody.model, requestBody: parsed, inputTokens, outputTokens, durationMs, status: 200, success: true });
+        if (isStreaming) sendResponsesSSE(res, responsesFormat); else res.json(responsesFormat);
+        return true;
+    } catch {
+        return false;
+    }
+}
+
+async function _handleResponsesViaAssignedAccount(req, res, rawBody, contentEncoding, modelId, isStreaming, startTime, isCompact, email) {
+    const creds = await getCredentialsForAccount(email);
+    if (!creds) return false;
+
+    try {
+        const upstreamHeaders = {
+            'Authorization': `Bearer ${creds.accessToken}`,
+            'ChatGPT-Account-ID': creds.accountId,
+            'Content-Type': req.headers['content-type'] || 'application/json',
+            'Accept': isStreaming ? 'text/event-stream' : 'application/json'
+        };
+        if (contentEncoding) upstreamHeaders['Content-Encoding'] = contentEncoding;
+
+        const targetUrl = isCompact ? UPSTREAM_COMPACT_URL : UPSTREAM_URL;
+        const upstreamResponse = await fetch(targetUrl, { method: 'POST', headers: upstreamHeaders, body: rawBody });
+        if (!upstreamResponse.ok) return false;
+
+        if (isStreaming) {
+            res.setHeader('Content-Type', 'text/event-stream');
+            res.setHeader('Cache-Control', 'no-cache');
+            res.setHeader('Connection', 'keep-alive');
+            res.setHeader('X-Accel-Buffering', 'no');
+            res.flushHeaders();
+            const reader = upstreamResponse.body.getReader();
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+                res.write(value);
+            }
+            res.end();
+        } else {
+            const responseBody = await upstreamResponse.text();
+            res.setHeader('Content-Type', 'application/json');
+            res.send(responseBody);
+        }
+
+        const duration = Date.now() - startTime;
+        recordRequest({ provider: 'chatgpt-pool', keyId: creds.email, model: modelId, durationMs: duration, success: true });
+        logRequest({ route: '/responses', method: 'POST', provider: 'chatgpt-pool', keyId: creds.email, model: modelId, mappedModel: modelId, durationMs: duration, status: 200, success: true });
+        return true;
+    } catch {
+        return false;
+    }
+}
+
 // ─── Responses API ↔ Chat Completions format converters ───────────────────────
 
 function _responsesToChatBody(parsed) {
@@ -233,9 +365,34 @@ function _responsesToChatBody(parsed) {
         messages.push({ role: 'system', content: parsed.instructions });
     }
 
+    // Helper to convert any block (text or image) to OpenAI Chat format
+    const convertBlock = (c) => {
+        if (!c) return null;
+        if (c.type === 'text' || (c.text && c.type !== 'input_image')) {
+            return { type: 'text', text: c.text || '' };
+        }
+        if (c.type === 'input_image' || c.type === 'image') {
+            // input_image can carry: data (base64), image_url (string URL), url (string URL), or file_id
+            if (c.data) {
+                return { type: 'image_url', image_url: { url: `data:${c.media_type || 'image/jpeg'};base64,${c.data}` } };
+            }
+            if (c.image_url) {
+                return { type: 'image_url', image_url: { url: c.image_url } };
+            }
+            if (c.url) {
+                return { type: 'image_url', image_url: { url: c.url } };
+            }
+            // file_id not supported by Azure/OpenAI Chat API, skip
+            return null;
+        }
+        if (c.type === 'image_url' || c.image_url) {
+            return { type: 'image_url', image_url: c.image_url || { url: c.url } };
+        }
+        return null;
+    };
+
     // Convert input array to messages
     if (Array.isArray(parsed.input)) {
-        // Build call_id → function name lookup for tool result messages
         const callIdToName = {};
         for (const item of parsed.input) {
             if (item.type === 'function_call' && item.name) {
@@ -243,13 +400,12 @@ function _responsesToChatBody(parsed) {
             }
         }
 
-        // Group consecutive function_calls into a single assistant message
         let pendingToolCalls = null;
 
         for (const item of parsed.input) {
             if (item.type === 'function_call') {
                 if (!pendingToolCalls) {
-                    pendingToolCalls = { role: 'assistant', content: '', tool_calls: [] };
+                    pendingToolCalls = { role: 'assistant', content: null, tool_calls: [] };
                 }
                 pendingToolCalls.tool_calls.push({
                     id: item.call_id || item.id || `call_${Date.now()}`,
@@ -264,27 +420,47 @@ function _responsesToChatBody(parsed) {
 
                 if (item.type === 'message') {
                     const role = item.role === 'developer' ? 'system' : item.role;
-                    let content = '';
+                    let content;
+                    
                     if (typeof item.content === 'string') {
                         content = item.content;
                     } else if (Array.isArray(item.content)) {
-                        content = item.content.map(c => c.text || '').join('\n');
+                        content = item.content.map(convertBlock).filter(Boolean);
+                        if (content.length > 0 && content.every(c => c.type === 'text')) {
+                            content = content.map(c => c.text).join('\n');
+                        }
+                    } else if (item.content && typeof item.content === 'object') {
+                        content = [convertBlock(item.content)].filter(Boolean);
                     }
-                    messages.push({ role, content });
+                    
+                    if (content) messages.push({ role, content });
+                } else if (item.type === 'input_image') {
+                    // Image at top level - wrap in a user message via convertBlock
+                    const converted = convertBlock(item);
+                    if (converted) {
+                        messages.push({ role: 'user', content: [converted] });
+                    }
                 } else if (item.type === 'function_call_output') {
                     const callId = item.call_id || item.id || '';
+                    let toolContent = item.output || '';
+                    // output can be a string or an array with input_image/text blocks
+                    if (Array.isArray(toolContent)) {
+                        toolContent = toolContent.map(convertBlock).filter(Boolean);
+                        if (toolContent.length > 0 && toolContent.every(c => c.type === 'text')) {
+                            toolContent = toolContent.map(c => c.text).join('\n');
+                        }
+                    }
                     messages.push({
                         role: 'tool',
                         tool_call_id: callId,
                         name: callIdToName[callId] || 'unknown',
-                        content: item.output || ''
+                        content: toolContent
                     });
                 }
             }
         }
         if (pendingToolCalls) {
             messages.push(pendingToolCalls);
-            pendingToolCalls = null;
         }
     } else if (typeof parsed.input === 'string') {
         messages.push({ role: 'user', content: parsed.input });
@@ -293,7 +469,7 @@ function _responsesToChatBody(parsed) {
     const body = {
         model: parsed.model || 'gpt-4o',
         messages,
-        stream: false  // Non-streaming for API key fallback
+        stream: false
     };
 
     if (parsed.max_output_tokens) body.max_completion_tokens = parsed.max_output_tokens;
@@ -604,7 +780,33 @@ function _responsesToAnthropicBody(parsed) {
                 if (typeof item.content === 'string') {
                     content = item.content;
                 } else if (Array.isArray(item.content)) {
-                    content = item.content.map(c => ({ type: 'text', text: c.text || '' }));
+                    content = item.content.map(c => {
+                        if (c.type === 'text') {
+                            return { type: 'text', text: c.text || '' };
+                        } else if (c.type === 'input_image' || c.type === 'image') {
+                            if (c.data) {
+                                return {
+                                    type: 'image',
+                                    source: { type: 'base64', media_type: c.media_type || 'image/jpeg', data: c.data }
+                                };
+                            }
+                            const url = c.image_url || c.url;
+                            if (url) {
+                                const base64Match = url.match(/^data:([^;]+);base64,(.+)$/);
+                                if (base64Match) {
+                                    return {
+                                        type: 'image',
+                                        source: { type: 'base64', media_type: base64Match[1], data: base64Match[2] }
+                                    };
+                                }
+                                return { type: 'image', source: { type: 'url', url } };
+                            }
+                            return null;
+                        } else if (c.text) {
+                            return { type: 'text', text: c.text };
+                        }
+                        return null;
+                    }).filter(Boolean);
                 } else {
                     content = '';
                 }
@@ -640,11 +842,53 @@ function _responsesToAnthropicBody(parsed) {
                     }]
                 });
             } else if (item.type === 'function_call_output') {
+                let toolContent = item.output || '';
+                if (Array.isArray(toolContent)) {
+                    toolContent = toolContent.map(c => {
+                        if (c.type === 'text') return { type: 'text', text: c.text || '' };
+                        if (c.type === 'input_image' || c.type === 'image') {
+                            if (c.data) {
+                                return { type: 'image', source: { type: 'base64', media_type: c.media_type || 'image/jpeg', data: c.data } };
+                            }
+                            const url = c.image_url || c.url;
+                            if (url) {
+                                const b64 = url.match(/^data:([^;]+);base64,(.+)$/);
+                                if (b64) return { type: 'image', source: { type: 'base64', media_type: b64[1], data: b64[2] } };
+                                return { type: 'image', source: { type: 'url', url } };
+                            }
+                            return null;
+                        }
+                        if (c.text) return { type: 'text', text: c.text };
+                        return null;
+                    }).filter(Boolean);
+                }
                 pendingToolResults.push({
                     type: 'tool_result',
                     tool_use_id: item.call_id || item.id || '',
-                    content: item.output || ''
+                    content: toolContent
                 });
+            } else if (item.type === 'input_image') {
+                // Top-level input_image - wrap in a user message
+                let imageBlock = null;
+                if (item.data) {
+                    imageBlock = { type: 'image', source: { type: 'base64', media_type: item.media_type || 'image/jpeg', data: item.data } };
+                } else {
+                    const url = item.image_url || item.url;
+                    if (url) {
+                        const base64Match = url.match(/^data:([^;]+);base64,(.+)$/);
+                        if (base64Match) {
+                            imageBlock = { type: 'image', source: { type: 'base64', media_type: base64Match[1], data: base64Match[2] } };
+                        } else {
+                            imageBlock = { type: 'image', source: { type: 'url', url } };
+                        }
+                    }
+                }
+                if (imageBlock) {
+                    if (pendingToolResults.length > 0) {
+                        messages.push({ role: 'user', content: pendingToolResults.splice(0) });
+                    }
+                    messages.push({ role: 'user', content: [imageBlock] });
+                }
             }
         }
 
