@@ -12,6 +12,7 @@
 
 import { BaseProvider } from './base.js';
 import { anthropicToOpenAI, openAIToAnthropic } from './format-bridge.js';
+import { logger } from '../utils/logger.js';
 
 const DEFAULT_API_VERSION = '2024-10-21';
 
@@ -31,6 +32,63 @@ const PRICING = {
     'o3-mini':         { input: 1.10, output: 4.40 },
     'o4-mini':         { input: 1.10, output: 4.40 },
 };
+
+function sanitizeResponsesPayloadForAzure(value, parentKey = '', stats = { encryptedFieldsRemoved: 0, compactionItemsRemoved: 0, includeEntriesRemoved: 0, signatureFieldsRemoved: 0 }) {
+    if (Array.isArray(value)) {
+        const items = value
+            .map(item => sanitizeResponsesPayloadForAzure(item, parentKey, stats))
+            .filter(item => item !== undefined);
+
+        if (parentKey === 'include') {
+            return items.filter(item => {
+                const shouldKeep = item !== 'reasoning.encrypted_content' && item !== 'encrypted_content';
+                if (!shouldKeep) stats.includeEntriesRemoved++;
+                return shouldKeep;
+            });
+        }
+
+        return items;
+    }
+
+    if (!value || typeof value !== 'object') {
+        return value;
+    }
+
+    if (value.type === 'compaction') {
+        stats.compactionItemsRemoved++;
+        return undefined;
+    }
+
+    const result = {};
+    for (const [key, child] of Object.entries(value)) {
+        if (key === 'encrypted_content') {
+            stats.encryptedFieldsRemoved++;
+            continue;
+        }
+        if (key === 'signature' || key === 'thoughtSignature') {
+            stats.signatureFieldsRemoved++;
+            continue;
+        }
+
+        const sanitized = sanitizeResponsesPayloadForAzure(child, key, stats);
+        if (sanitized !== undefined) {
+            result[key] = sanitized;
+        }
+    }
+
+    if (result.type === 'reasoning') {
+        const hasUsableReasoningContent = (
+            (Array.isArray(result.summary) && result.summary.length > 0) ||
+            (typeof result.summary === 'string' && result.summary.length > 0) ||
+            (typeof result.text === 'string' && result.text.length > 0)
+        );
+        if (!hasUsableReasoningContent) {
+            return undefined;
+        }
+    }
+
+    return result;
+}
 
 export class AzureOpenAIProvider extends BaseProvider {
     constructor(config) {
@@ -52,17 +110,63 @@ export class AzureOpenAIProvider extends BaseProvider {
         return `${base}/openai/deployments/${this.deploymentName}/chat/completions?api-version=${this.apiVersion}`;
     }
 
+    _buildResponsesUrl() {
+        const base = this.baseUrl.replace(/\/+$/, '');
+        return `${base}/openai/v1/responses`;
+    }
+
+    _buildErrorMessage(operation, error) {
+        const parts = [
+            `Azure OpenAI ${operation} request failed`
+        ];
+        if (error?.cause?.message && error.cause.message !== error.message) {
+            parts.push(error.cause.message);
+        } else if (error?.message) {
+            parts.push(error.message);
+        }
+        return parts.join(': ');
+    }
+
     async sendRequest(body) {
-        const url = this._buildChatUrl();
-        const response = await fetch(url, {
-            method: 'POST',
-            headers: {
-                'api-key': this.apiKey,
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify(body)
-        });
-        return response;
+        try {
+            const url = this._buildChatUrl();
+            const response = await fetch(url, {
+                method: 'POST',
+                headers: {
+                    'api-key': this.apiKey,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(body)
+            });
+            return response;
+        } catch (error) {
+            throw new Error(this._buildErrorMessage('chat completions', error), { cause: error });
+        }
+    }
+
+    async sendResponsesRequest(body) {
+        try {
+            const url = this._buildResponsesUrl();
+            const sanitizeStats = { encryptedFieldsRemoved: 0, compactionItemsRemoved: 0, includeEntriesRemoved: 0, signatureFieldsRemoved: 0 };
+            const responsesBody = {
+                ...sanitizeResponsesPayloadForAzure(body, '', sanitizeStats),
+                model: this.deploymentName || body.model
+            };
+            if (sanitizeStats.encryptedFieldsRemoved || sanitizeStats.compactionItemsRemoved || sanitizeStats.includeEntriesRemoved || sanitizeStats.signatureFieldsRemoved) {
+                logger.info(`[Azure OpenAI] Sanitized responses payload | encrypted_fields=${sanitizeStats.encryptedFieldsRemoved} | signature_fields=${sanitizeStats.signatureFieldsRemoved} | compaction_items=${sanitizeStats.compactionItemsRemoved} | include_entries=${sanitizeStats.includeEntriesRemoved}`);
+            }
+            const response = await fetch(url, {
+                method: 'POST',
+                headers: {
+                    'api-key': this.apiKey,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(responsesBody)
+            });
+            return response;
+        } catch (error) {
+            throw new Error(this._buildErrorMessage('responses', error), { cause: error });
+        }
     }
 
     async validateKey() {

@@ -26,9 +26,23 @@ export function sendResponsesSSE(res, responsesFormat) {
     // 1. response.created — initial response object (status: in_progress)
     const inProgress = { ...responsesFormat, status: 'in_progress', output: [] };
     sse('response.created', { type: 'response.created', response: inProgress });
+    sse('response.in_progress', { type: 'response.in_progress', response: inProgress });
+
+    const emitOutputItemLifecycle = (item, outputIndex, interimItem = item) => {
+        sse('response.output_item.added', {
+            type: 'response.output_item.added',
+            output_index: outputIndex,
+            item: interimItem
+        });
+        sse('response.output_item.done', {
+            type: 'response.output_item.done',
+            output_index: outputIndex,
+            item: item
+        });
+    };
 
     let outputIndex = 0;
-    for (const item of responsesFormat.output) {
+    for (const item of responsesFormat.output || []) {
         if (item.type === 'message') {
             // response.output_item.added
             const msgItem = { ...item, status: 'in_progress', content: [] };
@@ -42,6 +56,7 @@ export function sendResponsesSSE(res, responsesFormat) {
                     // response.content_part.added
                     sse('response.content_part.added', {
                         type: 'response.content_part.added',
+                        item_id: item.id,
                         output_index: outputIndex,
                         content_index: ci,
                         part: { type: 'output_text', text: '' }
@@ -53,6 +68,7 @@ export function sendResponsesSSE(res, responsesFormat) {
                     for (let i = 0; i < text.length; i += CHUNK_SIZE) {
                         sse('response.output_text.delta', {
                             type: 'response.output_text.delta',
+                            item_id: item.id,
                             output_index: outputIndex,
                             content_index: ci,
                             delta: text.slice(i, i + CHUNK_SIZE)
@@ -62,6 +78,7 @@ export function sendResponsesSSE(res, responsesFormat) {
                     // response.output_text.done
                     sse('response.output_text.done', {
                         type: 'response.output_text.done',
+                        item_id: item.id,
                         output_index: outputIndex,
                         content_index: ci,
                         text: text
@@ -70,6 +87,7 @@ export function sendResponsesSSE(res, responsesFormat) {
                     // response.content_part.done
                     sse('response.content_part.done', {
                         type: 'response.content_part.done',
+                        item_id: item.id,
                         output_index: outputIndex,
                         content_index: ci,
                         part: part
@@ -86,7 +104,7 @@ export function sendResponsesSSE(res, responsesFormat) {
 
         } else if (item.type === 'function_call') {
             // response.output_item.added
-            const fcItem = { ...item, arguments: '' };
+            const fcItem = { ...item, status: item.status || 'in_progress', arguments: '' };
             sse('response.output_item.added', {
                 type: 'response.output_item.added',
                 output_index: outputIndex,
@@ -99,6 +117,8 @@ export function sendResponsesSSE(res, responsesFormat) {
                 type: 'response.function_call_arguments.delta',
                 output_index: outputIndex,
                 item_id: item.id,
+                call_id: item.call_id,
+                name: item.name,
                 delta: args
             });
 
@@ -118,6 +138,45 @@ export function sendResponsesSSE(res, responsesFormat) {
                 output_index: outputIndex,
                 item: item
             });
+        } else if (item.type === 'custom_tool_call') {
+            const customItem = { ...item, status: item.status || 'in_progress', input: '' };
+            sse('response.output_item.added', {
+                type: 'response.output_item.added',
+                output_index: outputIndex,
+                item: customItem
+            });
+
+            const input = item.input || '';
+            sse('response.custom_tool_call_input.delta', {
+                type: 'response.custom_tool_call_input.delta',
+                output_index: outputIndex,
+                item_id: item.id,
+                call_id: item.call_id,
+                name: item.name,
+                delta: input
+            });
+            sse('response.custom_tool_call_input.done', {
+                type: 'response.custom_tool_call_input.done',
+                output_index: outputIndex,
+                item_id: item.id,
+                call_id: item.call_id,
+                name: item.name,
+                input: input
+            });
+
+            sse('response.output_item.done', {
+                type: 'response.output_item.done',
+                output_index: outputIndex,
+                item: item
+            });
+        } else if (
+            item.type === 'apply_patch_call' ||
+            item.type === 'shell_call' ||
+            item.type === 'local_shell_call' ||
+            item.type === 'mcp_call' ||
+            item.type === 'mcp_approval_request'
+        ) {
+            emitOutputItemLifecycle(item, outputIndex, { ...item, status: 'in_progress' });
         }
         outputIndex++;
     }

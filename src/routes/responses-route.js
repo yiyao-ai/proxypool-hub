@@ -148,6 +148,102 @@ function tryExtractSummary(rawBody, contentEncoding) {
     }
 }
 
+function normalizeChatMessageContent(content) {
+    if (content === null || content === undefined) return null;
+    if (typeof content === 'string') return content;
+    if (Array.isArray(content)) return content.length > 0 ? content : null;
+    return null;
+}
+
+function mergeChatMessageContent(existing, incoming) {
+    const left = normalizeChatMessageContent(existing);
+    const right = normalizeChatMessageContent(incoming);
+
+    if (left === null) return right;
+    if (right === null) return left;
+
+    if (typeof left === 'string' && typeof right === 'string') {
+        if (!left) return right;
+        if (!right) return left;
+        return `${left}\n${right}`;
+    }
+
+    const toParts = (value) => {
+        if (value === null || value === undefined) return [];
+        if (typeof value === 'string') return value ? [{ type: 'text', text: value }] : [];
+        if (Array.isArray(value)) return value;
+        return [];
+    };
+
+    const merged = [...toParts(left), ...toParts(right)];
+    if (merged.length === 0) return null;
+    if (merged.every(part => part?.type === 'text')) {
+        return merged.map(part => part.text || '').join('\n');
+    }
+    return merged;
+}
+
+function summarizeChatMessage(message, index) {
+    if (!message) return `${index}: <missing>`;
+
+    const parts = [`${index}:${message.role || 'unknown'}`];
+    if (Array.isArray(message.tool_calls) && message.tool_calls.length > 0) {
+        parts.push(`tool_calls=[${message.tool_calls.map(tc => tc.id).join(',')}]`);
+    }
+    if (message.tool_call_id) {
+        parts.push(`tool_call_id=${message.tool_call_id}`);
+    }
+
+    let preview = '';
+    if (typeof message.content === 'string') {
+        preview = message.content;
+    } else if (Array.isArray(message.content)) {
+        preview = message.content
+            .map(part => part?.text || part?.type || '')
+            .filter(Boolean)
+            .join(' | ');
+    }
+
+    if (preview) {
+        const compact = preview.replace(/\s+/g, ' ').slice(0, 80);
+        parts.push(`content="${compact}"`);
+    }
+
+    return parts.join(' | ');
+}
+
+function findToolCallSequenceError(messages) {
+    if (!Array.isArray(messages)) return null;
+
+    for (let i = 0; i < messages.length; i++) {
+        const message = messages[i];
+        if (message?.role !== 'assistant' || !Array.isArray(message.tool_calls) || message.tool_calls.length === 0) {
+            continue;
+        }
+
+        const pendingIds = new Set(message.tool_calls.map(tc => tc?.id).filter(Boolean));
+        let nextIndex = i + 1;
+        while (nextIndex < messages.length && messages[nextIndex]?.role === 'tool') {
+            const toolCallId = messages[nextIndex]?.tool_call_id;
+            if (toolCallId) pendingIds.delete(toolCallId);
+            nextIndex++;
+        }
+
+        if (pendingIds.size > 0) {
+            const start = Math.max(0, i - 2);
+            const end = Math.min(messages.length, nextIndex + 2);
+            return {
+                assistantIndex: i,
+                missingIds: [...pendingIds],
+                nextRole: messages[nextIndex]?.role || 'end',
+                window: messages.slice(start, end).map((msg, offset) => summarizeChatMessage(msg, start + offset))
+            };
+        }
+    }
+
+    return null;
+}
+
 /**
  * POST /responses (and /v1/responses)
  * Raw passthrough proxy with account rotation.
@@ -257,12 +353,24 @@ async function _handleResponsesAssignment(req, res, assignment, rawBody, content
 }
 
 async function _handleResponsesViaAssignedApiKey(res, parsed, modelId, isStreaming, startTime, provider) {
-    const chatBody = _responsesToChatBody(parsed);
-
     try {
-        const mappedModel = resolveModel(provider.type, modelId);
-        const mappedBody = { ...chatBody, model: mappedModel };
-        const response = await provider.sendRequest(mappedBody);
+        let mappedModel;
+        let response;
+        let responseBody;
+        let responsesFormat;
+
+        if (providerSupportsNativeResponses(provider)) {
+            ({ mappedModel, response, responseBody, normalized: responsesFormat } = await sendViaNativeResponsesProvider(provider, parsed, modelId));
+        } else {
+            const chatBody = _responsesToChatBody(parsed);
+            mappedModel = resolveModel(provider.type, modelId);
+            const mappedBody = { ...chatBody, model: mappedModel };
+            response = await provider.sendRequest(mappedBody);
+            responseBody = await response.text();
+            let chatResponse;
+            try { chatResponse = JSON.parse(responseBody); } catch { return false; }
+            responsesFormat = _chatToResponsesFormat(chatResponse, modelId);
+        }
         const durationMs = Date.now() - startTime;
 
         if (!response.ok) {
@@ -271,18 +379,17 @@ async function _handleResponsesViaAssignedApiKey(res, parsed, modelId, isStreami
             return false;
         }
 
-        const responseBody = await response.text();
-        let chatResponse;
-        try { chatResponse = JSON.parse(responseBody); } catch { return false; }
-
-        const inputTokens = chatResponse.usage?.prompt_tokens || 0;
-        const outputTokens = chatResponse.usage?.completion_tokens || 0;
+        if (!responsesFormat) return false;
+        if (providerSupportsNativeResponses(provider)) {
+            logger.info(`[Codex] Native responses output | ${provider.type}/${provider.name} | ${summarizeResponseOutputTypes(responsesFormat)}`);
+        }
+        const inputTokens = responsesFormat.usage?.input_tokens || 0;
+        const outputTokens = responsesFormat.usage?.output_tokens || 0;
         const cost = provider.estimateCost(mappedModel, inputTokens, outputTokens);
         recordUsage(provider.id, { inputTokens, outputTokens, model: mappedModel });
         recordRequest({ provider: provider.type, keyId: provider.id, model: mappedModel, inputTokens, outputTokens, cost, durationMs, success: true });
         logRequest({ route: '/responses', provider: provider.type, keyId: provider.id, model: modelId, mappedModel, requestBody: parsed, responseBody, inputTokens, outputTokens, cost, durationMs, status: 200, success: true });
 
-        const responsesFormat = _chatToResponsesFormat(chatResponse, modelId);
         if (isStreaming) sendResponsesSSE(res, responsesFormat); else res.json(responsesFormat);
         return true;
     } catch {
@@ -410,11 +517,41 @@ function _responsesToChatBody(parsed) {
         }
 
         let pendingToolCalls = null;
+        let pendingToolCallIds = null;
+        let deferredMessages = [];
+
+        const flushDeferredMessages = () => {
+            if (deferredMessages.length > 0) {
+                messages.push(...deferredMessages);
+                deferredMessages = [];
+            }
+        };
+
+        const ensurePendingToolCallsFlushed = () => {
+            if (pendingToolCalls) {
+                messages.push(pendingToolCalls);
+                pendingToolCallIds = new Set(
+                    (pendingToolCalls.tool_calls || []).map(tc => tc.id).filter(Boolean)
+                );
+                pendingToolCalls = null;
+            }
+        };
 
         for (const item of parsed.input) {
             if (item.type === 'function_call') {
+                if (pendingToolCallIds?.size > 0) {
+                    flushDeferredMessages();
+                    pendingToolCallIds = null;
+                }
                 if (!pendingToolCalls) {
-                    pendingToolCalls = { role: 'assistant', content: null, tool_calls: [] };
+                    const lastMessage = messages[messages.length - 1];
+                    if (lastMessage?.role === 'assistant' && !lastMessage.tool_calls) {
+                        pendingToolCalls = messages.pop();
+                        pendingToolCalls.tool_calls = [];
+                        pendingToolCalls.content = normalizeChatMessageContent(pendingToolCalls.content);
+                    } else {
+                        pendingToolCalls = { role: 'assistant', content: null, tool_calls: [] };
+                    }
                 }
                 pendingToolCalls.tool_calls.push({
                     id: item.call_id || item.id || `call_${Date.now()}`,
@@ -422,11 +559,6 @@ function _responsesToChatBody(parsed) {
                     function: { name: item.name, arguments: item.arguments || '{}' }
                 });
             } else {
-                if (pendingToolCalls) {
-                    messages.push(pendingToolCalls);
-                    pendingToolCalls = null;
-                }
-
                 if (item.type === 'message') {
                     const role = item.role === 'developer' ? 'system' : item.role;
                     let content;
@@ -442,14 +574,35 @@ function _responsesToChatBody(parsed) {
                         content = [convertBlock(item.content)].filter(Boolean);
                     }
                     
-                    if (content) messages.push({ role, content });
+                    content = normalizeChatMessageContent(content);
+
+                    if (role === 'assistant' && pendingToolCalls) {
+                        pendingToolCalls.content = mergeChatMessageContent(pendingToolCalls.content, content);
+                    } else {
+                        if (pendingToolCalls) ensurePendingToolCallsFlushed();
+                        if (pendingToolCallIds?.size > 0) {
+                            if (content !== null) deferredMessages.push({ role, content });
+                        } else if (content !== null) {
+                            flushDeferredMessages();
+                            messages.push({ role, content });
+                        }
+                    }
                 } else if (item.type === 'input_image') {
                     // Image at top level - wrap in a user message via convertBlock
                     const converted = convertBlock(item);
                     if (converted) {
-                        messages.push({ role: 'user', content: [converted] });
+                        if (pendingToolCalls) ensurePendingToolCallsFlushed();
+                        if (pendingToolCallIds?.size > 0) {
+                            deferredMessages.push({ role: 'user', content: [converted] });
+                        } else {
+                            flushDeferredMessages();
+                            messages.push({ role: 'user', content: [converted] });
+                        }
                     }
                 } else if (item.type === 'function_call_output') {
+                    if (pendingToolCalls) {
+                        ensurePendingToolCallsFlushed();
+                    }
                     const callId = item.call_id || item.id || '';
                     let toolContent = item.output || '';
                     // output can be a string or an array with input_image/text blocks
@@ -465,12 +618,20 @@ function _responsesToChatBody(parsed) {
                         name: callIdToName[callId] || 'unknown',
                         content: toolContent
                     });
+                    if (pendingToolCallIds?.size > 0 && callId) {
+                        pendingToolCallIds.delete(callId);
+                        if (pendingToolCallIds.size === 0) {
+                            pendingToolCallIds = null;
+                            flushDeferredMessages();
+                        }
+                    }
                 }
             }
         }
         if (pendingToolCalls) {
-            messages.push(pendingToolCalls);
+            ensurePendingToolCallsFlushed();
         }
+        flushDeferredMessages();
     } else if (typeof parsed.input === 'string') {
         messages.push({ role: 'user', content: parsed.input });
     }
@@ -568,12 +729,44 @@ function normalizeCompactResponse(responseBody, modelId) {
     return parsed;
 }
 
+function providerSupportsNativeResponses(provider) {
+    return typeof provider?.sendResponsesRequest === 'function';
+}
+
+function summarizeResponseOutputTypes(responsesFormat) {
+    const items = Array.isArray(responsesFormat?.output) ? responsesFormat.output : [];
+    if (items.length === 0) return '(none)';
+
+    const counts = new Map();
+    for (const item of items) {
+        const type = item?.type || 'unknown';
+        counts.set(type, (counts.get(type) || 0) + 1);
+    }
+
+    return [...counts.entries()]
+        .map(([type, count]) => count > 1 ? `${type}x${count}` : type)
+        .join(', ');
+}
+
+async function sendViaNativeResponsesProvider(provider, parsed, modelId) {
+    const mappedModel = resolveModel(provider.type, modelId);
+    const requestBody = {
+        ...parsed,
+        model: mappedModel,
+        stream: false
+    };
+    const response = await provider.sendResponsesRequest(requestBody);
+    const responseBody = await response.text();
+    const normalized = normalizeCompactResponse(responseBody, modelId);
+    return { mappedModel, response, responseBody, normalized };
+}
+
 /**
  * Handle /responses via API key pool (with format conversion).
  */
 async function _handleResponsesViaApiKey(res, parsed, modelId, isStreaming, keyTypes, startTime) {
-    const chatBody = _responsesToChatBody(parsed);
     const MAX_KEY_RETRIES = 3;
+    let fatalRequestError = false;
 
     for (let attempt = 0; attempt < MAX_KEY_RETRIES; attempt++) {
         for (const type of keyTypes) {
@@ -581,12 +774,26 @@ async function _handleResponsesViaApiKey(res, parsed, modelId, isStreaming, keyT
             if (!provider) continue;
 
             try {
-                // Map model name to provider-native model
-                const mappedModel = resolveModel(type, modelId);
-                const mappedBody = { ...chatBody, model: mappedModel };
-                logger.info(`[Codex] >>> API KEY | ${type}/${provider.name} | ${modelId}→${mappedModel}`);
-
-                const response = await provider.sendRequest(mappedBody);
+                let mappedModel;
+                let response;
+                let responseBody;
+                let responsesFormat;
+                if (providerSupportsNativeResponses(provider)) {
+                    mappedModel = resolveModel(type, modelId);
+                    logger.info(`[Codex] >>> API KEY RESPONSES | ${type}/${provider.name} | ${modelId}→${mappedModel}`);
+                    ({ mappedModel, response, responseBody, normalized: responsesFormat } = await sendViaNativeResponsesProvider(provider, parsed, modelId));
+                } else {
+                    const chatBody = _responsesToChatBody(parsed);
+                    mappedModel = resolveModel(type, modelId);
+                    const mappedBody = { ...chatBody, model: mappedModel };
+                    const toolSequenceError = findToolCallSequenceError(mappedBody.messages);
+                    if (toolSequenceError) {
+                        logger.warn(`[Codex Proxy] Invalid tool-call sequence before API key request | provider=${type}/${provider.name} | assistant_index=${toolSequenceError.assistantIndex} | next_role=${toolSequenceError.nextRole} | missing=${toolSequenceError.missingIds.join(',')} | window=${toolSequenceError.window.join(' || ')}`);
+                    }
+                    logger.info(`[Codex] >>> API KEY | ${type}/${provider.name} | ${modelId}→${mappedModel}`);
+                    response = await provider.sendRequest(mappedBody);
+                    responseBody = await response.text();
+                }
                 const durationMs = Date.now() - startTime;
 
                 if (response.status === 429) {
@@ -600,8 +807,10 @@ async function _handleResponsesViaApiKey(res, parsed, modelId, isStreaming, keyT
                     continue;
                 }
 
-                const responseBody = await response.text();
                 if (!response.ok) {
+                    if (response.status === 400) {
+                        fatalRequestError = true;
+                    }
                     recordError(provider.id);
                     recordRequest({ provider: type, keyId: provider.id, model: mappedModel, durationMs, success: false, error: responseBody.slice(0, 200) });
                     logRequest({ route: '/responses', provider: type, keyId: provider.id, model: modelId, mappedModel, requestBody: parsed, responseBody, durationMs, status: response.status, success: false, error: responseBody.slice(0, 200) });
@@ -609,21 +818,26 @@ async function _handleResponsesViaApiKey(res, parsed, modelId, isStreaming, keyT
                     continue; // Try next provider instead of returning error
                 }
 
-                // Convert chat completions response → Responses API format
-                let chatResponse;
-                try { chatResponse = JSON.parse(responseBody); } catch {
-                    res.status(200).type('json').send(responseBody);
-                    return;
+                if (!responsesFormat) {
+                    let chatResponse;
+                    try { chatResponse = JSON.parse(responseBody); } catch {
+                        res.status(200).type('json').send(responseBody);
+                        return;
+                    }
+                    responsesFormat = _chatToResponsesFormat(chatResponse, modelId);
                 }
 
-                const inputTokens = chatResponse.usage?.prompt_tokens || 0;
-                const outputTokens = chatResponse.usage?.completion_tokens || 0;
+                if (providerSupportsNativeResponses(provider)) {
+                    logger.info(`[Codex] Native responses output | ${type}/${provider.name} | ${summarizeResponseOutputTypes(responsesFormat)}`);
+                }
+
+                const inputTokens = responsesFormat.usage?.input_tokens || 0;
+                const outputTokens = responsesFormat.usage?.output_tokens || 0;
                 const cost = provider.estimateCost(mappedModel, inputTokens, outputTokens);
                 recordUsage(provider.id, { inputTokens, outputTokens, model: mappedModel });
                 recordRequest({ provider: type, keyId: provider.id, model: mappedModel, inputTokens, outputTokens, cost, durationMs, success: true });
                 logRequest({ route: '/responses', provider: type, keyId: provider.id, model: modelId, mappedModel, requestBody: parsed, responseBody, inputTokens, outputTokens, cost, durationMs, status: 200, success: true });
 
-                const responsesFormat = _chatToResponsesFormat(chatResponse, modelId);
                 logger.success(`[Codex] <<< API KEY OK | ${type}/${provider.name} | model=${modelId} | ${durationMs}ms`);
 
                 if (isStreaming) {
@@ -639,6 +853,7 @@ async function _handleResponsesViaApiKey(res, parsed, modelId, isStreaming, keyT
                 continue;
             }
         }
+        if (fatalRequestError) break;
     }
     return false;
 }
@@ -1080,7 +1295,9 @@ async function _handleResponsesViaClaudeAccount(res, parsed, modelId, isStreamin
 }
 
 export const _testExports = {
-    normalizeCompactResponse
+    normalizeCompactResponse,
+    _responsesToChatBody: _responsesToChatBody,
+    findToolCallSequenceError
 };
 
 export default { handleResponses };

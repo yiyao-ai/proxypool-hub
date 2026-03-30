@@ -80,6 +80,102 @@ function sleep(ms) {
     return new Promise(resolve => setTimeout(resolve, ms));
 }
 
+function normalizeChatMessageContent(content) {
+    if (content === null || content === undefined) return null;
+    if (typeof content === 'string') return content;
+    if (Array.isArray(content)) return content.length > 0 ? content : null;
+    return null;
+}
+
+function mergeChatMessageContent(existing, incoming) {
+    const left = normalizeChatMessageContent(existing);
+    const right = normalizeChatMessageContent(incoming);
+
+    if (left === null) return right;
+    if (right === null) return left;
+
+    if (typeof left === 'string' && typeof right === 'string') {
+        if (!left) return right;
+        if (!right) return left;
+        return `${left}\n${right}`;
+    }
+
+    const toParts = (value) => {
+        if (value === null || value === undefined) return [];
+        if (typeof value === 'string') return value ? [{ type: 'text', text: value }] : [];
+        if (Array.isArray(value)) return value;
+        return [];
+    };
+
+    const merged = [...toParts(left), ...toParts(right)];
+    if (merged.length === 0) return null;
+    if (merged.every(part => part?.type === 'text')) {
+        return merged.map(part => part.text || '').join('\n');
+    }
+    return merged;
+}
+
+function summarizeChatMessage(message, index) {
+    if (!message) return `${index}: <missing>`;
+
+    const parts = [`${index}:${message.role || 'unknown'}`];
+    if (Array.isArray(message.tool_calls) && message.tool_calls.length > 0) {
+        parts.push(`tool_calls=[${message.tool_calls.map(tc => tc.id).join(',')}]`);
+    }
+    if (message.tool_call_id) {
+        parts.push(`tool_call_id=${message.tool_call_id}`);
+    }
+
+    let preview = '';
+    if (typeof message.content === 'string') {
+        preview = message.content;
+    } else if (Array.isArray(message.content)) {
+        preview = message.content
+            .map(part => part?.text || part?.type || '')
+            .filter(Boolean)
+            .join(' | ');
+    }
+
+    if (preview) {
+        const compact = preview.replace(/\s+/g, ' ').slice(0, 80);
+        parts.push(`content="${compact}"`);
+    }
+
+    return parts.join(' | ');
+}
+
+function findToolCallSequenceError(messages) {
+    if (!Array.isArray(messages)) return null;
+
+    for (let i = 0; i < messages.length; i++) {
+        const message = messages[i];
+        if (message?.role !== 'assistant' || !Array.isArray(message.tool_calls) || message.tool_calls.length === 0) {
+            continue;
+        }
+
+        const pendingIds = new Set(message.tool_calls.map(tc => tc?.id).filter(Boolean));
+        let nextIndex = i + 1;
+        while (nextIndex < messages.length && messages[nextIndex]?.role === 'tool') {
+            const toolCallId = messages[nextIndex]?.tool_call_id;
+            if (toolCallId) pendingIds.delete(toolCallId);
+            nextIndex++;
+        }
+
+        if (pendingIds.size > 0) {
+            const start = Math.max(0, i - 2);
+            const end = Math.min(messages.length, nextIndex + 2);
+            return {
+                assistantIndex: i,
+                missingIds: [...pendingIds],
+                nextRole: messages[nextIndex]?.role || 'end',
+                window: messages.slice(start, end).map((msg, offset) => summarizeChatMessage(msg, start + offset))
+            };
+        }
+    }
+
+    return null;
+}
+
 /**
  * POST /backend-api/codex/responses
  * Transparent proxy with account rotation for Codex CLI.
@@ -198,23 +294,34 @@ async function _handleCodexAssignment(req, res, body, modelId, isStreaming, star
 }
 
 async function _handleCodexViaAssignedApiKey(res, body, modelId, isStreaming, startTime, provider) {
-    const chatBody = _codexToChatBody(body);
-
     try {
-        const mappedModel = resolveModel(provider.type, modelId);
-        const mappedBody = { ...chatBody, model: mappedModel };
-        const response = await provider.sendRequest(mappedBody);
-        if (!response.ok) return false;
-        const responseBody = await response.text();
-        const chatResponse = JSON.parse(responseBody);
+        let mappedModel;
+        let response;
+        let responseBody;
+        let codexResponse;
+
+        if (providerSupportsNativeResponses(provider)) {
+            ({ mappedModel, response, responseBody, normalized: codexResponse } = await sendViaNativeResponsesProvider(provider, body, modelId));
+        } else {
+            const chatBody = _codexToChatBody(body);
+            mappedModel = resolveModel(provider.type, modelId);
+            const mappedBody = { ...chatBody, model: mappedModel };
+            response = await provider.sendRequest(mappedBody);
+            responseBody = await response.text();
+            const chatResponse = JSON.parse(responseBody);
+            codexResponse = _chatToCodexResponse(chatResponse, modelId);
+        }
+        if (!response.ok || !codexResponse) return false;
+        if (providerSupportsNativeResponses(provider)) {
+            logger.info(`[Codex] Native responses output | ${provider.type}/${provider.name} | ${summarizeResponseOutputTypes(codexResponse)}`);
+        }
         const durationMs = Date.now() - startTime;
-        const inputTokens = chatResponse.usage?.prompt_tokens || 0;
-        const outputTokens = chatResponse.usage?.completion_tokens || 0;
+        const inputTokens = codexResponse.usage?.input_tokens || 0;
+        const outputTokens = codexResponse.usage?.output_tokens || 0;
         const cost = provider.estimateCost(mappedModel, inputTokens, outputTokens);
         recordUsage(provider.id, { inputTokens, outputTokens, model: mappedModel });
         recordRequest({ provider: provider.type, keyId: provider.id, model: mappedModel, inputTokens, outputTokens, cost, durationMs, success: true });
         logRequest({ route: '/backend-api/codex/responses', provider: provider.type, keyId: provider.id, model: modelId, mappedModel, requestBody: body, responseBody, inputTokens, outputTokens, cost, durationMs, status: 200, success: true });
-        const codexResponse = _chatToCodexResponse(chatResponse, modelId);
         if (isStreaming) sendResponsesSSE(res, codexResponse); else res.json(codexResponse);
         return true;
     } catch {
@@ -328,15 +435,45 @@ function _codexToChatBody(body) {
         }
 
         let pendingToolCalls = null;
+        let pendingToolCallIds = null;
+        let deferredMessages = [];
+
+        const flushDeferredMessages = () => {
+            if (deferredMessages.length > 0) {
+                messages.push(...deferredMessages);
+                deferredMessages = [];
+            }
+        };
+
+        const ensurePendingToolCallsFlushed = () => {
+            if (pendingToolCalls) {
+                messages.push(pendingToolCalls);
+                pendingToolCallIds = new Set(
+                    (pendingToolCalls.tool_calls || []).map(tc => tc.id).filter(Boolean)
+                );
+                pendingToolCalls = null;
+            }
+        };
 
         for (const item of body.input) {
             if (item.type === 'function_call') {
+                if (pendingToolCallIds?.size > 0) {
+                    flushDeferredMessages();
+                    pendingToolCallIds = null;
+                }
                 if (!pendingToolCalls) {
-                    pendingToolCalls = {
-                        role: 'assistant',
-                        content: null,
-                        tool_calls: []
-                    };
+                    const lastMessage = messages[messages.length - 1];
+                    if (lastMessage?.role === 'assistant' && !lastMessage.tool_calls) {
+                        pendingToolCalls = messages.pop();
+                        pendingToolCalls.tool_calls = [];
+                        pendingToolCalls.content = normalizeChatMessageContent(pendingToolCalls.content);
+                    } else {
+                        pendingToolCalls = {
+                            role: 'assistant',
+                            content: null,
+                            tool_calls: []
+                        };
+                    }
                 }
                 pendingToolCalls.tool_calls.push({
                     id: item.call_id || item.id || `call_${Date.now()}`,
@@ -344,11 +481,6 @@ function _codexToChatBody(body) {
                     function: { name: item.name, arguments: item.arguments || '{}' }
                 });
             } else {
-                if (pendingToolCalls) {
-                    messages.push(pendingToolCalls);
-                    pendingToolCalls = null;
-                }
-
                 if (item.type === 'message') {
                     const role = item.role === 'developer' ? 'system' : item.role;
                     let content;
@@ -364,13 +496,34 @@ function _codexToChatBody(body) {
                         content = [convertBlock(item.content)].filter(Boolean);
                     }
                     
-                    if (content) messages.push({ role, content });
+                    content = normalizeChatMessageContent(content);
+
+                    if (role === 'assistant' && pendingToolCalls) {
+                        pendingToolCalls.content = mergeChatMessageContent(pendingToolCalls.content, content);
+                    } else {
+                        if (pendingToolCalls) ensurePendingToolCallsFlushed();
+                        if (pendingToolCallIds?.size > 0) {
+                            if (content !== null) deferredMessages.push({ role, content });
+                        } else if (content !== null) {
+                            flushDeferredMessages();
+                            messages.push({ role, content });
+                        }
+                    }
                 } else if (item.type === 'input_image') {
                     const converted = convertBlock(item);
                     if (converted) {
-                        messages.push({ role: 'user', content: [converted] });
+                        if (pendingToolCalls) ensurePendingToolCallsFlushed();
+                        if (pendingToolCallIds?.size > 0) {
+                            deferredMessages.push({ role: 'user', content: [converted] });
+                        } else {
+                            flushDeferredMessages();
+                            messages.push({ role: 'user', content: [converted] });
+                        }
                     }
                 } else if (item.type === 'function_call_output') {
+                    if (pendingToolCalls) {
+                        ensurePendingToolCallsFlushed();
+                    }
                     const callId = item.call_id || item.id || '';
                     let toolContent = item.output || '';
                     if (Array.isArray(toolContent)) {
@@ -385,12 +538,20 @@ function _codexToChatBody(body) {
                         name: callIdToName[callId] || 'unknown',
                         content: toolContent
                     });
+                    if (pendingToolCallIds?.size > 0 && callId) {
+                        pendingToolCallIds.delete(callId);
+                        if (pendingToolCallIds.size === 0) {
+                            pendingToolCallIds = null;
+                            flushDeferredMessages();
+                        }
+                    }
                 }
             }
         }
         if (pendingToolCalls) {
-            messages.push(pendingToolCalls);
+            ensurePendingToolCallsFlushed();
         }
+        flushDeferredMessages();
     } else if (typeof body.input === 'string') {
         messages.push({ role: 'user', content: body.input });
     }
@@ -462,12 +623,63 @@ function _chatToCodexResponse(chatResponse, model) {
     };
 }
 
+function normalizeProviderCodexResponse(responseBody, modelId) {
+    let parsed;
+    try {
+        parsed = JSON.parse(responseBody);
+    } catch {
+        return null;
+    }
+
+    if (parsed?.object === 'response') {
+        return parsed;
+    }
+
+    if (Array.isArray(parsed?.choices)) {
+        return _chatToCodexResponse(parsed, modelId);
+    }
+
+    return null;
+}
+
+function providerSupportsNativeResponses(provider) {
+    return typeof provider?.sendResponsesRequest === 'function';
+}
+
+function summarizeResponseOutputTypes(codexResponse) {
+    const items = Array.isArray(codexResponse?.output) ? codexResponse.output : [];
+    if (items.length === 0) return '(none)';
+
+    const counts = new Map();
+    for (const item of items) {
+        const type = item?.type || 'unknown';
+        counts.set(type, (counts.get(type) || 0) + 1);
+    }
+
+    return [...counts.entries()]
+        .map(([type, count]) => count > 1 ? `${type}x${count}` : type)
+        .join(', ');
+}
+
+async function sendViaNativeResponsesProvider(provider, body, modelId) {
+    const mappedModel = resolveModel(provider.type, modelId);
+    const requestBody = {
+        ...body,
+        model: mappedModel,
+        stream: false
+    };
+    const response = await provider.sendResponsesRequest(requestBody);
+    const responseBody = await response.text();
+    const normalized = normalizeProviderCodexResponse(responseBody, modelId);
+    return { mappedModel, response, responseBody, normalized };
+}
+
 /**
  * Handle /backend-api/codex/responses via API key pool (with format conversion).
  */
 async function _handleCodexViaApiKey(res, body, modelId, isStreaming, keyTypes, startTime) {
-    const chatBody = _codexToChatBody(body);
     const MAX_KEY_RETRIES = 3;
+    let fatalRequestError = false;
 
     for (let attempt = 0; attempt < MAX_KEY_RETRIES; attempt++) {
         for (const type of keyTypes) {
@@ -475,12 +687,26 @@ async function _handleCodexViaApiKey(res, body, modelId, isStreaming, keyTypes, 
             if (!provider) continue;
 
             try {
-                // Map model name to provider-native model
-                const mappedModel = resolveModel(type, modelId);
-                const mappedBody = { ...chatBody, model: mappedModel };
-                console.log(`[Codex Proxy] >>> API KEY fallback | ${type}/${provider.name} | ${modelId}→${mappedModel}`);
-
-                const response = await provider.sendRequest(mappedBody);
+                let mappedModel;
+                let response;
+                let responseBody;
+                let codexResponse;
+                if (providerSupportsNativeResponses(provider)) {
+                    mappedModel = resolveModel(type, modelId);
+                    logger.info(`[Codex] >>> API KEY RESPONSES | ${type}/${provider.name} | ${modelId}→${mappedModel}`);
+                    ({ mappedModel, response, responseBody, normalized: codexResponse } = await sendViaNativeResponsesProvider(provider, body, modelId));
+                } else {
+                    const chatBody = _codexToChatBody(body);
+                    mappedModel = resolveModel(type, modelId);
+                    const mappedBody = { ...chatBody, model: mappedModel };
+                    const toolSequenceError = findToolCallSequenceError(mappedBody.messages);
+                    if (toolSequenceError) {
+                        logger.warn(`[Codex Proxy] Invalid tool-call sequence before API key request | provider=${type}/${provider.name} | assistant_index=${toolSequenceError.assistantIndex} | next_role=${toolSequenceError.nextRole} | missing=${toolSequenceError.missingIds.join(',')} | window=${toolSequenceError.window.join(' || ')}`);
+                    }
+                    console.log(`[Codex Proxy] >>> API KEY fallback | ${type}/${provider.name} | ${modelId}→${mappedModel}`);
+                    response = await provider.sendRequest(mappedBody);
+                    responseBody = await response.text();
+                }
                 const durationMs = Date.now() - startTime;
 
                 if (response.status === 429) {
@@ -494,8 +720,10 @@ async function _handleCodexViaApiKey(res, body, modelId, isStreaming, keyTypes, 
                     continue;
                 }
 
-                const responseBody = await response.text();
                 if (!response.ok) {
+                    if (response.status === 400) {
+                        fatalRequestError = true;
+                    }
                     recordError(provider.id);
                     recordRequest({ provider: type, keyId: provider.id, model: mappedModel, durationMs, success: false, error: responseBody.slice(0, 200) });
                     logRequest({ route: '/backend-api/codex/responses', provider: type, keyId: provider.id, model: modelId, mappedModel, requestBody: body, responseBody, durationMs, status: response.status, success: false, error: responseBody.slice(0, 200) });
@@ -503,20 +731,26 @@ async function _handleCodexViaApiKey(res, body, modelId, isStreaming, keyTypes, 
                     continue;
                 }
 
-                let chatResponse;
-                try { chatResponse = JSON.parse(responseBody); } catch {
-                    res.status(200).type('json').send(responseBody);
-                    return;
+                if (!codexResponse) {
+                    let chatResponse;
+                    try { chatResponse = JSON.parse(responseBody); } catch {
+                        res.status(200).type('json').send(responseBody);
+                        return;
+                    }
+                    codexResponse = _chatToCodexResponse(chatResponse, modelId);
                 }
 
-                const inputTokens = chatResponse.usage?.prompt_tokens || 0;
-                const outputTokens = chatResponse.usage?.completion_tokens || 0;
+                if (providerSupportsNativeResponses(provider)) {
+                    logger.info(`[Codex] Native responses output | ${type}/${provider.name} | ${summarizeResponseOutputTypes(codexResponse)}`);
+                }
+
+                const inputTokens = codexResponse.usage?.input_tokens || 0;
+                const outputTokens = codexResponse.usage?.output_tokens || 0;
                 const cost = provider.estimateCost(mappedModel, inputTokens, outputTokens);
                 recordUsage(provider.id, { inputTokens, outputTokens, model: mappedModel });
                 recordRequest({ provider: type, keyId: provider.id, model: mappedModel, inputTokens, outputTokens, cost, durationMs, success: true });
                 logRequest({ route: '/backend-api/codex/responses', provider: type, keyId: provider.id, model: modelId, mappedModel, requestBody: body, responseBody, inputTokens, outputTokens, cost, durationMs, status: 200, success: true });
 
-                const codexResponse = _chatToCodexResponse(chatResponse, modelId);
                 console.log(`[Codex Proxy] <<< API KEY OK | ${type}/${provider.name} | ${modelId}→${mappedModel} | ${durationMs}ms`);
 
                 if (isStreaming) {
@@ -532,6 +766,7 @@ async function _handleCodexViaApiKey(res, body, modelId, isStreaming, keyTypes, 
                 continue;
             }
         }
+        if (fatalRequestError) break;
     }
     return false;
 }
@@ -1053,5 +1288,10 @@ async function _handleCodexViaClaudeAccount(res, body, modelId, isStreaming, sta
 
     return false;
 }
+
+export const _testExports = {
+    _codexToChatBody,
+    findToolCallSequenceError
+};
 
 export default { handleCodexResponses, handleCodexModels, handleCodexCatchAll };
