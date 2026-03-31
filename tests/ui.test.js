@@ -57,12 +57,26 @@ test('app.js defines expected Alpine state keys (smoke)', async () => {
     'refreshAccounts()',
     'checkHealth()',
     'startLogStream()',
+    'configViewerOpen',
+    'openConfigViewer(tool',
     'setHaikuModel(model)',
     'testChat()',
     'testHaikuChat()'
   ]) {
     assert.ok(js.includes(needle), `Expected app.js to include ${needle}`);
   }
+});
+
+test('Dashboard template includes config viewer entry points', async () => {
+  const res = await fetch(UI_URL);
+  assert.equal(res.status, 200);
+  const html = await res.text();
+
+  assert.ok(html.includes("t('viewConfig')"));
+  assert.ok(html.includes("@click=\"openConfigViewer('claude')\""));
+  assert.ok(html.includes("@click=\"openConfigViewer('codex')\""));
+  assert.ok(html.includes("@click=\"openConfigViewer('gemini')\""));
+  assert.ok(html.includes("@click=\"openConfigViewer('openclaw')\""));
 });
 
 test('Health endpoint drives Online/Offline indicator (server contract)', async () => {

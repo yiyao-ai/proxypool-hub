@@ -372,6 +372,9 @@
                     </div>
 
                     <div class="mt-4 flex justify-end gap-2">
+                        <button class="btn btn-sm bg-space-700 hover:bg-space-600 border border-space-border text-white font-sans"
+                            @click="openConfigViewer('claude')" x-text="t('viewConfig')">
+                        </button>
                         <button class="btn btn-sm bg-space-700 hover:bg-space-600 border border-space-border text-white font-sans gap-1"
                             @click="configAndLaunch('claude')" :title="t('configAndLaunch')">
                             <svg class="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 20 20"><path d="M6.3 2.841A1.5 1.5 0 004 4.12V15.88a1.5 1.5 0 002.3 1.279l9.344-5.88a1.5 1.5 0 000-2.557L6.3 2.84z"/></svg>
@@ -403,6 +406,9 @@
                         <div class="text-neon-green">codex</div>
                     </div>
                     <div class="mt-4 flex justify-end gap-2">
+                        <button class="btn btn-sm bg-space-700 hover:bg-space-600 border border-space-border text-white font-sans"
+                            @click="openConfigViewer('codex')" x-text="t('viewConfig')">
+                        </button>
                         <button class="btn btn-sm bg-space-700 hover:bg-space-600 border border-space-border text-white font-sans gap-1"
                             @click="configAndLaunch('codex')" :title="t('configAndLaunch')">
                             <svg class="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 20 20"><path d="M6.3 2.841A1.5 1.5 0 004 4.12V15.88a1.5 1.5 0 002.3 1.279l9.344-5.88a1.5 1.5 0 000-2.557L6.3 2.84z"/></svg>
@@ -433,6 +439,9 @@
                         <div class="text-gray-500 text-xs mt-2">Select "Gemini API key" when prompted for auth</div>
                     </div>
                     <div class="mt-4 flex justify-end gap-2">
+                        <button class="btn btn-sm bg-space-700 hover:bg-space-600 border border-space-border text-white font-sans"
+                            @click="openConfigViewer('gemini')" x-text="t('viewConfig')">
+                        </button>
                         <button class="btn btn-sm bg-space-700 hover:bg-space-600 border border-space-border text-white font-sans gap-1"
                             @click="configAndLaunch('gemini')" :title="t('configAndLaunch')">
                             <svg class="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 20 20"><path d="M6.3 2.841A1.5 1.5 0 004 4.12V15.88a1.5 1.5 0 002.3 1.279l9.344-5.88a1.5 1.5 0 000-2.557L6.3 2.84z"/></svg>
@@ -470,6 +479,9 @@
                         <div class="text-neon-green">openclaw</div>
                     </div>
                     <div class="mt-4 flex justify-end gap-2">
+                        <button class="btn btn-sm bg-space-700 hover:bg-space-600 border border-space-border text-white font-sans"
+                            @click="openConfigViewer('openclaw')" x-text="t('viewConfig')">
+                        </button>
                         <button class="btn btn-sm bg-space-700 hover:bg-space-600 border border-space-border text-white font-sans gap-1"
                             @click="configAndLaunch('openclaw')" :title="t('configAndLaunch')">
                             <svg class="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 20 20"><path d="M6.3 2.841A1.5 1.5 0 004 4.12V15.88a1.5 1.5 0 002.3 1.279l9.344-5.88a1.5 1.5 0 000-2.557L6.3 2.84z"/></svg>
@@ -2419,6 +2431,59 @@
 
             <div class="mt-6 flex justify-end">
                 <button class="btn btn-outline btn-sm text-gray-400" @click="showQuotaModalView = false" x-text="t('close')"></button>
+            </div>
+        </div>
+    </div>
+
+    <div x-show="configViewerOpen" x-transition class="fixed inset-0 z-50 flex justify-end" style="display: none;">
+        <div class="absolute inset-0 bg-black/70 backdrop-blur-sm" @click="closeConfigViewer()"></div>
+        <div class="relative h-full w-full max-w-4xl bg-space-900 border-l border-space-border shadow-2xl flex flex-col">
+            <div class="flex items-start justify-between gap-4 p-6 border-b border-space-border/50">
+                <div class="min-w-0">
+                    <h3 class="font-bold text-xl text-white" x-text="getConfigViewerTitle() + ' ' + t('viewConfig')"></h3>
+                    <p class="text-xs text-gray-500 font-mono mt-2 break-all">
+                        <span x-text="t('configFilePath') + ': '"></span>
+                        <span x-text="configViewerFile.path || '-'"></span>
+                    </p>
+                </div>
+                <div class="flex items-center gap-2 shrink-0">
+                    <button class="btn btn-sm bg-space-700 hover:bg-space-600 border border-space-border text-white"
+                        @click="refreshConfigViewer()" :disabled="configViewerLoading" x-text="t('refresh')">
+                    </button>
+                    <button class="btn btn-sm bg-space-700 hover:bg-space-600 border border-space-border text-white"
+                        @click="openConfigViewerInNewTab(configViewerTool)" x-text="t('openInNewTab')">
+                    </button>
+                    <button class="btn btn-sm btn-outline text-gray-400" @click="closeConfigViewer()" x-text="t('close')"></button>
+                </div>
+            </div>
+
+            <div class="flex-1 overflow-auto p-6 custom-scrollbar">
+                <template x-if="configViewerLoading">
+                    <div class="view-card">
+                        <div class="text-sm text-gray-400 font-mono">Loading...</div>
+                    </div>
+                </template>
+
+                <template x-if="!configViewerLoading && configViewerError">
+                    <div class="view-card border border-red-500/30">
+                        <div class="text-sm text-red-400 font-mono" x-text="configViewerError"></div>
+                    </div>
+                </template>
+
+                <template x-if="!configViewerLoading && !configViewerError && !configViewerFile.exists">
+                    <div class="view-card">
+                        <div class="text-sm text-yellow-400 font-mono" x-text="t('fileNotFound')"></div>
+                    </div>
+                </template>
+
+                <template x-if="!configViewerLoading && !configViewerError && configViewerFile.exists">
+                    <div class="view-card !p-0 overflow-hidden">
+                        <div class="px-6 py-4 border-b border-space-border/50">
+                            <div class="text-xs font-mono text-gray-400 uppercase tracking-widest" x-text="t('rawFileContent')"></div>
+                        </div>
+                        <pre class="config-viewer-pre" x-text="configViewerFile.content"></pre>
+                    </div>
+                </template>
             </div>
         </div>
     </div>

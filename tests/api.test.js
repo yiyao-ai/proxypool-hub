@@ -98,6 +98,16 @@ test('POST /claude/config/direct validates API key required', { skip: shouldSkip
   assert.equal(json?.error, 'API key required');
 });
 
+test('GET /config-files/codex returns raw file viewer payload', { skip: shouldSkip }, async () => {
+  const { status, json, text } = await getJson('/config-files/codex');
+  assert.equal(status, 200, `Expected 200, got ${status}: ${text}`);
+  assert.equal(json?.success, true);
+  assert.equal(json?.tool, 'codex');
+  assert.ok(typeof json?.file?.path === 'string' && json.file.path.length > 0);
+  assert.ok(typeof json?.file?.exists === 'boolean');
+  assert.ok(typeof json?.file?.content === 'string');
+});
+
 test('POST /v1/messages/count_tokens returns input_tokens', { skip: shouldSkip }, async () => {
   const payload = {
     system: 'hello',

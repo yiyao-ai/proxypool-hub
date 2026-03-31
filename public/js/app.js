@@ -75,6 +75,11 @@ document.addEventListener('alpine:init', () => {
         deleteTarget: '',
         showQuotaModalView: false,
         selectedAccount: null,
+        configViewerOpen: false,
+        configViewerLoading: false,
+        configViewerTool: '',
+        configViewerFile: { path: '', exists: false, content: '' },
+        configViewerError: '',
         
         oauthManualMode: false,
         oauthManualUrl: '',
@@ -177,6 +182,7 @@ document.addEventListener('alpine:init', () => {
             this.loadChatSessions();
             this.loadChatSources();
             this.loadChatModels();
+            this.initConfigViewerFromUrl();
 
             window.addEventListener('resize', () => {
                 this.sidebarOpen = window.innerWidth >= 1024;
@@ -1315,6 +1321,82 @@ document.addEventListener('alpine:init', () => {
             this.proxyStatus.codex = !!(codex.ok && codex.data?.chatgpt_base_url?.includes('localhost'));
             this.proxyStatus.gemini = !!(gemini.ok && gemini.data?.patched);
             this.proxyStatus.openclaw = !!(openclaw.ok && openclaw.data?.configured);
+        },
+
+        getConfigViewerTitle(tool = this.configViewerTool) {
+            const titles = {
+                claude: 'Claude Code',
+                codex: 'Codex',
+                gemini: 'Gemini CLI',
+                openclaw: 'OpenClaw',
+            };
+            return titles[tool] || tool || 'Config';
+        },
+
+        initConfigViewerFromUrl() {
+            const params = new URLSearchParams(window.location.search);
+            const tool = params.get('configTool');
+            if (tool) {
+                this.openConfigViewer(tool, { pushHistory: false });
+            }
+        },
+
+        updateConfigViewerUrl(tool = this.configViewerTool, { replace = false } = {}) {
+            const url = new URL(window.location.href);
+            if (tool) {
+                url.searchParams.set('configTool', tool);
+            } else {
+                url.searchParams.delete('configTool');
+            }
+            const method = replace ? 'replaceState' : 'pushState';
+            window.history[method]({}, '', url);
+        },
+
+        async openConfigViewer(tool, { pushHistory = true } = {}) {
+            this.configViewerOpen = true;
+            this.configViewerTool = tool;
+            this.configViewerLoading = true;
+            this.configViewerError = '';
+            this.configViewerFile = { path: '', exists: false, content: '' };
+
+            if (pushHistory) {
+                this.updateConfigViewerUrl(tool);
+            }
+
+            const { ok, data, error } = await this.api(`/config-files/${encodeURIComponent(tool)}`);
+            this.configViewerLoading = false;
+
+            if (ok && data?.success && data.file) {
+                this.configViewerFile = data.file;
+                return;
+            }
+
+            this.configViewerError = data?.error || error || this.t('configViewerLoadFailed');
+            this.configViewerFile = {
+                path: data?.file?.path || '',
+                exists: !!data?.file?.exists,
+                content: ''
+            };
+        },
+
+        closeConfigViewer() {
+            this.configViewerOpen = false;
+            this.configViewerLoading = false;
+            this.configViewerTool = '';
+            this.configViewerError = '';
+            this.configViewerFile = { path: '', exists: false, content: '' };
+            this.updateConfigViewerUrl('', { replace: true });
+        },
+
+        async refreshConfigViewer() {
+            if (!this.configViewerTool) return;
+            await this.openConfigViewer(this.configViewerTool, { pushHistory: false });
+        },
+
+        openConfigViewerInNewTab(tool) {
+            const url = new URL(window.location.href);
+            url.searchParams.set('configTool', tool);
+            window.open(url.toString(), '_blank');
         },
 
         async setClaudeCodeProxyTestConfig() {

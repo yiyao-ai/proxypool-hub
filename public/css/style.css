@@ -252,6 +252,24 @@ html.light .alert {
 .alert-error { background: rgba(239, 68, 68, 0.1); border: 1px solid rgba(239, 68, 68, 0.2); }
 .alert-warning { background: rgba(234, 179, 8, 0.1); border: 1px solid rgba(234, 179, 8, 0.2); }
 
+.config-viewer-pre {
+    margin: 0;
+    padding: 1.5rem;
+    overflow: auto;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.8125rem;
+    line-height: 1.6;
+    color: #d1d5db;
+    background: rgba(12, 12, 20, 0.72);
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+
+html.light .config-viewer-pre {
+    color: #1e293b;
+    background: rgba(255, 255, 255, 0.65);
+}
+
 .btn {
     display: inline-flex;
     align-items: center;

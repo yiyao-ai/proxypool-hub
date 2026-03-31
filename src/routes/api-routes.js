@@ -26,6 +26,7 @@ import { handleSetCodexProxy, handleGetCodexConfig, handleSetCodexDirect } from 
 import { handleGeminiApiProxy } from './gemini-api-route.js';
 import { handleGetGeminiCliConfig, handleSetGeminiCliProxy, handleSetGeminiCliDirect } from './gemini-config-route.js';
 import { handleGetOpenClawConfig, handleSetOpenClawProxy, handleSetOpenClawDirect } from './openclaw-config-route.js';
+import { handleGetConfigFile } from './config-files-route.js';
 import { handleGetRequestLogs, handleGetLogDates, handleGetLogSettings, handleUpdateLogSettings } from './request-logs-route.js';
 import { handleGetToolsStatus, handleGetNodeInfo, handleInstallTool, handleInstallNode, handleLaunchTool, handleCheckUpdates, handleUpdateTool } from './tools-route.js';
 import { handleListChatSources, handleChatWithSource, handleStreamChatWithSource } from './chat-ui-route.js';
@@ -165,6 +166,9 @@ export function registerApiRoutes(app, { port }) {
   app.get('/openclaw/config', handleGetOpenClawConfig);
   app.post('/openclaw/config/proxy', (req, res) => handleSetOpenClawProxy(req, res, { port }));
   app.post('/openclaw/config/direct', handleSetOpenClawDirect);
+
+  // ─── Raw Config File Viewer ─────────────────────────────────────────────
+  app.get('/config-files/:tool', handleGetConfigFile);
 
   // ─── Gemini Native API Proxy (for Gemini CLI) ───────────────────────────
   app.post('/v1beta/models/*', handleGeminiApiProxy);

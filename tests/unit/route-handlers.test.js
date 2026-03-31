@@ -117,6 +117,7 @@ test('handleSwitchAccount: returns result for non-existent email (graceful)', ()
 });
 
 import { handleAddAccountManual } from '../../src/routes/accounts-route.js';
+import { handleGetConfigFile } from '../../src/routes/config-files-route.js';
 
 test('handleAddAccountManual: rejects missing code with 400', async () => {
   const req = mockReq({});
@@ -125,4 +126,24 @@ test('handleAddAccountManual: rejects missing code with 400', async () => {
   assert.equal(res._status, 400);
   assert.equal(res._body.success, false);
   assert.equal(res._body.error, 'Code is required');
+});
+
+test('handleGetConfigFile: rejects unsupported tool with 404', () => {
+  const req = mockReq({}, { tool: 'unknown-tool' });
+  const res = mockRes();
+  handleGetConfigFile(req, res);
+  assert.equal(res._status, 404);
+  assert.equal(res._body.success, false);
+});
+
+test('handleGetConfigFile: returns file payload for codex', () => {
+  const req = mockReq({}, { tool: 'codex' });
+  const res = mockRes();
+  handleGetConfigFile(req, res);
+  assert.equal(res._status, 200);
+  assert.equal(res._body.success, true);
+  assert.equal(res._body.tool, 'codex');
+  assert.ok(typeof res._body.file?.path === 'string' && res._body.file.path.length > 0);
+  assert.ok(typeof res._body.file?.exists === 'boolean');
+  assert.ok(typeof res._body.file?.content === 'string');
 });
