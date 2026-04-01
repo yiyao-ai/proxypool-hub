@@ -183,6 +183,14 @@ export function getProviderById(id) {
     return getProvider(key);
 }
 
+export function getApiKeyById(id) {
+    const data = loadKeys();
+    const key = data.keys.find(k => k.id === id);
+    if (!key) return null;
+    const provider = getProvider(key);
+    return provider ? provider.toJSON() : key;
+}
+
 /**
  * Select the best available key for a given provider type.
  * Strategy: pick the key with the fewest requests (simple load balancing).

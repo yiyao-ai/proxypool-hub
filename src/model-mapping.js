@@ -207,6 +207,24 @@ export function resolveModel(providerType, sourceModel) {
 }
 
 /**
+ * Resolve a model name using tier mapping even if the source model already looks
+ * native to the target provider. Used for routes where the user explicitly wants
+ * provider-side remapping instead of pass-through semantics.
+ *
+ * @param {string} providerType
+ * @param {string} sourceModel
+ * @returns {string}
+ */
+export function resolveModelForced(providerType, sourceModel) {
+    const tier = recognizeTier(sourceModel);
+    const mappings = loadMappings();
+    const providerMap = mappings.providers[providerType];
+
+    if (!providerMap) return sourceModel;
+    return providerMap[tier] || providerMap.standard || sourceModel;
+}
+
+/**
  * Check if a model name is native to a provider (no mapping needed).
  */
 function isNativeModel(providerType, model) {

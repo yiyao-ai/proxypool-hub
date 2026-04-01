@@ -11,6 +11,7 @@ const DEFAULT_SETTINGS = {
     accountStrategy: 'sequential',
     routingPriority: 'account-first',   // 'account-first' | 'apikey-first'
     routingMode: 'automatic',           // 'automatic' | 'app-assigned'
+    strictCodexCompatibility: true,
     appRouting: createDefaultAppRouting(),
     antigravityEnabled: true,
     enableFreeModels: true,              // Allow routing to system free models (Kilo)

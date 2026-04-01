@@ -16,9 +16,11 @@
  *   - location:   Region, e.g. us-central1
  */
 
-import { createSign } from 'crypto';
+import { createSign, randomBytes } from 'crypto';
 import { BaseProvider } from './base.js';
 import { estimateCostWithRegistry, getDefaultPricing } from '../pricing-registry.js';
+import { sanitizeClaudeBody } from '../claude-api.js';
+import { cleanCacheControl } from '../thinking-utils.js';
 
 const DEFAULT_MODEL = 'gemini-3-flash-preview';
 const TOKEN_URL = 'https://oauth2.googleapis.com/token';
@@ -94,6 +96,62 @@ function _isGeminiModel(model) {
     return /^gemini-/i.test(model);
 }
 
+function _cleanAnthropicSystem(system) {
+    if (typeof system === 'string' || system === undefined || system === null) {
+        return system;
+    }
+    if (!Array.isArray(system)) {
+        return system;
+    }
+
+    return system.map(block => {
+        if (!block || typeof block !== 'object') return block;
+        if (block.cache_control === undefined) return block;
+        const { cache_control, ...cleanBlock } = block;
+        return cleanBlock;
+    });
+}
+
+function _generateAnthropicMessageId() {
+    return `msg_${randomBytes(16).toString('hex')}`;
+}
+
+function _generateAnthropicToolId() {
+    return `toolu_${randomBytes(12).toString('hex')}`;
+}
+
+function _mapGeminiFinishReasonToAnthropic(finishReason, hasToolUse) {
+    if (hasToolUse) return 'tool_use';
+
+    switch ((finishReason || '').toUpperCase()) {
+        case 'MAX_TOKENS':
+            return 'max_tokens';
+        case 'STOP':
+        case 'FINISH_REASON_UNSPECIFIED':
+        default:
+            return 'end_turn';
+    }
+}
+
+function _isRetryableGeminiModelError(status, bodyText) {
+    if (status !== 404) return false;
+    const text = String(bodyText || '');
+    return text.includes('Publisher Model') && (
+        text.includes('was not found') ||
+        text.includes('does not have access')
+    );
+}
+
+function _geminiFallbackModels(model) {
+    const curated = {
+        'gemini-3.1-pro-preview': ['gemini-2.5-pro', 'gemini-2.5-flash'],
+        'gemini-3-flash-preview': ['gemini-2.5-flash', 'gemini-2.0-flash'],
+        'gemini-3.1-flash-lite-preview': ['gemini-2.0-flash', 'gemini-2.5-flash']
+    };
+    const fallbacks = curated[model] || [];
+    return [model, ...fallbacks.filter(candidate => candidate !== model)];
+}
+
 // ─── Provider ───────────────────────────────────────────────────────────────
 
 export class VertexAIProvider extends BaseProvider {
@@ -160,13 +218,13 @@ export class VertexAIProvider extends BaseProvider {
 
     /**
      * Resolve effective location for a model.
-     * 'global' doesn't work for model-specific endpoints on Vertex AI.
-     * Gemini models → us-central1, Claude models → europe-west1.
+     * Gemini models can use 'global' publisher endpoints.
+     * Claude models still need a regional endpoint on Vertex AI.
      */
     _effectiveLocation(model) {
         if (this.location !== 'global') return this.location;
         if (_isClaudeModel(model)) return 'europe-west1';
-        return 'us-central1';
+        return 'global';
     }
 
     /**
@@ -248,13 +306,67 @@ export class VertexAIProvider extends BaseProvider {
      * Strip fields unsupported by Gemini from JSON Schema.
      */
     _cleanSchema(schema) {
-        if (!schema || typeof schema !== 'object') return schema;
-        if (Array.isArray(schema)) return schema.map(s => this._cleanSchema(s));
+        if (!schema || typeof schema !== 'object') {
+            return schema;
+        }
+        if (Array.isArray(schema)) {
+            return schema.map(s => this._cleanSchema(s));
+        }
+
         const cleaned = {};
         for (const [key, value] of Object.entries(schema)) {
-            if (key === 'additionalProperties') continue;
-            cleaned[key] = this._cleanSchema(value);
+            if (key === 'const') {
+                cleaned.enum = [value];
+                continue;
+            }
+
+            if (key === 'type') {
+                if (Array.isArray(value)) {
+                    const nonNullTypes = value.filter(item => item !== 'null');
+                    cleaned.type = nonNullTypes[0] || 'string';
+                } else {
+                    cleaned.type = value;
+                }
+                continue;
+            }
+
+            if (key === 'properties' && value && typeof value === 'object' && !Array.isArray(value)) {
+                cleaned.properties = {};
+                for (const [propKey, propValue] of Object.entries(value)) {
+                    cleaned.properties[propKey] = this._cleanSchema(propValue);
+                }
+                continue;
+            }
+
+            if (key === 'items') {
+                cleaned.items = Array.isArray(value)
+                    ? value.map(item => this._cleanSchema(item))
+                    : this._cleanSchema(value);
+                continue;
+            }
+
+            if (key === 'required' && Array.isArray(value)) {
+                cleaned.required = value;
+                continue;
+            }
+
+            if (key === 'enum' && Array.isArray(value)) {
+                cleaned.enum = value;
+                continue;
+            }
+
+            if (['description', 'title', 'format', 'nullable'].includes(key)) {
+                cleaned[key] = value;
+            }
         }
+
+        if (!cleaned.type) {
+            cleaned.type = 'object';
+        }
+        if (cleaned.type === 'object' && !cleaned.properties) {
+            cleaned.properties = {};
+        }
+
         return cleaned;
     }
 
@@ -269,7 +381,17 @@ export class VertexAIProvider extends BaseProvider {
                 name: t.function.name,
                 description: t.function.description || '',
                 parameters: this._cleanSchema(t.function.parameters || { type: 'object', properties: {} })
-            }));
+        }));
+        return functionDeclarations.length > 0 ? [{ functionDeclarations }] : null;
+    }
+
+    _convertAnthropicToolsToGemini(tools) {
+        if (!Array.isArray(tools) || tools.length === 0) return null;
+        const functionDeclarations = tools.map(tool => ({
+            name: tool.name,
+            description: tool.description || '',
+            parameters: this._cleanSchema(tool.input_schema || { type: 'object', properties: {} })
+        }));
         return functionDeclarations.length > 0 ? [{ functionDeclarations }] : null;
     }
 
@@ -354,6 +476,39 @@ export class VertexAIProvider extends BaseProvider {
             status: 200,
             headers: { 'Content-Type': 'application/json' }
         });
+    }
+
+    async _fetchGeminiWithFallback(modelCandidates, vertexBody, token) {
+        let lastErrorResponse = null;
+
+        for (let index = 0; index < modelCandidates.length; index++) {
+            const model = modelCandidates[index];
+            const response = await fetch(this._buildGeminiUrl(model), {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`
+                },
+                body: JSON.stringify(vertexBody)
+            });
+
+            if (response.ok) {
+                return { response, model };
+            }
+
+            const errorText = await response.text();
+            lastErrorResponse = new Response(errorText, {
+                status: response.status,
+                headers: response.headers
+            });
+
+            const canRetry = index < modelCandidates.length - 1 && _isRetryableGeminiModelError(response.status, errorText);
+            if (!canRetry) {
+                return { response: lastErrorResponse, model };
+            }
+        }
+
+        return { response: lastErrorResponse, model: modelCandidates[modelCandidates.length - 1] };
     }
 
     // ─── Claude model request (rawPredict → Anthropic Messages format) ──────
@@ -465,6 +620,155 @@ export class VertexAIProvider extends BaseProvider {
         };
     }
 
+    _convertAnthropicToGemini(messages, system) {
+        const contents = [];
+        let systemInstruction = null;
+        const toolNamesById = new Map();
+
+        if (system) {
+            const text = typeof system === 'string'
+                ? system
+                : Array.isArray(system)
+                    ? system.filter(block => block?.type === 'text').map(block => block.text).join('\n')
+                    : '';
+            if (text) {
+                systemInstruction = { parts: [{ text }] };
+            }
+        }
+
+        for (const msg of messages || []) {
+            const role = msg.role === 'assistant' ? 'model' : 'user';
+            const content = msg.content;
+
+            if (typeof content === 'string') {
+                contents.push({ role, parts: [{ text: content }] });
+                continue;
+            }
+
+            if (!Array.isArray(content)) {
+                continue;
+            }
+
+            const parts = [];
+            for (const block of content) {
+                if (block?.type === 'text') {
+                    parts.push({ text: block.text || '' });
+                    continue;
+                }
+
+                if (block?.type === 'tool_use') {
+                    if (block.id && block.name) {
+                        toolNamesById.set(block.id, block.name);
+                    }
+                    parts.push({
+                        functionCall: {
+                            name: block.name,
+                            args: block.input || {}
+                        }
+                    });
+                    continue;
+                }
+
+                if (block?.type === 'tool_result') {
+                    const responseText = typeof block.content === 'string'
+                        ? block.content
+                        : Array.isArray(block.content)
+                            ? block.content
+                                .filter(item => item?.type === 'text')
+                                .map(item => item.text || '')
+                                .join('\n')
+                            : JSON.stringify(block.content ?? '');
+                    const functionName = toolNamesById.get(block.tool_use_id) || 'tool_result';
+                    parts.push({
+                        functionResponse: {
+                            name: functionName,
+                            response: {
+                                tool_use_id: block.tool_use_id,
+                                content: block.is_error ? `Error: ${responseText}` : responseText
+                            }
+                        }
+                    });
+                    continue;
+                }
+
+                if (block?.type === 'image') {
+                    const source = block.source || {};
+                    if (source.type === 'base64' && source.data) {
+                        parts.push({
+                            inlineData: {
+                                mimeType: source.media_type || 'image/jpeg',
+                                data: source.data
+                            }
+                        });
+                    } else if (source.type === 'url' && source.url) {
+                        parts.push({
+                            fileData: {
+                                mimeType: source.media_type || 'image/jpeg',
+                                fileUri: source.url
+                            }
+                        });
+                    }
+                }
+            }
+
+            if (parts.length > 0) {
+                contents.push({ role, parts });
+            }
+        }
+
+        const merged = [];
+        for (const entry of contents) {
+            if (merged.length > 0 && merged[merged.length - 1].role === entry.role) {
+                merged[merged.length - 1].parts.push(...entry.parts);
+            } else {
+                merged.push({ ...entry, parts: [...entry.parts] });
+            }
+        }
+
+        return { contents: merged, systemInstruction };
+    }
+
+    _convertGeminiToAnthropic(geminiResponse, originalModel) {
+        const candidate = geminiResponse.candidates?.[0];
+        const parts = candidate?.content?.parts || [];
+        const usage = geminiResponse.usageMetadata || {};
+        const finishReason = candidate?.finishReason || geminiResponse.finishReason;
+
+        const content = [];
+        for (const part of parts) {
+            if (part.text !== undefined && !part.thought) {
+                content.push({ type: 'text', text: part.text });
+            } else if (part.functionCall?.name) {
+                content.push({
+                    type: 'tool_use',
+                    id: part.functionCall.id || _generateAnthropicToolId(),
+                    name: part.functionCall.name,
+                    input: part.functionCall.args || {}
+                });
+            }
+        }
+
+        if (content.length === 0) {
+            content.push({ type: 'text', text: '' });
+        }
+
+        const hasToolUse = content.some(block => block.type === 'tool_use');
+
+        return {
+            id: _generateAnthropicMessageId(),
+            type: 'message',
+            role: 'assistant',
+            content,
+            model: originalModel,
+            stop_reason: _mapGeminiFinishReasonToAnthropic(finishReason, hasToolUse),
+            stop_sequence: null,
+            usage: {
+                input_tokens: usage.promptTokenCount || 0,
+                output_tokens: usage.candidatesTokenCount || 0
+            }
+        };
+    }
+
     async _sendClaudeRequest(body, token) {
         const model = body.model;
         const { system, messages } = this._convertMessagesToAnthropic(body.messages || []);
@@ -514,17 +818,61 @@ export class VertexAIProvider extends BaseProvider {
         const token = await this._ensureToken();
         const model = body.model || 'claude-sonnet-4-6';
 
+        if (_isGeminiModel(model)) {
+            const cleanedMessages = cleanCacheControl(body.messages || []);
+            const cleanedSystem = _cleanAnthropicSystem(body.system);
+            const { contents, systemInstruction } = this._convertAnthropicToGemini(cleanedMessages, cleanedSystem);
+
+            const vertexBody = {
+                contents,
+                generationConfig: {
+                    maxOutputTokens: body.max_tokens || 8192,
+                    temperature: body.temperature,
+                    topP: body.top_p,
+                }
+            };
+            if (systemInstruction) vertexBody.systemInstruction = systemInstruction;
+
+            const geminiTools = this._convertAnthropicToolsToGemini(body.tools);
+            if (geminiTools) {
+                vertexBody.tools = geminiTools;
+            }
+
+            const { response, model: actualModel } = await this._fetchGeminiWithFallback(_geminiFallbackModels(model), vertexBody, token);
+            if (!response.ok) return response;
+
+            const data = await response.json();
+            const anthropicResponse = this._convertGeminiToAnthropic(data, model);
+            return new Response(JSON.stringify(anthropicResponse), {
+                status: 200,
+                headers: {
+                    'Content-Type': 'application/json',
+                    'x-proxypool-upstream-model': actualModel
+                }
+            });
+        }
+
         if (!_isClaudeModel(model)) {
             return new Response(JSON.stringify({
                 type: 'error',
-                error: { type: 'invalid_request_error', message: `Vertex AI rawPredict only supports Claude models, got: ${model}` }
+                error: { type: 'invalid_request_error', message: `Vertex AI Anthropic bridge only supports Claude or Gemini models, got: ${model}` }
             }), { status: 400, headers: { 'Content-Type': 'application/json' } });
         }
 
         const isStream = body.stream === true;
+        const sanitized = sanitizeClaudeBody(body);
+        const cleanedMessages = cleanCacheControl(sanitized.messages || []);
+        const cleanedSystem = _cleanAnthropicSystem(sanitized.system);
 
         // Build rawPredict body: same as Anthropic Messages but with vertex anthropic_version
-        const vertexBody = { ...body, anthropic_version: 'vertex-2023-10-16' };
+        const vertexBody = {
+            ...sanitized,
+            messages: cleanedMessages,
+            anthropic_version: 'vertex-2023-10-16'
+        };
+        if (cleanedSystem !== undefined) {
+            vertexBody.system = cleanedSystem;
+        }
         // model is in the URL, not the body for rawPredict
         delete vertexBody.model;
 
@@ -554,7 +902,7 @@ export class VertexAIProvider extends BaseProvider {
     async listModels() {
         try {
             const token = await this._ensureToken();
-            const loc = this.location === 'global' ? 'us-central1' : this.location;
+            const loc = this.location || 'us-central1';
             const domain = this._buildDomain(loc);
             const url = `https://${domain}/v1/projects/${this.projectId}/locations/${loc}/publishers/google/models`;
             const response = await fetch(url, {

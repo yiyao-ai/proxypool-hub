@@ -2410,7 +2410,7 @@
                         </div>
                         <div>
                             <label class="text-xs text-gray-500 mb-1 block" x-text="t('vertexLocation')"></label>
-                            <input type="text" x-model="newKeyExtra.location" placeholder="us-central1"
+                            <input type="text" x-model="newKeyExtra.location" placeholder="global"
                                 class="input w-full bg-space-800 border-space-border text-white font-mono text-sm">
                             <p class="text-[10px] text-gray-600 mt-1" x-text="t('vertexLocationHint')"></p>
                         </div>
@@ -2453,11 +2453,19 @@
                         class="input w-full bg-space-900 border-space-border text-gray-500 font-mono text-sm cursor-not-allowed">
                 </div>
 
-                <div>
+                <div x-show="editKeyData.type !== 'vertex-ai'">
                     <label class="text-xs text-gray-500 mb-1 block" x-text="t('apiKeyLabel')"></label>
                     <input type="text" x-model="editKeyData.apiKey" :placeholder="editKeyData.maskedKey"
                         class="input w-full bg-space-800 border-space-border text-white font-mono text-sm">
                     <p class="text-[10px] text-gray-600 mt-1" x-text="t('editKeyHint')"></p>
+                </div>
+
+                <div x-show="editKeyData.type === 'vertex-ai'">
+                    <label class="text-xs text-gray-500 mb-1 block" x-text="t('vertexServiceAccountJson')"></label>
+                    <textarea x-model="editKeyData.apiKey" rows="8"
+                        :placeholder="editKeyData.loading ? 'Loading...' : (keyPlaceholders['vertex-ai']?.key || '')"
+                        class="input w-full bg-space-800 border-space-border text-white font-mono text-xs resize-y"></textarea>
+                    <p class="text-[10px] text-gray-600 mt-1" x-text="t('vertexServiceAccountHint')"></p>
                 </div>
 
                 <div>
@@ -2493,7 +2501,7 @@
                         </div>
                         <div>
                             <label class="text-xs text-gray-500 mb-1 block" x-text="t('vertexLocation')"></label>
-                            <input type="text" x-model="editKeyData.location" placeholder="us-central1"
+                            <input type="text" x-model="editKeyData.location" placeholder="global"
                                 class="input w-full bg-space-800 border-space-border text-white font-mono text-sm">
                         </div>
                     </div>

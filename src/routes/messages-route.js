@@ -15,6 +15,7 @@ import { selectKey, getAllProviders, recordUsage, recordError, recordRateLimit }
 import { recordRequest } from '../usage-tracker.js';
 import { logRequest } from '../request-logger.js';
 import { detectRequestApp, resolveAssignedCredential } from '../app-routing.js';
+import { resolveModel, resolveModelForced } from '../model-mapping.js';
 
 const MAX_RETRIES = 5;
 const MAX_WAIT_BEFORE_ERROR_MS = 120000;
@@ -169,6 +170,21 @@ function getAccountRotator() {
     return accountRotator;
 }
 
+function _resolveMessagesProviderModel(providerType, requestedModel) {
+    // For Anthropic-compatible provider bridges, Vertex AI should honor the
+    // user's tier mapping even when the incoming model already looks "native"
+    // (e.g. claude-opus-4-6). Otherwise Claude models get passed through and
+    // never remap to configured Gemini targets.
+    if (providerType === 'vertex-ai') {
+        return resolveModelForced(providerType, requestedModel);
+    }
+    return resolveModel(providerType, requestedModel);
+}
+
+function _resolveActualProviderModel(response, fallbackModel) {
+    return response?.headers?.get?.('x-proxypool-upstream-model') || fallbackModel;
+}
+
 export async function handleMessages(req, res) {
     const startTime = Date.now();
     const body = req.body;
@@ -176,16 +192,9 @@ export async function handleMessages(req, res) {
     const isStreaming = body.stream !== false;
     const clientBeta = req.headers['anthropic-beta'] || '';
 
-    const { isKilo, kiloTarget, upstreamModel } = resolveModelRouting(requestedModel);
-
-    if (isKilo) {
-        return isStreaming
-            ? _streamKilo(res, { ...body, model: upstreamModel }, kiloTarget, requestedModel, startTime)
-            : _sendKilo(res, { ...body, model: upstreamModel }, kiloTarget, requestedModel, startTime);
-    }
-
     const settings = getServerSettings();
     const appId = detectRequestApp(req);
+    const { isKilo, kiloTarget, upstreamModel } = resolveModelRouting(requestedModel);
     const priority = settings.routingPriority || 'account-first';
     const hasAccounts = listAccounts().total > 0;
     const hasApiKeys = !!selectKey('anthropic');
@@ -202,6 +211,12 @@ export async function handleMessages(req, res) {
                 return handleStreamError(res, new Error(`Assigned credential unavailable for ${appId}: ${assignment.unavailableReason || 'request_failed'}`), requestedModel, startTime);
             }
         }
+    }
+
+    if (isKilo) {
+        return isStreaming
+            ? _streamKilo(res, { ...body, model: upstreamModel }, kiloTarget, requestedModel, startTime)
+            : _sendKilo(res, { ...body, model: upstreamModel }, kiloTarget, requestedModel, startTime);
     }
 
     if (hasAntigravityAccounts && isAntigravityModel(requestedModel)) {
@@ -303,8 +318,11 @@ async function _handleViaAssignedApiKey(req, res, body, requestedModel, isStream
         }
 
         if (typeof provider.sendAnthropicRequest === 'function') {
-            const response = await provider.sendAnthropicRequest(body);
+            const mappedModel = _resolveMessagesProviderModel(provider.type, requestedModel);
+            const mappedBody = { ...body, model: mappedModel };
+            const response = await provider.sendAnthropicRequest(mappedBody);
             if (!response.ok) return false;
+            const actualModel = _resolveActualProviderModel(response, mappedModel);
             const contentType = response.headers?.get?.('content-type') || '';
             if (contentType.includes('text/event-stream')) {
                 res.setHeader('Content-Type', 'text/event-stream');
@@ -673,8 +691,12 @@ async function _handleViaCompatibleKeys(res, body, requestedModel, isStreaming, 
         const provider = providers[attempt];
 
         try {
-            const response = await provider.sendAnthropicRequest(body);
+            const mappedModel = _resolveMessagesProviderModel(provider.type, requestedModel);
+            const mappedBody = { ...body, model: mappedModel };
+            logger.info(`[Messages] Model mapping: ${requestedModel} → ${mappedModel} (${provider.type})`);
+            const response = await provider.sendAnthropicRequest(mappedBody);
             const durationMs = Date.now() - startTime;
+            const actualModel = _resolveActualProviderModel(response, mappedModel);
 
             if (response.status === 429) {
                 const retryAfter = response.headers?.get?.('retry-after');
@@ -692,8 +714,8 @@ async function _handleViaCompatibleKeys(res, body, requestedModel, isStreaming, 
             if (!response.ok) {
                 const errorBody = await response.text();
                 recordError(provider.id);
-                recordRequest({ provider: provider.type, keyId: provider.id, model: body.model, durationMs, success: false, error: errorBody.slice(0, 200) });
-                logRequest({ route: '/v1/messages', provider: provider.type, keyId: provider.id, model: body.model, requestBody: body, responseBody: errorBody, durationMs, status: response.status, success: false, error: errorBody.slice(0, 200) });
+                recordRequest({ provider: provider.type, keyId: provider.id, model: actualModel, durationMs, success: false, error: errorBody.slice(0, 200) });
+                logRequest({ route: '/v1/messages', provider: provider.type, keyId: provider.id, model: requestedModel, mappedModel: actualModel, requestBody: mappedBody, responseBody: errorBody, durationMs, status: response.status, success: false, error: errorBody.slice(0, 200) });
                 logger.warn(`[Messages] ${provider.type} error ${response.status}: ${provider.name} - ${errorBody.slice(0, 200)}`);
                 continue;
             }
@@ -721,9 +743,9 @@ async function _handleViaCompatibleKeys(res, body, requestedModel, isStreaming, 
                 }
 
                 const streamDurationMs = Date.now() - startTime;
-                recordRequest({ provider: provider.type, keyId: provider.id, model: body.model, durationMs: streamDurationMs, success: true });
-                logRequest({ route: '/v1/messages', provider: provider.type, keyId: provider.id, model: requestedModel, mappedModel: body.model, durationMs: streamDurationMs, status: 200, success: true });
-                logger.info(`[Messages] OK via ${provider.type} (stream) | ${provider.name} | model=${body.model} | ${streamDurationMs}ms`);
+                recordRequest({ provider: provider.type, keyId: provider.id, model: actualModel, durationMs: streamDurationMs, success: true });
+                logRequest({ route: '/v1/messages', provider: provider.type, keyId: provider.id, model: requestedModel, mappedModel: actualModel, requestBody: mappedBody, durationMs: streamDurationMs, status: 200, success: true });
+                logger.info(`[Messages] OK via ${provider.type} (stream) | ${provider.name} | model=${requestedModel}→${actualModel} | ${streamDurationMs}ms`);
             } else {
                 // JSON response — read it
                 const responseBody = await response.text();
@@ -735,11 +757,11 @@ async function _handleViaCompatibleKeys(res, body, requestedModel, isStreaming, 
                     outputTokens = parsed.usage?.output_tokens || 0;
                 } catch { /* ignore */ }
 
-                const cost = provider.estimateCost(body.model, inputTokens, outputTokens);
-                recordUsage(provider.id, { inputTokens, outputTokens, model: body.model });
-                recordRequest({ provider: provider.type, keyId: provider.id, model: body.model, inputTokens, outputTokens, cost, durationMs, success: true });
-                logRequest({ route: '/v1/messages', provider: provider.type, keyId: provider.id, model: requestedModel, mappedModel: body.model, inputTokens, outputTokens, cost, durationMs, status: 200, success: true });
-                logger.info(`[Messages] OK via ${provider.type} | ${provider.name} | model=${body.model} | ${inputTokens}+${outputTokens} tokens | $${cost.toFixed(4)} | ${durationMs}ms`);
+                const cost = provider.estimateCost(actualModel, inputTokens, outputTokens);
+                recordUsage(provider.id, { inputTokens, outputTokens, model: actualModel });
+                recordRequest({ provider: provider.type, keyId: provider.id, model: actualModel, inputTokens, outputTokens, cost, durationMs, success: true });
+                logRequest({ route: '/v1/messages', provider: provider.type, keyId: provider.id, model: requestedModel, mappedModel: actualModel, requestBody: mappedBody, responseBody, inputTokens, outputTokens, cost, durationMs, status: 200, success: true });
+                logger.info(`[Messages] OK via ${provider.type} | ${provider.name} | model=${requestedModel}→${actualModel} | ${inputTokens}+${outputTokens} tokens | $${cost.toFixed(4)} | ${durationMs}ms`);
 
                 if (isStreaming && parsed) {
                     // Client expects SSE but provider returned JSON —

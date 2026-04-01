@@ -126,6 +126,31 @@ export function handleGetRoutingMode(req, res) {
   res.json({ success: true, routingMode: settings.routingMode || 'automatic' });
 }
 
+export function handleGetStrictCodexCompatibility(req, res) {
+  const settings = getServerSettings();
+  res.json({
+    success: true,
+    strictCodexCompatibility: settings.strictCodexCompatibility !== false
+  });
+}
+
+export function handleSetStrictCodexCompatibility(req, res) {
+  const { strictCodexCompatibility } = req.body || {};
+
+  if (typeof strictCodexCompatibility !== 'boolean') {
+    return res.status(400).json({
+      success: false,
+      error: 'strictCodexCompatibility is required and must be a boolean'
+    });
+  }
+
+  const settings = setServerSettings({ strictCodexCompatibility });
+  res.json({
+    success: true,
+    strictCodexCompatibility: settings.strictCodexCompatibility !== false
+  });
+}
+
 /**
  * POST /settings/routing-mode
  */

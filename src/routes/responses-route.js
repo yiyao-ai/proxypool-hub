@@ -30,6 +30,24 @@ const UPSTREAM_COMPACT_URL = 'https://chatgpt.com/backend-api/codex/responses/co
 const MAX_RETRIES = 5;
 const MAX_WAIT_BEFORE_ERROR_MS = 120000;
 const SHORT_RATE_LIMIT_THRESHOLD_MS = 5000;
+const PASSTHROUGH_REQUEST_HEADER_WHITELIST = [
+    'x-client-request-id',
+    'x-openai-subagent',
+    'x-codex-turn-state'
+];
+const PASSTHROUGH_RESPONSE_HEADER_WHITELIST = [
+    'openai-model',
+    'x-openai-model',
+    'x-models-etag',
+    'x-reasoning-included',
+    'x-codex-turn-state',
+    'retry-after',
+    'x-ratelimit-reset',
+    'x-ratelimit-limit-requests',
+    'x-ratelimit-remaining-requests',
+    'x-ratelimit-limit-tokens',
+    'x-ratelimit-remaining-tokens'
+];
 
 let accountRotator = null;
 let currentStrategy = null;
@@ -77,6 +95,24 @@ function parseResetTime(response, errorText) {
 
 function sleep(ms) {
     return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+function copyAllowedRequestHeaders(sourceHeaders = {}, targetHeaders = {}) {
+    for (const headerName of PASSTHROUGH_REQUEST_HEADER_WHITELIST) {
+        const value = sourceHeaders[headerName];
+        if (value !== undefined && value !== null && value !== '') {
+            targetHeaders[headerName] = value;
+        }
+    }
+}
+
+function copyAllowedResponseHeaders(upstreamResponse, res) {
+    for (const headerName of PASSTHROUGH_RESPONSE_HEADER_WHITELIST) {
+        const value = upstreamResponse.headers?.get?.(headerName);
+        if (value) {
+            res.setHeader(headerName, value);
+        }
+    }
 }
 
 /**
@@ -281,6 +317,7 @@ export async function handleResponses(req, res) {
     const isStreaming = resolveResponsesStreamingMode(isCompact, parsed);
 
     const settings = getServerSettings();
+    const strictCodexCompatibility = settings.strictCodexCompatibility !== false;
     const appId = detectRequestApp(req);
     const priority = settings.routingPriority || 'account-first';
     const hasAccounts = listAccounts().total > 0;
@@ -302,7 +339,7 @@ export async function handleResponses(req, res) {
         }
     }
 
-    if (hasAntigravityAccounts && parsed && isAntigravityModel(modelId)) {
+    if (!strictCodexCompatibility && hasAntigravityAccounts && parsed && isAntigravityModel(modelId)) {
         const result = await _handleResponsesViaAntigravityAccount(res, parsed, modelId, isStreaming, startTime);
         if (result !== false) return;
     }
@@ -317,29 +354,29 @@ export async function handleResponses(req, res) {
             const poolResult = await _handleResponsesViaAccountPool(req, res, rawBody, contentEncoding, modelId, isStreaming, startTime, isCompact);
             if (poolResult !== false) return;
         }
-        if (hasClaudeAccounts && parsed) {
+        if (!strictCodexCompatibility && hasClaudeAccounts && parsed) {
             const claudeResult = await _handleResponsesViaClaudeAccount(res, parsed, modelId, isStreaming, startTime);
             if (claudeResult !== false) return;
         }
-        if (hasAntigravityAccounts && parsed) {
+        if (!strictCodexCompatibility && hasAntigravityAccounts && parsed) {
             const antigravityResult = await _handleResponsesViaAntigravityAccount(res, parsed, modelId, isStreaming, startTime);
             if (antigravityResult !== false) return;
         }
     } else {
-        // account-first (default): ChatGPT accounts → Claude accounts → API Key
+        // account-first (default): ChatGPT accounts → API Key → optional extended fallback
         if (hasAccounts) {
             const poolResult = await _handleResponsesViaAccountPool(req, res, rawBody, contentEncoding, modelId, isStreaming, startTime, isCompact);
             if (poolResult !== false) return;
-        }
-        if (hasClaudeAccounts && parsed) {
-            const claudeResult = await _handleResponsesViaClaudeAccount(res, parsed, modelId, isStreaming, startTime);
-            if (claudeResult !== false) return;
         }
         if (hasApiKeys && parsed) {
             const result = await _handleResponsesViaApiKey(res, parsed, modelId, isStreaming, chatKeyTypes, startTime);
             if (result !== false) return;
         }
-        if (hasAntigravityAccounts && parsed) {
+        if (!strictCodexCompatibility && hasClaudeAccounts && parsed) {
+            const claudeResult = await _handleResponsesViaClaudeAccount(res, parsed, modelId, isStreaming, startTime);
+            if (claudeResult !== false) return;
+        }
+        if (!strictCodexCompatibility && hasAntigravityAccounts && parsed) {
             const antigravityResult = await _handleResponsesViaAntigravityAccount(res, parsed, modelId, isStreaming, startTime);
             if (antigravityResult !== false) return;
         }
@@ -936,6 +973,7 @@ async function _handleResponsesViaAccountPool(req, res, rawBody, contentEncoding
                 'Content-Type': req.headers['content-type'] || 'application/json',
                 'Accept': isStreaming ? 'text/event-stream' : 'application/json'
             };
+            copyAllowedRequestHeaders(req.headers, upstreamHeaders);
             if (contentEncoding) {
                 upstreamHeaders['Content-Encoding'] = contentEncoding;
             }
@@ -982,6 +1020,7 @@ async function _handleResponsesViaAccountPool(req, res, rawBody, contentEncoding
 
             // Success
             rotator.notifySuccess(account, modelId);
+            copyAllowedResponseHeaders(upstreamResponse, res);
 
             if (isStreaming) {
                 res.setHeader('Content-Type', 'text/event-stream');

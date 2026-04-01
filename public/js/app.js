@@ -1728,7 +1728,7 @@ document.addEventListener('alpine:init', () => {
         newKeyName: '',
         newKeyValue: '',
         newKeyBaseUrl: '',
-        newKeyExtra: { deploymentName: '', apiVersion: '2024-10-21', projectId: '', location: 'us-central1' },
+        newKeyExtra: { deploymentName: '', apiVersion: '2024-10-21', projectId: '', location: 'global' },
 
         async loadApiKeys() {
             const { ok, data } = await this.api('/api/keys');
@@ -1775,7 +1775,7 @@ document.addEventListener('alpine:init', () => {
                     return;
                 }
                 body.projectId = this.newKeyExtra.projectId.trim();
-                body.location = this.newKeyExtra.location.trim() || 'us-central1';
+                body.location = this.newKeyExtra.location.trim() || 'global';
             } else if (this.newKeyBaseUrl.trim()) {
                 body.baseUrl = this.newKeyBaseUrl.trim();
             }
@@ -1791,7 +1791,7 @@ document.addEventListener('alpine:init', () => {
                 this.newKeyName = '';
                 this.newKeyValue = '';
                 this.newKeyBaseUrl = '';
-                this.newKeyExtra = { deploymentName: '', apiVersion: '2024-10-21', projectId: '', location: 'us-central1' };
+                this.newKeyExtra = { deploymentName: '', apiVersion: '2024-10-21', projectId: '', location: 'global' };
                 this.loadApiKeys();
             } else {
                 this.showToast(data?.error || this.t('apiKeyAddFailed'), 'error');
@@ -1845,10 +1845,10 @@ document.addEventListener('alpine:init', () => {
         },
 
         showEditKeyModal: false,
-        editKeyData: { id: '', name: '', type: '', apiKey: '', baseUrl: '', maskedKey: '', deploymentName: '', apiVersion: '', projectId: '', location: '' },
+        editKeyData: { id: '', name: '', type: '', apiKey: '', baseUrl: '', maskedKey: '', deploymentName: '', apiVersion: '', projectId: '', location: '', loading: false },
         editKeyTesting: false,
 
-        openEditKeyModal(key) {
+        async openEditKeyModal(key) {
             this.editKeyData = {
                 id: key.id,
                 name: key.name,
@@ -1859,9 +1859,28 @@ document.addEventListener('alpine:init', () => {
                 deploymentName: key.deploymentName || '',
                 apiVersion: key.apiVersion || '2024-10-21',
                 projectId: key.projectId || '',
-                location: key.location || 'us-central1',
+                location: key.location || 'global',
+                loading: true,
             };
             this.showEditKeyModal = true;
+
+            const { ok, data } = await this.api(`/api/keys/${key.id}`);
+            if (ok && data?.key) {
+                this.editKeyData = {
+                    ...this.editKeyData,
+                    name: data.key.name || this.editKeyData.name,
+                    apiKey: data.key.apiKey || '',
+                    baseUrl: data.key.baseUrl || '',
+                    deploymentName: data.key.deploymentName || '',
+                    apiVersion: data.key.apiVersion || this.editKeyData.apiVersion,
+                    projectId: data.key.projectId || '',
+                    location: data.key.location || this.editKeyData.location,
+                    loading: false
+                };
+            } else {
+                this.editKeyData.loading = false;
+                this.showToast(data?.error || this.t('apiKeyUpdateFailed'), 'error');
+            }
         },
 
         _buildEditPatch() {
@@ -1875,7 +1894,7 @@ document.addEventListener('alpine:init', () => {
             }
             if (d.type === 'vertex-ai') {
                 patch.projectId = d.projectId.trim();
-                patch.location = d.location.trim() || 'us-central1';
+                patch.location = d.location.trim() || 'global';
             }
             return patch;
         },

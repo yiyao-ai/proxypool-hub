@@ -17,17 +17,36 @@ import { getCredentialsForAccount } from '../middleware/credentials.js';
 import { logger } from '../utils/logger.js';
 import { getServerSettings } from '../server-settings.js';
 import { fetchModels } from '../model-api.js';
-import { selectKey, recordUsage, recordError, recordRateLimit, hasKeysForTypes, getKeyRateLimitInfo } from '../api-key-manager.js';
+import { selectKey, recordUsage, recordError, recordRateLimit, hasKeysForTypes, getKeyRateLimitInfo, getAllProviders } from '../api-key-manager.js';
 import { recordRequest } from '../usage-tracker.js';
 import { sendResponsesSSE } from '../utils/responses-sse.js';
 import { resolveModel } from '../model-mapping.js';
 import { logRequest } from '../request-logger.js';
 import { detectRequestApp, resolveAssignedCredential } from '../app-routing.js';
+import { getDiscoveredModels } from '../model-discovery.js';
 
 const UPSTREAM_BASE = 'https://chatgpt.com/backend-api';
 const MAX_RETRIES = 5;
 const MAX_WAIT_BEFORE_ERROR_MS = 120000;
 const SHORT_RATE_LIMIT_THRESHOLD_MS = 5000;
+const PASSTHROUGH_REQUEST_HEADER_WHITELIST = [
+    'x-client-request-id',
+    'x-openai-subagent',
+    'x-codex-turn-state'
+];
+const PASSTHROUGH_RESPONSE_HEADER_WHITELIST = [
+    'openai-model',
+    'x-openai-model',
+    'x-models-etag',
+    'x-reasoning-included',
+    'x-codex-turn-state',
+    'retry-after',
+    'x-ratelimit-reset',
+    'x-ratelimit-limit-requests',
+    'x-ratelimit-remaining-requests',
+    'x-ratelimit-limit-tokens',
+    'x-ratelimit-remaining-tokens'
+];
 
 let accountRotator = null;
 let currentStrategy = null;
@@ -80,6 +99,67 @@ function parseResetTime(response, errorText) {
 
 function sleep(ms) {
     return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+function copyAllowedRequestHeaders(sourceHeaders = {}, targetHeaders = {}) {
+    for (const headerName of PASSTHROUGH_REQUEST_HEADER_WHITELIST) {
+        const value = sourceHeaders[headerName];
+        if (value !== undefined && value !== null && value !== '') {
+            targetHeaders[headerName] = value;
+        }
+    }
+}
+
+function copyAllowedResponseHeaders(upstreamResponse, res) {
+    for (const headerName of PASSTHROUGH_RESPONSE_HEADER_WHITELIST) {
+        const value = upstreamResponse.headers?.get?.(headerName);
+        if (value) {
+            res.setHeader(headerName, value);
+        }
+    }
+}
+
+function getStrictNativeCodexModels() {
+    const providers = getAllProviders().filter(provider =>
+        provider?.enabled !== false && (provider.type === 'openai' || provider.type === 'azure-openai')
+    );
+    const discovered = getDiscoveredModels();
+    const seen = new Set();
+    const models = [];
+
+    for (const providerType of ['openai', 'azure-openai']) {
+        const providerModels = discovered.providers?.[providerType]?.models || [];
+        for (const model of providerModels) {
+            if (!model?.id || seen.has(model.id)) continue;
+            seen.add(model.id);
+            models.push({
+                slug: model.id,
+                name: model.name || model.id,
+                tags: providerType === 'azure-openai' ? ['azure-openai'] : ['openai']
+            });
+        }
+    }
+
+    for (const provider of providers) {
+        if (provider.type === 'azure-openai' && provider.deploymentName && !seen.has(provider.deploymentName)) {
+            seen.add(provider.deploymentName);
+            models.push({
+                slug: provider.deploymentName,
+                name: provider.deploymentName,
+                tags: ['azure-openai']
+            });
+        }
+    }
+
+    if (models.length === 0 && providers.some(provider => provider.type === 'openai')) {
+        for (const modelId of ['gpt-4o', 'gpt-4o-mini', 'gpt-5.2']) {
+            if (seen.has(modelId)) continue;
+            seen.add(modelId);
+            models.push({ slug: modelId, name: modelId, tags: ['openai'] });
+        }
+    }
+
+    return models;
 }
 
 function normalizeChatMessageContent(content) {
@@ -188,6 +268,7 @@ export async function handleCodexResponses(req, res) {
     const body = req.body;
     const modelId = body.model || 'gpt-5.2';
     const isStreaming = body.stream !== false;
+    const rawBody = Buffer.isBuffer(req.rawBody) ? req.rawBody : null;
 
     // --- Request logging ---
     const inputSummary = Array.isArray(body.input)
@@ -225,6 +306,7 @@ export async function handleCodexResponses(req, res) {
     console.log('='.repeat(70));
 
     const settings = getServerSettings();
+    const strictCodexCompatibility = settings.strictCodexCompatibility !== false;
     const appId = detectRequestApp(req);
     const priority = settings.routingPriority || 'account-first';
     const hasAccounts = listAccounts().total > 0;
@@ -244,7 +326,7 @@ export async function handleCodexResponses(req, res) {
         }
     }
 
-    if (hasAntigravityAccounts && isAntigravityModel(modelId)) {
+    if (!strictCodexCompatibility && hasAntigravityAccounts && isAntigravityModel(modelId)) {
         const result = await _handleCodexViaAntigravityAccount(res, body, modelId, isStreaming, startTime);
         if (result !== false) return;
     }
@@ -253,14 +335,14 @@ export async function handleCodexResponses(req, res) {
         const result = await _handleCodexViaApiKey(res, body, modelId, isStreaming, apiKeyTypes, startTime);
         if (result !== false) return;
         if (hasAccounts) {
-            const poolResult = await _handleCodexViaAccountPool(res, body, modelId, isStreaming, startTime);
+            const poolResult = await _handleCodexViaAccountPool(req, res, body, rawBody, modelId, isStreaming, startTime);
             if (poolResult !== false) return;
         }
-        if (hasClaudeAccounts) {
+        if (!strictCodexCompatibility && hasClaudeAccounts) {
             const claudeResult = await _handleCodexViaClaudeAccount(res, body, modelId, isStreaming, startTime);
             if (claudeResult !== false) return;
         }
-        if (hasAntigravityAccounts) {
+        if (!strictCodexCompatibility && hasAntigravityAccounts) {
             const antigravityResult = await _handleCodexViaAntigravityAccount(res, body, modelId, isStreaming, startTime);
             if (antigravityResult !== false) return;
         }
@@ -269,19 +351,18 @@ export async function handleCodexResponses(req, res) {
 
     // account-first (default)
     if (hasAccounts) {
-        const poolResult = await _handleCodexViaAccountPool(res, body, modelId, isStreaming, startTime);
+        const poolResult = await _handleCodexViaAccountPool(req, res, body, rawBody, modelId, isStreaming, startTime);
         if (poolResult !== false) return;
     }
     if (hasApiKeys) {
         const result = await _handleCodexViaApiKey(res, body, modelId, isStreaming, apiKeyTypes, startTime);
         if (result !== false) return;
     }
-    // Fallback to Claude accounts
-    if (hasClaudeAccounts) {
+    if (!strictCodexCompatibility && hasClaudeAccounts) {
         const claudeResult = await _handleCodexViaClaudeAccount(res, body, modelId, isStreaming, startTime);
         if (claudeResult !== false) return;
     }
-    if (hasAntigravityAccounts) {
+    if (!strictCodexCompatibility && hasAntigravityAccounts) {
         const antigravityResult = await _handleCodexViaAntigravityAccount(res, body, modelId, isStreaming, startTime);
         if (antigravityResult !== false) return;
     }
@@ -798,7 +879,7 @@ async function _handleCodexViaApiKey(res, body, modelId, isStreaming, keyTypes, 
  * Handle /backend-api/codex/responses via ChatGPT account pool.
  * Returns false if all accounts exhausted.
  */
-async function _handleCodexViaAccountPool(res, body, modelId, isStreaming, startTime) {
+async function _handleCodexViaAccountPool(req, res, body, rawBody, modelId, isStreaming, startTime) {
     const rotator = getAccountRotator();
     rotator.clearExpiredLimits();
 
@@ -832,15 +913,23 @@ async function _handleCodexViaAccountPool(res, body, modelId, isStreaming, start
         console.log(`[Codex Proxy] >>> FORWARDING to ChatGPT | account=${creds.email} | model=${modelId} | attempt=${attempt + 1}`);
 
         try {
+            const payload = rawBody || Buffer.from(JSON.stringify(body));
             const upstreamResponse = await fetch(`${UPSTREAM_BASE}/codex/responses`, {
                 method: 'POST',
-                headers: {
+                headers: (() => {
+                    const upstreamHeaders = {
                     'Authorization': `Bearer ${creds.accessToken}`,
                     'ChatGPT-Account-ID': creds.accountId,
-                    'Content-Type': 'application/json',
+                    'Content-Type': req.headers['content-type'] || 'application/json',
                     'Accept': isStreaming ? 'text/event-stream' : 'application/json'
-                },
-                body: JSON.stringify(body)
+                    };
+                    if (req.headers['content-encoding']) {
+                        upstreamHeaders['Content-Encoding'] = req.headers['content-encoding'];
+                    }
+                    copyAllowedRequestHeaders(req.headers || {}, upstreamHeaders);
+                    return upstreamHeaders;
+                })(),
+                body: payload
             });
 
             if (!upstreamResponse.ok) {
@@ -879,6 +968,7 @@ async function _handleCodexViaAccountPool(res, body, modelId, isStreaming, start
 
             // Success
             rotator.notifySuccess(account, modelId);
+            copyAllowedResponseHeaders(upstreamResponse, res);
 
             if (isStreaming) {
                 res.setHeader('Content-Type', 'text/event-stream');
@@ -938,8 +1028,18 @@ async function _handleCodexViaAccountPool(res, body, modelId, isStreaming, start
 export async function handleCodexModels(req, res) {
     const creds = await _getAnyCreds();
     const antigravityModels = getAllAntigravityModels();
+    const settings = getServerSettings();
+    const strictCodexCompatibility = settings.strictCodexCompatibility !== false;
 
     if (!creds) {
+        if (strictCodexCompatibility) {
+            const models = getStrictNativeCodexModels();
+            if (models.length > 0) {
+                return res.json({ models });
+            }
+            return sendCodexError(res, 401, 'No native ChatGPT/OpenAI/Azure credentials available');
+        }
+
         // No accounts — check for API keys and return a synthetic model list
         const apiKeyTypes = ['openai', 'azure-openai', 'gemini', 'vertex-ai'];
         const hasApiKeys = apiKeyTypes.some(t => !!selectKey(t));
@@ -979,7 +1079,7 @@ export async function handleCodexModels(req, res) {
 
         const responseBody = await upstreamResponse.text();
         const parsed = JSON.parse(responseBody);
-        if (Array.isArray(parsed?.models) && antigravityModels.length > 0) {
+        if (!strictCodexCompatibility && Array.isArray(parsed?.models) && antigravityModels.length > 0) {
             const seen = new Set(parsed.models.map((model) => model.slug));
             for (const model of antigravityModels) {
                 if (seen.has(model.id)) continue;

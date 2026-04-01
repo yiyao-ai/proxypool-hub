@@ -29,8 +29,9 @@ function mockReq(body = {}, params = {}, query = {}) {
 
 // ─── settings-route ───────────────────────────────────────────────────────────
 
-import { handleGetHaikuModel, handleSetHaikuModel, handleGetAppRouting } from '../../src/routes/settings-route.js';
+import { handleGetHaikuModel, handleSetHaikuModel, handleGetAppRouting, handleGetStrictCodexCompatibility, handleSetStrictCodexCompatibility } from '../../src/routes/settings-route.js';
 import { handleGetPricing, handleUpdatePricing, handleResetPricing } from '../../src/routes/pricing-route.js';
+import { handleGetApiKey } from '../../src/routes/api-keys-route.js';
 
 test('handleGetHaikuModel: returns current haikuKiloModel', () => {
   const req = mockReq();
@@ -51,6 +52,23 @@ test('handleGetAppRouting: exposes antigravity binding targets', () => {
   assert.ok(Array.isArray(res._body.targets?.bindingTypes));
   assert.ok(res._body.targets.bindingTypes.includes('antigravity-account'));
   assert.ok(Array.isArray(res._body.targets?.antigravityAccounts));
+});
+
+test('handleGetStrictCodexCompatibility: returns current strict compatibility flag', () => {
+  const req = mockReq();
+  const res = mockRes();
+  handleGetStrictCodexCompatibility(req, res);
+  assert.equal(res._status, 200);
+  assert.equal(res._body.success, true);
+  assert.equal(typeof res._body.strictCodexCompatibility, 'boolean');
+});
+
+test('handleSetStrictCodexCompatibility: rejects non-boolean payload', () => {
+  const req = mockReq({ strictCodexCompatibility: 'yes' });
+  const res = mockRes();
+  handleSetStrictCodexCompatibility(req, res);
+  assert.equal(res._status, 400);
+  assert.equal(res._body.success, false);
 });
 
 test('handleSetHaikuModel: rejects empty body with 400', async () => {
@@ -194,6 +212,14 @@ test('handleGetConfigFile: returns file payload for codex', () => {
   assert.ok(typeof res._body.file?.path === 'string' && res._body.file.path.length > 0);
   assert.ok(typeof res._body.file?.exists === 'boolean');
   assert.ok(typeof res._body.file?.content === 'string');
+});
+
+test('handleGetApiKey: returns 404 for unknown API key id', () => {
+  const req = mockReq({}, { id: 'nonexistent-key-id' });
+  const res = mockRes();
+  handleGetApiKey(req, res);
+  assert.equal(res._status, 404);
+  assert.equal(res._body.success, false);
 });
 
 test('handleListResources: returns catalog list and summary', () => {

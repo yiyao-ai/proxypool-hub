@@ -8,6 +8,7 @@ import {
     removeApiKey,
     updateApiKey,
     listApiKeys,
+    getApiKeyById,
     validateApiKey,
     getStats
 } from '../api-key-manager.js';
@@ -16,6 +17,15 @@ export function handleListApiKeys(req, res) {
     const keys = listApiKeys();
     const stats = getStats();
     res.json({ keys, stats });
+}
+
+export function handleGetApiKey(req, res) {
+    const { id } = req.params;
+    const key = getApiKeyById(id);
+    if (!key) {
+        return res.status(404).json({ success: false, error: 'Key not found' });
+    }
+    res.json({ success: true, key });
 }
 
 export async function handleAddApiKey(req, res) {

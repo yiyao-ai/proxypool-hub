@@ -14,10 +14,10 @@ import { getStatus, ACCOUNTS_FILE } from '../account-manager.js';
 import { handleMessages } from './messages-route.js';
 import { handleChatCompletion, handleCountTokens } from './chat-route.js';
 import { handleListModels, handleAccountModels, handleAccountUsage } from './models-route.js';
-import { handleGetHaikuModel, handleSetHaikuModel, handleGetKiloModels, handleGetAccountStrategy, handleSetAccountStrategy, handleGetRoutingPriority, handleSetRoutingPriority, handleGetRoutingMode, handleSetRoutingMode, handleGetAppRouting, handleSetAppRouting, handleGetEnableFreeModels, handleSetEnableFreeModels, handleGetDiscoveredModels, handleRefreshDiscoveredModels } from './settings-route.js';
+import { handleGetHaikuModel, handleSetHaikuModel, handleGetKiloModels, handleGetAccountStrategy, handleSetAccountStrategy, handleGetRoutingPriority, handleSetRoutingPriority, handleGetRoutingMode, handleSetRoutingMode, handleGetStrictCodexCompatibility, handleSetStrictCodexCompatibility, handleGetAppRouting, handleSetAppRouting, handleGetEnableFreeModels, handleSetEnableFreeModels, handleGetDiscoveredModels, handleRefreshDiscoveredModels } from './settings-route.js';
 import { handleGetLogs, handleStreamLogs } from './logs-route.js';
 import { handleGetClaudeConfig, handleSetProxyMode, handleSetDirectMode, handleSetClaudeApiEndpoint } from './claude-config-route.js';
-import { handleListApiKeys, handleAddApiKey, handleRemoveApiKey, handleUpdateApiKey, handleValidateApiKey, handleGetApiKeyStats } from './api-keys-route.js';
+import { handleListApiKeys, handleGetApiKey, handleAddApiKey, handleRemoveApiKey, handleUpdateApiKey, handleValidateApiKey, handleGetApiKeyStats } from './api-keys-route.js';
 import { handleGetUsageOverview, handleGetUsageHistory, handleGetDailyStats, handleGetMonthlyStats, handleGetProviderStats, handleGetModelStats, handleGetAccountStats } from './usage-route.js';
 import { handleGetPricing, handleUpdatePricing, handleResetPricing } from './pricing-route.js';
 import { handleGatewayChat, handleGatewayMessages, handleListProviders } from './gateway-route.js';
@@ -116,6 +116,8 @@ export function registerApiRoutes(app, { port }) {
   app.post('/settings/routing-priority', handleSetRoutingPriority);
   app.get('/settings/routing-mode', handleGetRoutingMode);
   app.post('/settings/routing-mode', handleSetRoutingMode);
+  app.get('/settings/strict-codex-compatibility', handleGetStrictCodexCompatibility);
+  app.post('/settings/strict-codex-compatibility', handleSetStrictCodexCompatibility);
   app.get('/settings/app-routing', handleGetAppRouting);
   app.post('/settings/app-routing', handleSetAppRouting);
   app.get('/settings/enable-free-models', handleGetEnableFreeModels);
@@ -225,6 +227,7 @@ export function registerApiRoutes(app, { port }) {
   app.delete('/api/keys/:id', handleRemoveApiKey);
   app.post('/api/keys/:id/validate', handleValidateApiKey);
   app.get('/api/keys/stats', handleGetApiKeyStats);
+  app.get('/api/keys/:id', handleGetApiKey);
 
   // ─── Usage & Analytics ───────────────────────────────────────────────────
   app.get('/api/usage/overview', handleGetUsageOverview);

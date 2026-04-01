@@ -107,3 +107,8 @@ test('_codexToChatBody keeps antigravity model id untouched for downstream mappi
   assert.equal(chatBody.messages.length, 1);
   assert.equal(chatBody.messages[0].role, 'user');
 });
+
+test('codex route test exports remain available after strict compatibility changes', () => {
+  assert.equal(typeof _codexToChatBody, 'function');
+  assert.equal(typeof findToolCallSequenceError, 'function');
+});

@@ -72,7 +72,14 @@ export function createServer({ port }) {
   app.post('/v1/responses', handleResponses);
   app.post('/v1/responses/compact', handleResponses);
 
-  app.use(express.json({ limit: '10mb' }));
+  app.use(express.json({
+    limit: '10mb',
+    verify: (req, _res, buf) => {
+      if (buf?.length) {
+        req.rawBody = Buffer.from(buf);
+      }
+    }
+  }));
 
   registerApiRoutes(app, { port });
 

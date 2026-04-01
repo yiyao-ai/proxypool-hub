@@ -32,6 +32,19 @@ export class OpenAIProvider extends BaseProvider {
         return response;
     }
 
+    async sendResponsesRequest(body) {
+        const url = `${this.baseUrl}/responses`;
+        const response = await fetch(url, {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${this.apiKey}`,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(body)
+        });
+        return response;
+    }
+
     async listModels() {
         const response = await fetch(`${this.baseUrl}/models`, {
             headers: { 'Authorization': `Bearer ${this.apiKey}` }
