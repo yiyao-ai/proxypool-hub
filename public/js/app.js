@@ -225,6 +225,7 @@ document.addEventListener('alpine:init', () => {
             if (tab === 'accounts') { this.refreshAccounts(); this.refreshClaudeAccounts(); this.refreshAntigravityAccounts(); }
             if (tab === 'apikeys') this.loadApiKeys();
             if (tab === 'usage') this.loadUsageData();
+            if (tab === 'pricing') this.loadPricingData();
             if (tab === 'dashboard') this.refreshProxyStatus();
             if (tab === 'chat') {
                 this.loadChatSources();
@@ -2005,6 +2006,88 @@ document.addEventListener('alpine:init', () => {
         async refreshUsageData() {
             await this.loadUsageData();
             this.showToast(this.t('usageRefreshed'), 'success');
+        },
+
+        // ─── Pricing ─────────────────────────────────────────────────────
+        pricingSummary: { providers: 0, models: 0, customOverrides: 0, unit: 'USD / 1M tokens' },
+        pricingEntries: [],
+        pricingFilter: '',
+        pricingProviderFilter: '',
+        pricingSaving: {},
+
+        get pricingProviders() {
+            return [...new Set(this.pricingEntries.map(entry => entry.provider))].sort();
+        },
+
+        get filteredPricingEntries() {
+            const q = this.pricingFilter.trim().toLowerCase();
+            return this.pricingEntries.filter(entry => {
+                if (this.pricingProviderFilter && entry.provider !== this.pricingProviderFilter) return false;
+                if (!q) return true;
+                return entry.provider.toLowerCase().includes(q) || entry.model.toLowerCase().includes(q);
+            });
+        },
+
+        async loadPricingData() {
+            const res = await this.api('/api/pricing');
+            if (res.ok && res.data?.success) {
+                this.pricingSummary = res.data.summary || this.pricingSummary;
+                this.pricingEntries = (res.data.entries || []).map(entry => ({
+                    ...entry,
+                    form: {
+                        input: entry.effective?.input ?? 0,
+                        output: entry.effective?.output ?? 0,
+                        cacheRead: entry.effective?.cacheRead ?? 0,
+                        cacheWrite: entry.effective?.cacheWrite ?? 0
+                    }
+                }));
+            }
+        },
+
+        pricingKey(entry) {
+            return `${entry.provider}:${entry.model}`;
+        },
+
+        async savePricingEntry(entry) {
+            const key = this.pricingKey(entry);
+            this.pricingSaving[key] = true;
+            const payload = {
+                provider: entry.provider,
+                model: entry.model,
+                input: entry.form.input,
+                output: entry.form.output,
+                cacheRead: entry.form.cacheRead,
+                cacheWrite: entry.form.cacheWrite
+            };
+            const res = await this.api('/api/pricing', {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+            this.pricingSaving[key] = false;
+            if (res.ok && res.data?.success) {
+                await this.loadPricingData();
+                this.showToast(this.t('pricingSaved'), 'success');
+            } else {
+                this.showToast(res.data?.error || this.t('pricingSaveFailed'), 'error');
+            }
+        },
+
+        async resetPricingEntry(entry) {
+            const key = this.pricingKey(entry);
+            this.pricingSaving[key] = true;
+            const res = await this.api('/api/pricing/reset', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ provider: entry.provider, model: entry.model })
+            });
+            this.pricingSaving[key] = false;
+            if (res.ok && res.data?.success) {
+                await this.loadPricingData();
+                this.showToast(this.t('pricingReset'), 'success');
+            } else {
+                this.showToast(res.data?.error || this.t('pricingResetFailed'), 'error');
+            }
         },
 
         // ─── Request Logs ──────────────────────────────────────────────────

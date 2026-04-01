@@ -4,22 +4,10 @@
  */
 
 import { BaseProvider } from './base.js';
+import { estimateCostWithRegistry, getDefaultPricing } from '../pricing-registry.js';
 
 const DEFAULT_BASE_URL = 'https://api.anthropic.com';
 const API_VERSION = '2023-06-01';
-
-const PRICING = {
-    'claude-opus-4-6':             { input: 5.00, output: 25.00 },
-    'claude-opus-4-6-20250219':    { input: 5.00, output: 25.00 },
-    'claude-sonnet-4-6':           { input: 3.00, output: 15.00 },
-    'claude-sonnet-4-6-20250219':  { input: 3.00, output: 15.00 },
-    'claude-opus-4-5':             { input: 5.00, output: 25.00 },
-    'claude-opus-4-5-20250514':    { input: 5.00, output: 25.00 },
-    'claude-sonnet-4-5':           { input: 3.00, output: 15.00 },
-    'claude-sonnet-4-5-20250514':  { input: 3.00, output: 15.00 },
-    'claude-haiku-4-5':            { input: 1.00, output: 5.00 },
-    'claude-haiku-4-5-20251001':   { input: 1.00, output: 5.00 },
-};
 
 // Aliases for convenience
 const MODEL_ALIASES = {
@@ -97,14 +85,11 @@ export class AnthropicProvider extends BaseProvider {
 
     estimateCost(model, inputTokens, outputTokens) {
         const resolvedModel = MODEL_ALIASES[model] || model;
-        const pricing = PRICING[resolvedModel];
-        if (!pricing) return 0;
-        return (inputTokens / 1_000_000) * pricing.input +
-               (outputTokens / 1_000_000) * pricing.output;
+        return estimateCostWithRegistry(this.type, resolvedModel, inputTokens, outputTokens);
     }
 
     static get pricing() {
-        return PRICING;
+        return getDefaultPricing('anthropic');
     }
 }
 

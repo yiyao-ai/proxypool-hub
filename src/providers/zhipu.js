@@ -8,19 +8,9 @@
  */
 
 import { OpenAIProvider } from './openai.js';
+import { estimateCostWithRegistry, getDefaultPricing } from '../pricing-registry.js';
 
 const DEFAULT_BASE_URL = 'https://open.bigmodel.cn/api/paas/v4';
-
-// Pricing per 1M tokens (USD)
-const PRICING = {
-    'glm-5':        { input: 0.72, output: 2.30 },
-    'glm-5-turbo':  { input: 0.36, output: 1.15 },
-    'glm-4.7':      { input: 0.40, output: 1.20 },
-    'glm-4-plus':   { input: 0.30, output: 0.90 },
-    'glm-4-air':    { input: 0.07, output: 0.07 },
-    'glm-4-airx':   { input: 0.14, output: 0.14 },
-    'glm-4-flash':  { input: 0.01, output: 0.01 },
-};
 
 export class ZhipuProvider extends OpenAIProvider {
     constructor(config) {
@@ -56,14 +46,11 @@ export class ZhipuProvider extends OpenAIProvider {
     }
 
     estimateCost(model, inputTokens, outputTokens) {
-        const pricing = PRICING[model];
-        if (!pricing) return 0;
-        return (inputTokens / 1_000_000) * pricing.input +
-               (outputTokens / 1_000_000) * pricing.output;
+        return estimateCostWithRegistry(this.type, model, inputTokens, outputTokens);
     }
 
     static get pricing() {
-        return PRICING;
+        return getDefaultPricing('zhipu');
     }
 }
 

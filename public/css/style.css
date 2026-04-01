@@ -800,6 +800,7 @@ table .btn-outline:hover {
 
 .grid { display: grid; }
 .grid-cols-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.pricing-summary-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 
 .space-y-1 > * + * { margin-top: 0.25rem; }
 .space-y-2 > * + * { margin-top: 0.5rem; }
@@ -819,6 +820,10 @@ table .btn-outline:hover {
     .sm\:flex-none { flex: none; }
     .sm\:flex-nowrap { flex-wrap: nowrap; }
     .sm\:ml-1 { margin-left: 0.25rem; }
+}
+
+@media (max-width: 639px) {
+    .pricing-summary-grid { grid-template-columns: 1fr; }
 }
 
 @media (min-width: 1024px) {

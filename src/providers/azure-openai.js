@@ -13,25 +13,9 @@
 import { BaseProvider } from './base.js';
 import { convertAnthropicToResponsesAPI, convertOutputToAnthropic, generateMessageId } from '../format-converter.js';
 import { logger } from '../utils/logger.js';
+import { estimateCostWithRegistry, getDefaultPricing } from '../pricing-registry.js';
 
 const DEFAULT_API_VERSION = '2024-10-21';
-
-const PRICING = {
-    'gpt-5.4':         { input: 2.50, output: 15.00 },
-    'gpt-5.4-mini':    { input: 0.75, output: 4.50 },
-    'gpt-5.4-nano':    { input: 0.20, output: 1.25 },
-    'gpt-4o':          { input: 2.50, output: 10.00 },
-    'gpt-4o-mini':     { input: 0.15, output: 0.60 },
-    'gpt-4-turbo':     { input: 10.00, output: 30.00 },
-    'gpt-4':           { input: 30.00, output: 60.00 },
-    'gpt-35-turbo':    { input: 0.50, output: 1.50 },
-    'gpt-3.5-turbo':   { input: 0.50, output: 1.50 },
-    'o1':              { input: 15.00, output: 60.00 },
-    'o1-mini':         { input: 3.00, output: 12.00 },
-    'o3':              { input: 2.00, output: 8.00 },
-    'o3-mini':         { input: 1.10, output: 4.40 },
-    'o4-mini':         { input: 1.10, output: 4.40 },
-};
 
 function sanitizeAnthropicToolSchemaForAzureResponses(schema) {
     if (Array.isArray(schema)) {
@@ -250,10 +234,8 @@ export class AzureOpenAIProvider extends BaseProvider {
     }
 
     estimateCost(model, inputTokens, outputTokens) {
-        const pricing = PRICING[model] || PRICING[this.deploymentName];
-        if (!pricing) return 0;
-        return (inputTokens / 1_000_000) * pricing.input +
-               (outputTokens / 1_000_000) * pricing.output;
+        return estimateCostWithRegistry(this.type, model, inputTokens, outputTokens) ||
+            estimateCostWithRegistry(this.type, this.deploymentName, inputTokens, outputTokens);
     }
 
     toJSON() {
@@ -316,7 +298,7 @@ export class AzureOpenAIProvider extends BaseProvider {
     }
 
     static get pricing() {
-        return PRICING;
+        return getDefaultPricing('azure-openai');
     }
 }
 

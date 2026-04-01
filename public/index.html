@@ -184,6 +184,13 @@
                         <span x-text="t('usageStats')"></span>
                     </button>
                     <button class="nav-item flex items-center gap-3 px-6 py-3 text-sm font-medium text-gray-400 hover:text-white hover:bg-white/5"
+                        :class="{'active': activeTab === 'pricing'}" @click="setActiveTab('pricing')">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-2.21 0-4 .895-4 2s1.79 2 4 2 4-.895 4-2-1.79-2-4-2zm0 0V6m0 6v6m0 0c-2.21 0-4-.895-4-2s1.79-2 4-2 4 .895 4 2-1.79 2-4 2z" />
+                        </svg>
+                        <span x-text="t('pricing')"></span>
+                    </button>
+                    <button class="nav-item flex items-center gap-3 px-6 py-3 text-sm font-medium text-gray-400 hover:text-white hover:bg-white/5"
                         :class="{'active': activeTab === 'requestLogs'}" @click="setActiveTab('requestLogs'); loadRequestLogs()">
                         <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
@@ -1910,6 +1917,111 @@
                         </table>
                     </div>
                     <div x-show="usageHistory.length === 0" class="py-8 text-center text-gray-600 text-sm" x-text="t('noUsageData')"></div>
+                </div>
+            </div>
+
+            <div x-show="activeTab === 'pricing'" x-transition class="view-container">
+                <div class="flex items-center justify-between gap-4 mb-6">
+                    <div class="flex flex-wrap items-center gap-4">
+                        <h1 class="text-2xl font-bold text-white tracking-tight" x-text="t('pricing')"></h1>
+                        <div class="flex items-center h-6 px-3 rounded-full bg-space-800/80 border border-space-border/50 shadow-sm backdrop-blur-sm">
+                            <span class="text-[10px] font-mono text-gray-400 uppercase tracking-wider" x-text="t('pricingDesc')"></span>
+                        </div>
+                    </div>
+                    <button class="btn btn-xs btn-outline border-space-border text-gray-400 hover:text-white h-8" @click="loadPricingData()">
+                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                        </svg>
+                    </button>
+                </div>
+
+                <div class="pricing-summary-grid grid gap-3 mb-6">
+                    <div class="stat bg-space-900/40 border border-space-border/30 rounded-xl p-3 lg:p-4 min-w-0">
+                        <div class="stat-value text-white font-mono text-2xl font-bold mb-1" x-text="pricingSummary.providers || 0"></div>
+                        <div class="stat-title text-gray-500 font-mono text-[10px] uppercase tracking-wider" x-text="t('providers')"></div>
+                    </div>
+                    <div class="stat bg-space-900/40 border border-space-border/30 rounded-xl p-3 lg:p-4 min-w-0">
+                        <div class="stat-value text-white font-mono text-2xl font-bold mb-1" x-text="pricingSummary.models || 0"></div>
+                        <div class="stat-title text-gray-500 font-mono text-[10px] uppercase tracking-wider" x-text="t('models')"></div>
+                    </div>
+                    <div class="stat bg-space-900/40 border border-space-border/30 rounded-xl p-3 lg:p-4 min-w-0">
+                        <div class="stat-value text-neon-cyan font-mono text-2xl font-bold mb-1" x-text="pricingSummary.customOverrides || 0"></div>
+                        <div class="stat-title text-gray-500 font-mono text-[10px] uppercase tracking-wider" x-text="t('customOverrides')"></div>
+                    </div>
+                </div>
+
+                <div class="view-card mb-6">
+                    <div class="flex flex-col lg:flex-row gap-3 lg:items-center lg:justify-between">
+                        <div class="text-xs font-mono text-gray-500 uppercase tracking-wider" x-text="t('pricingUnit')"></div>
+                        <div class="flex flex-col sm:flex-row gap-3">
+                            <input type="text" x-model="pricingFilter" :placeholder="t('searchModels')" class="input bg-space-800 border-space-border text-white font-mono text-sm min-w-[220px]">
+                            <select x-model="pricingProviderFilter" class="input bg-space-800 border-space-border text-white font-mono text-sm min-w-[180px]">
+                                <option value="" x-text="t('allProviders')"></option>
+                                <template x-for="provider in pricingProviders" :key="provider">
+                                    <option :value="provider" x-text="provider"></option>
+                                </template>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="view-card overflow-x-auto">
+                    <table class="w-full min-w-[1120px]">
+                        <thead>
+                            <tr class="border-b border-space-border/30">
+                                <th class="py-2 text-left text-[10px] font-bold text-gray-500 uppercase" x-text="t('provider')"></th>
+                                <th class="py-2 text-left text-[10px] font-bold text-gray-500 uppercase" x-text="t('model')"></th>
+                                <th class="py-2 text-right text-[10px] font-bold text-gray-500 uppercase" x-text="t('defaultInputPrice')"></th>
+                                <th class="py-2 text-right text-[10px] font-bold text-gray-500 uppercase" x-text="t('defaultOutputPrice')"></th>
+                                <th class="py-2 text-right text-[10px] font-bold text-gray-500 uppercase" x-text="t('effectiveInputPrice')"></th>
+                                <th class="py-2 text-right text-[10px] font-bold text-gray-500 uppercase" x-text="t('effectiveOutputPrice')"></th>
+                                <th class="py-2 text-right text-[10px] font-bold text-gray-500 uppercase" x-text="t('cacheReadPrice')"></th>
+                                <th class="py-2 text-right text-[10px] font-bold text-gray-500 uppercase" x-text="t('cacheWritePrice')"></th>
+                                <th class="py-2 text-center text-[10px] font-bold text-gray-500 uppercase" x-text="t('source')"></th>
+                                <th class="py-2 text-right text-[10px] font-bold text-gray-500 uppercase" x-text="t('actions')"></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <template x-for="entry in filteredPricingEntries" :key="pricingKey(entry)">
+                                <tr class="border-b border-space-border/10 hover:bg-white/[0.02]">
+                                    <td class="py-3 pr-3 text-xs text-gray-300 font-mono" x-text="entry.provider"></td>
+                                    <td class="py-3 pr-3 text-xs text-white font-mono" x-text="entry.model"></td>
+                                    <td class="py-3 pr-3 text-right font-mono text-xs text-gray-500" x-text="entry.default ? entry.default.input.toFixed(4) : '-'"></td>
+                                    <td class="py-3 pr-3 text-right font-mono text-xs text-gray-500" x-text="entry.default ? entry.default.output.toFixed(4) : '-'"></td>
+                                    <td class="py-2 pr-3">
+                                        <input type="number" min="0" step="0.0001" x-model="entry.form.input" class="input w-28 ml-auto bg-space-800 border-space-border text-white font-mono text-xs text-right">
+                                    </td>
+                                    <td class="py-2 pr-3">
+                                        <input type="number" min="0" step="0.0001" x-model="entry.form.output" class="input w-28 ml-auto bg-space-800 border-space-border text-white font-mono text-xs text-right">
+                                    </td>
+                                    <td class="py-2 pr-3">
+                                        <input type="number" min="0" step="0.0001" x-model="entry.form.cacheRead" class="input w-28 ml-auto bg-space-800 border-space-border text-white font-mono text-xs text-right">
+                                    </td>
+                                    <td class="py-2 pr-3">
+                                        <input type="number" min="0" step="0.0001" x-model="entry.form.cacheWrite" class="input w-28 ml-auto bg-space-800 border-space-border text-white font-mono text-xs text-right">
+                                    </td>
+                                    <td class="py-3 pr-3 text-center">
+                                        <span class="inline-flex px-2 py-1 rounded-full text-[10px] font-mono border"
+                                            :class="entry.hasOverride ? 'bg-cyan-500/10 text-neon-cyan border-cyan-500/30' : 'bg-space-800/60 text-gray-400 border-space-border/50'"
+                                            x-text="entry.hasOverride ? t('custom') : t('default')"></span>
+                                    </td>
+                                    <td class="py-2 text-right">
+                                        <div class="flex justify-end gap-2">
+                                            <button class="btn btn-xs bg-neon-cyan hover:bg-cyan-600 border-none text-white"
+                                                @click="savePricingEntry(entry)"
+                                                :disabled="pricingSaving[pricingKey(entry)]"
+                                                x-text="t('save')"></button>
+                                            <button class="btn btn-xs btn-outline border-space-border text-gray-300"
+                                                @click="resetPricingEntry(entry)"
+                                                :disabled="pricingSaving[pricingKey(entry)] || !entry.hasOverride"
+                                                x-text="t('reset')"></button>
+                                        </div>
+                                    </td>
+                                </tr>
+                            </template>
+                        </tbody>
+                    </table>
+                    <div x-show="filteredPricingEntries.length === 0" class="py-8 text-center text-gray-600 text-sm" x-text="t('noPricingData')"></div>
                 </div>
             </div>
 

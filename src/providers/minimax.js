@@ -5,19 +5,9 @@
  */
 
 import { OpenAIProvider } from './openai.js';
+import { estimateCostWithRegistry, getDefaultPricing } from '../pricing-registry.js';
 
 const DEFAULT_BASE_URL = 'https://api.minimax.io/v1';
-
-// Pricing per 1M tokens (USD)
-const PRICING = {
-    'MiniMax-M2.7':           { input: 0.30, output: 1.20 },
-    'MiniMax-M2.7-highspeed': { input: 0.30, output: 2.40 },
-    'MiniMax-M2.5':           { input: 0.30, output: 1.20 },
-    'MiniMax-M2.5-highspeed': { input: 0.30, output: 2.40 },
-    'MiniMax-M2.1':           { input: 0.20, output: 0.80 },
-    'MiniMax-M2.1-highspeed': { input: 0.20, output: 1.60 },
-    'MiniMax-M2':             { input: 0.15, output: 0.60 },
-};
 
 export class MiniMaxProvider extends OpenAIProvider {
     constructor(config) {
@@ -29,14 +19,11 @@ export class MiniMaxProvider extends OpenAIProvider {
     }
 
     estimateCost(model, inputTokens, outputTokens) {
-        const pricing = PRICING[model];
-        if (!pricing) return 0;
-        return (inputTokens / 1_000_000) * pricing.input +
-               (outputTokens / 1_000_000) * pricing.output;
+        return estimateCostWithRegistry(this.type, model, inputTokens, outputTokens);
     }
 
     static get pricing() {
-        return PRICING;
+        return getDefaultPricing('minimax');
     }
 }
 

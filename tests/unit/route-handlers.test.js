@@ -30,6 +30,7 @@ function mockReq(body = {}, params = {}, query = {}) {
 // ─── settings-route ───────────────────────────────────────────────────────────
 
 import { handleGetHaikuModel, handleSetHaikuModel, handleGetAppRouting } from '../../src/routes/settings-route.js';
+import { handleGetPricing, handleUpdatePricing, handleResetPricing } from '../../src/routes/pricing-route.js';
 
 test('handleGetHaikuModel: returns current haikuKiloModel', () => {
   const req = mockReq();
@@ -73,6 +74,41 @@ test('handleSetHaikuModel: rejects non-string model with 400', async () => {
   await handleSetHaikuModel(req, res);
   assert.equal(res._status, 400);
   assert.equal(res._body.success, false);
+});
+
+test('handleGetPricing: returns pricing summary and entries', () => {
+  const req = mockReq();
+  const res = mockRes();
+  handleGetPricing(req, res);
+  assert.equal(res._status, 200);
+  assert.equal(res._body.success, true);
+  assert.ok(Array.isArray(res._body.entries));
+  assert.ok(res._body.entries.length > 0);
+  assert.ok(typeof res._body.summary?.models === 'number');
+});
+
+test('handleUpdatePricing + handleResetPricing: manage override lifecycle', () => {
+  const updateReq = mockReq({
+    provider: 'openai',
+    model: 'gpt-5.4',
+    input: 9.99,
+    output: 19.99,
+    cacheRead: 0.1,
+    cacheWrite: 0.2
+  });
+  const updateRes = mockRes();
+  handleUpdatePricing(updateReq, updateRes);
+  assert.equal(updateRes._status, 200);
+  assert.equal(updateRes._body.success, true);
+  assert.equal(updateRes._body.entry.hasOverride, true);
+  assert.equal(updateRes._body.entry.effective.input, 9.99);
+
+  const resetReq = mockReq({ provider: 'openai', model: 'gpt-5.4' });
+  const resetRes = mockRes();
+  handleResetPricing(resetReq, resetRes);
+  assert.equal(resetRes._status, 200);
+  assert.equal(resetRes._body.success, true);
+  assert.equal(resetRes._body.entry.hasOverride, false);
 });
 
 // ─── claude-config-route ──────────────────────────────────────────────────────
