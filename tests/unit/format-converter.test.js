@@ -84,6 +84,58 @@ test('convertAnthropicToResponsesAPI: user content as array of text blocks', () 
   assert.equal(userMsg.content[0].text, 'First');
 });
 
+test('convertAnthropicToResponsesAPI: anthropic image blocks become input_image parts', () => {
+  const req = {
+    model: 'gpt-5.2',
+    messages: [{
+      role: 'user',
+      content: [
+        { type: 'text', text: 'What is in this image?' },
+        {
+          type: 'image',
+          source: {
+            type: 'base64',
+            media_type: 'image/png',
+            data: 'iVBORw0KGgoAAAANSUhEUgAAAAUA'
+          }
+        }
+      ]
+    }]
+  };
+
+  const result = convertAnthropicToResponsesAPI(req);
+  const userMsg = result.input.find(i => i.role === 'user');
+  assert.ok(Array.isArray(userMsg.content));
+  assert.equal(userMsg.content[0].type, 'input_text');
+  assert.equal(userMsg.content[1].type, 'input_image');
+  assert.equal(userMsg.content[1].data, 'iVBORw0KGgoAAAANSUhEUgAAAAUA');
+  assert.equal(userMsg.content[1].media_type, 'image/png');
+});
+
+test('convertAnthropicToResponsesAPI: anthropic image url blocks become input_image url parts', () => {
+  const req = {
+    model: 'gpt-5.2',
+    messages: [{
+      role: 'user',
+      content: [{
+        type: 'image',
+        source: {
+          type: 'url',
+          media_type: 'image/jpeg',
+          url: 'https://example.com/cat.jpg'
+        }
+      }]
+    }]
+  };
+
+  const result = convertAnthropicToResponsesAPI(req);
+  const userMsg = result.input.find(i => i.role === 'user');
+  assert.ok(Array.isArray(userMsg.content));
+  assert.equal(userMsg.content[0].type, 'input_image');
+  assert.equal(userMsg.content[0].image_url, 'https://example.com/cat.jpg');
+  assert.equal(userMsg.content[0].media_type, 'image/jpeg');
+});
+
 test('convertAnthropicToResponsesAPI: tool_result becomes function_call_output', () => {
   const req = {
     model: 'gpt-5.2',
@@ -119,6 +171,38 @@ test('convertAnthropicToResponsesAPI: tool_result with is_error=true prefixes Er
   const result = convertAnthropicToResponsesAPI(req);
   const toolOutput = result.input.find(i => i.type === 'function_call_output');
   assert.ok(toolOutput.output.startsWith('Error:'));
+});
+
+test('convertAnthropicToResponsesAPI: tool_result image content becomes function_call_output multimodal output', () => {
+  const req = {
+    model: 'gpt-5.2',
+    messages: [{
+      role: 'user',
+      content: [{
+        type: 'tool_result',
+        tool_use_id: 'toolu_img1',
+        content: [
+          { type: 'text', text: 'Inspect this result image' },
+          {
+            type: 'image',
+            source: {
+              type: 'base64',
+              media_type: 'image/png',
+              data: 'iVBORw0KGgoAAAANSUhEUgAAAAUA'
+            }
+          }
+        ]
+      }]
+    }]
+  };
+
+  const result = convertAnthropicToResponsesAPI(req);
+  const toolOutput = result.input.find(i => i.type === 'function_call_output');
+  assert.ok(Array.isArray(toolOutput.output));
+  assert.equal(toolOutput.output[0].type, 'input_text');
+  assert.equal(toolOutput.output[1].type, 'input_image');
+  assert.equal(toolOutput.output[1].data, 'iVBORw0KGgoAAAANSUhEUgAAAAUA');
+  assert.equal(toolOutput.output[1].media_type, 'image/png');
 });
 
 test('convertAnthropicToResponsesAPI: assistant tool_use becomes function_call', () => {

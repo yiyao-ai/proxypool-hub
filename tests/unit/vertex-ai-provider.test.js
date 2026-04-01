@@ -243,6 +243,68 @@ test('VertexAIProvider.sendAnthropicRequest preserves Claude rawPredict path for
   }
 });
 
+test('VertexAIProvider.sendAnthropicRequest preserves anthropic image blocks for Gemini generateContent', async () => {
+  const provider = new VertexAIProvider({
+    id: 'vertex_2b',
+    name: 'vertex-test',
+    apiKey: 'raw-oauth-token',
+    projectId: 'demo-project',
+    location: 'us-central1'
+  });
+
+  const originalFetch = global.fetch;
+  let capturedOptions = null;
+
+  global.fetch = async (_url, options) => {
+    capturedOptions = options;
+    return new Response(JSON.stringify({
+      candidates: [{
+        finishReason: 'STOP',
+        content: { parts: [{ text: 'A cat on a sofa.' }] }
+      }],
+      usageMetadata: {
+        promptTokenCount: 4,
+        candidatesTokenCount: 3
+      }
+    }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' }
+    });
+  };
+
+  try {
+    await provider.sendAnthropicRequest({
+      model: 'gemini-2.5-pro',
+      messages: [{
+        role: 'user',
+        content: [
+          { type: 'text', text: 'What is shown here?' },
+          {
+            type: 'image',
+            source: {
+              type: 'base64',
+              media_type: 'image/png',
+              data: 'iVBORw0KGgoAAAANSUhEUgAAAAUA'
+            }
+          }
+        ]
+      }]
+    });
+
+    const payload = JSON.parse(capturedOptions.body);
+    assert.equal(payload.contents[0].role, 'user');
+    assert.equal(payload.contents[0].parts[0].text, 'What is shown here?');
+    assert.deepEqual(payload.contents[0].parts[1], {
+      inlineData: {
+        mimeType: 'image/png',
+        data: 'iVBORw0KGgoAAAANSUhEUgAAAAUA'
+      }
+    });
+  } finally {
+    global.fetch = originalFetch;
+  }
+});
+
 test('VertexAIProvider.sendAnthropicRequest falls back from unavailable preview Gemini model to stable model', async () => {
   const provider = new VertexAIProvider({
     id: 'vertex_3',

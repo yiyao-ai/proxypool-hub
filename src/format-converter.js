@@ -160,6 +160,33 @@ function convertMessagesToInput(messages) {
     return input;
 }
 
+function convertAnthropicBlockToResponsesInput(block) {
+    if (!block || typeof block !== 'object') return null;
+
+    if (block.type === 'text') {
+        return { type: 'input_text', text: block.text || '' };
+    }
+
+    if (block.type === 'image') {
+        if (block.source && block.source.type === 'base64' && block.source.data) {
+            return {
+                type: 'input_image',
+                data: block.source.data,
+                media_type: block.source.media_type || 'image/jpeg'
+            };
+        }
+        if (block.source && block.source.type === 'url' && block.source.url) {
+            return {
+                type: 'input_image',
+                image_url: block.source.url,
+                media_type: block.source.media_type || 'image/jpeg'
+            };
+        }
+    }
+
+    return null;
+}
+
 /**
  * Convert user content, separating text and tool results
  */
@@ -179,15 +206,30 @@ function convertUserContent(content) {
                 if (block.source && block.source.type === 'base64') {
                     imageParts.push({
                         type: 'input_image',
-                        data: block.source.data
+                        data: block.source.data,
+                        media_type: block.source.media_type || 'image/jpeg'
+                    });
+                } else if (block.source && block.source.type === 'url' && block.source.url) {
+                    imageParts.push({
+                        type: 'input_image',
+                        image_url: block.source.url,
+                        media_type: block.source.media_type || 'image/jpeg'
                     });
                 }
             } else if (block.type === 'tool_result') {
-                const outputContent = typeof block.content === 'string'
-                    ? block.content
-                    : Array.isArray(block.content)
-                        ? block.content.filter(c => c.type === 'text').map(c => c.text).join('\n')
-                        : JSON.stringify(block.content);
+                let outputContent;
+                if (typeof block.content === 'string') {
+                    outputContent = block.content;
+                } else if (Array.isArray(block.content)) {
+                    const richContent = block.content
+                        .map(convertAnthropicBlockToResponsesInput)
+                        .filter(Boolean);
+                    outputContent = richContent.length > 0
+                        ? richContent
+                        : block.content.filter(c => c.type === 'text').map(c => c.text).join('\n');
+                } else {
+                    outputContent = JSON.stringify(block.content);
+                }
 
                 // Convert to OpenAI fc_ format
                 const callId = toOpenAIToolId(block.tool_use_id);
@@ -195,13 +237,15 @@ function convertUserContent(content) {
                 toolResults.push({
                     type: 'function_call_output',
                     call_id: callId,
-                    output: block.is_error ? `Error: ${outputContent}` : outputContent
+                    output: (block.is_error && typeof outputContent === 'string')
+                        ? `Error: ${outputContent}`
+                        : outputContent
                 });
             }
         }
     }
     
-    return { textParts, toolResults };
+    return { textParts, toolResults, imageParts };
 }
 
 /**

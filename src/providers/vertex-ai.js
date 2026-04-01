@@ -154,6 +154,25 @@ function _geminiFallbackModels(model) {
     return [model, ...fallbacks.filter(candidate => candidate !== model)];
 }
 
+function _summarizeAnthropicVisionPayload(body) {
+    const messages = Array.isArray(body?.messages) ? body.messages : [];
+    let imageBlocks = 0;
+    let base64Images = 0;
+    let urlImages = 0;
+
+    for (const message of messages) {
+        const content = Array.isArray(message?.content) ? message.content : [];
+        for (const block of content) {
+            if (block?.type !== 'image') continue;
+            imageBlocks++;
+            if (block?.source?.type === 'base64' && block.source.data) base64Images++;
+            if (block?.source?.type === 'url' && block.source.url) urlImages++;
+        }
+    }
+
+    return { imageBlocks, base64Images, urlImages, messageCount: messages.length };
+}
+
 // ─── Provider ───────────────────────────────────────────────────────────────
 
 export class VertexAIProvider extends BaseProvider {
@@ -849,11 +868,16 @@ export class VertexAIProvider extends BaseProvider {
     async sendAnthropicRequest(body) {
         const token = await this._ensureToken();
         const model = body.model || 'claude-sonnet-4-6';
+        const visionStats = _summarizeAnthropicVisionPayload(body);
 
         if (_isGeminiModel(model)) {
             const cleanedMessages = cleanCacheControl(body.messages || []);
             const cleanedSystem = _cleanAnthropicSystem(body.system);
             const { contents, systemInstruction } = this._convertAnthropicToGemini(cleanedMessages, cleanedSystem);
+            const geminiInlineImages = contents.reduce((count, item) => count + ((item.parts || []).filter(part => part.inlineData || part.fileData).length), 0);
+            if (visionStats.imageBlocks > 0 || geminiInlineImages > 0) {
+                console.info(`[Vertex AI] Anthropic multimodal bridge | model=${model} | messages=${visionStats.messageCount} | anthropic_images=${visionStats.imageBlocks} | base64=${visionStats.base64Images} | url=${visionStats.urlImages} | gemini_image_parts=${geminiInlineImages}`);
+            }
 
             const vertexBody = {
                 contents,
@@ -895,6 +919,9 @@ export class VertexAIProvider extends BaseProvider {
         const sanitized = sanitizeClaudeBody(body);
         const cleanedMessages = cleanCacheControl(sanitized.messages || []);
         const cleanedSystem = _cleanAnthropicSystem(sanitized.system);
+        if (visionStats.imageBlocks > 0) {
+            console.info(`[Vertex AI] Claude rawPredict multimodal passthrough | model=${model} | messages=${visionStats.messageCount} | anthropic_images=${visionStats.imageBlocks} | base64=${visionStats.base64Images} | url=${visionStats.urlImages}`);
+        }
 
         // Build rawPredict body: same as Anthropic Messages but with vertex anthropic_version
         const vertexBody = {

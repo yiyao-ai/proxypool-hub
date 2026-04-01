@@ -308,3 +308,145 @@ test('AzureOpenAIProvider.sendAnthropicRequest preserves tool schema constraints
     global.fetch = originalFetch;
   }
 });
+
+test('AzureOpenAIProvider.sendAnthropicRequest preserves anthropic image blocks as responses input_image content', async () => {
+  const provider = new AzureOpenAIProvider({
+    id: 'azure_6',
+    name: 'azure-test',
+    apiKey: 'test-key',
+    baseUrl: 'https://example-resource.openai.azure.com/',
+    deploymentName: 'deployment-gpt54'
+  });
+
+  const originalFetch = global.fetch;
+  let capturedOptions = null;
+
+  global.fetch = async (_url, options) => {
+    capturedOptions = options;
+    return new Response(JSON.stringify({
+      id: 'resp_vision_1',
+      object: 'response',
+      model: 'deployment-gpt54',
+      status: 'completed',
+      output: [{
+        type: 'message',
+        id: 'msg_vision_1',
+        content: [{ type: 'output_text', text: 'It looks like a cat.' }]
+      }],
+      usage: {
+        input_tokens: 20,
+        output_tokens: 5,
+        total_tokens: 25
+      }
+    }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' }
+    });
+  };
+
+  try {
+    await provider.sendAnthropicRequest({
+      model: 'claude-opus-4-6',
+      messages: [{
+        role: 'user',
+        content: [
+          { type: 'text', text: 'Describe this image.' },
+          {
+            type: 'image',
+            source: {
+              type: 'base64',
+              media_type: 'image/png',
+              data: 'iVBORw0KGgoAAAANSUhEUgAAAAUA'
+            }
+          }
+        ]
+      }]
+    });
+
+    const payload = JSON.parse(capturedOptions.body);
+    const userMessage = payload.input.find(item => item.type === 'message' && item.role === 'user');
+    assert.ok(Array.isArray(userMessage.content));
+    assert.equal(userMessage.content[0].type, 'input_text');
+    assert.equal(userMessage.content[1].type, 'input_image');
+    assert.equal(userMessage.content[1].image_url, 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAUA');
+  } finally {
+    global.fetch = originalFetch;
+  }
+});
+
+test('AzureOpenAIProvider.sendAnthropicRequest preserves tool_result image content as multimodal function_call_output', async () => {
+  const provider = new AzureOpenAIProvider({
+    id: 'azure_7',
+    name: 'azure-test',
+    apiKey: 'test-key',
+    baseUrl: 'https://example-resource.openai.azure.com/',
+    deploymentName: 'deployment-gpt54'
+  });
+
+  const originalFetch = global.fetch;
+  let capturedOptions = null;
+
+  global.fetch = async (_url, options) => {
+    capturedOptions = options;
+    return new Response(JSON.stringify({
+      id: 'resp_tool_vision_1',
+      object: 'response',
+      model: 'deployment-gpt54',
+      status: 'completed',
+      output: [{
+        type: 'message',
+        id: 'msg_tool_vision_1',
+        content: [{ type: 'output_text', text: 'The screenshot contains text.' }]
+      }],
+      usage: {
+        input_tokens: 25,
+        output_tokens: 6,
+        total_tokens: 31
+      }
+    }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' }
+    });
+  };
+
+  try {
+    await provider.sendAnthropicRequest({
+      model: 'claude-opus-4-6',
+      messages: [
+        {
+          role: 'assistant',
+          content: [
+            { type: 'tool_use', id: 'toolu_read_1', name: 'Read', input: { file_path: 'D:\\tmp\\demo.png', pages: '1' } }
+          ]
+        },
+        {
+          role: 'user',
+          content: [{
+            type: 'tool_result',
+            tool_use_id: 'toolu_read_1',
+            content: [
+              { type: 'text', text: 'Rendered page 1' },
+              {
+                type: 'image',
+                source: {
+                  type: 'base64',
+                  media_type: 'image/png',
+                  data: 'iVBORw0KGgoAAAANSUhEUgAAAAUA'
+                }
+              }
+            ]
+          }]
+        }
+      ]
+    });
+
+    const payload = JSON.parse(capturedOptions.body);
+    const toolOutput = payload.input.find(item => item.type === 'function_call_output');
+    assert.ok(Array.isArray(toolOutput.output));
+    assert.equal(toolOutput.output[0].type, 'input_text');
+    assert.equal(toolOutput.output[1].type, 'input_image');
+    assert.equal(toolOutput.output[1].image_url, 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAUA');
+  } finally {
+    global.fetch = originalFetch;
+  }
+});

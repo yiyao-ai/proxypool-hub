@@ -115,6 +115,105 @@ function sanitizeResponsesPayloadForAzure(value, parentKey = '', stats = { encry
     return result;
 }
 
+function summarizeAnthropicVisionPayload(body) {
+    const messages = Array.isArray(body?.messages) ? body.messages : [];
+    let imageBlocks = 0;
+    let base64Images = 0;
+    let urlImages = 0;
+
+    for (const message of messages) {
+        const content = Array.isArray(message?.content) ? message.content : [];
+        for (const block of content) {
+            if (block?.type !== 'image') continue;
+            imageBlocks++;
+            if (block?.source?.type === 'base64' && block.source.data) base64Images++;
+            if (block?.source?.type === 'url' && block.source.url) urlImages++;
+        }
+    }
+
+    return { imageBlocks, base64Images, urlImages, messageCount: messages.length };
+}
+
+function normalizeFunctionCallOutputForAzure(item) {
+    if (item?.type !== 'function_call_output') {
+        return item;
+    }
+
+    if (!Array.isArray(item.output)) {
+        return item;
+    }
+
+    return {
+        ...item,
+        output: item.output.map(part => {
+            if (part?.type !== 'input_image') {
+                return part;
+            }
+
+            if (part.image_url) {
+                return {
+                    type: 'input_image',
+                    image_url: typeof part.image_url === 'string'
+                        ? part.image_url
+                        : part.image_url?.url || ''
+                };
+            }
+
+            if (part.data) {
+                return {
+                    type: 'input_image',
+                    image_url: `data:${part.media_type || 'image/jpeg'};base64,${part.data}`
+                };
+            }
+
+            return part;
+        })
+    };
+}
+
+function normalizeInputImagePartForAzure(part) {
+    if (part?.type !== 'input_image') {
+        return part;
+    }
+
+    if (part.image_url) {
+        return {
+            type: 'input_image',
+            image_url: typeof part.image_url === 'string'
+                ? part.image_url
+                : part.image_url?.url || ''
+        };
+    }
+
+    if (part.data) {
+        return {
+            type: 'input_image',
+            image_url: `data:${part.media_type || 'image/jpeg'};base64,${part.data}`
+        };
+    }
+
+    return part;
+}
+
+function normalizeResponsesPayloadForAzure(body) {
+    if (!Array.isArray(body?.input)) {
+        return body;
+    }
+
+    return {
+        ...body,
+        input: body.input.map(item => {
+            if (item?.type === 'message' && Array.isArray(item.content)) {
+                return {
+                    ...item,
+                    content: item.content.map(part => normalizeInputImagePartForAzure(part))
+                };
+            }
+            return normalizeFunctionCallOutputForAzure(item);
+        })
+    };
+}
+
 export class AzureOpenAIProvider extends BaseProvider {
     constructor(config) {
         super({
@@ -257,10 +356,27 @@ export class AzureOpenAIProvider extends BaseProvider {
      * Anthropic-compatible path without affecting Codex native responses flow.
      */
     async sendAnthropicRequest(body) {
-        const responsesBody = convertAnthropicToResponsesAPI({
+        const visionStats = summarizeAnthropicVisionPayload(body);
+        const responsesBody = normalizeResponsesPayloadForAzure(convertAnthropicToResponsesAPI({
             ...body,
             stream: false
-        });
+        }));
+        const responseInputImages = Array.isArray(responsesBody.input)
+            ? responsesBody.input.reduce((count, item) => {
+                if (item?.type === 'message') {
+                    const content = Array.isArray(item.content) ? item.content : [];
+                    return count + content.filter(part => part?.type === 'input_image').length;
+                }
+                if (item?.type === 'function_call_output') {
+                    const output = Array.isArray(item.output) ? item.output : [];
+                    return count + output.filter(part => part?.type === 'input_image').length;
+                }
+                return count;
+            }, 0)
+            : 0;
+        if (visionStats.imageBlocks > 0 || responseInputImages > 0) {
+            logger.info(`[Azure OpenAI] Anthropic multimodal bridge | messages=${visionStats.messageCount} | anthropic_images=${visionStats.imageBlocks} | base64=${visionStats.base64Images} | url=${visionStats.urlImages} | responses_input_images=${responseInputImages}`);
+        }
         if (Array.isArray(body.tools) && body.tools.length > 0) {
             responsesBody.tools = convertAnthropicToolsForAzureResponses(body.tools);
         }
