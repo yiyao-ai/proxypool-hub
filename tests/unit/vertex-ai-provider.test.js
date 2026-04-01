@@ -2,8 +2,11 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { VertexAIProvider } from '../../src/providers/vertex-ai.js';
+import { clearThinkingSignatureCache } from '../../src/signature-cache.js';
 
 test('VertexAIProvider.sendAnthropicRequest bridges gemini models to Vertex generateContent and returns Anthropic tool_use blocks', async () => {
+  clearThinkingSignatureCache();
+
   const provider = new VertexAIProvider({
     id: 'vertex_1',
     name: 'vertex-test',
@@ -19,6 +22,12 @@ test('VertexAIProvider.sendAnthropicRequest bridges gemini models to Vertex gene
   global.fetch = async (url, options) => {
     capturedUrl = url;
     capturedOptions = options;
+    const body = JSON.parse(options.body);
+    const structuredCall = body.contents?.[1]?.parts?.find(part => part.functionCall);
+    if (structuredCall) {
+      structuredCall.functionCall.thoughtSignature = 'sig_' + 'y'.repeat(60);
+      capturedOptions = { ...options, body: JSON.stringify(body) };
+    }
     return new Response(JSON.stringify({
       candidates: [{
         finishReason: 'STOP',
@@ -30,7 +39,8 @@ test('VertexAIProvider.sendAnthropicRequest bridges gemini models to Vertex gene
                 id: 'vertex-call-1',
                 name: 'shell_command',
                 args: { command: 'Get-ChildItem' }
-              }
+              },
+              thoughtSignature: 'sig_' + 'y'.repeat(60)
             }
           ]
         }
@@ -92,8 +102,9 @@ test('VertexAIProvider.sendAnthropicRequest bridges gemini models to Vertex gene
     assert.equal(payload.contents[0].role, 'user');
     assert.equal(payload.contents[1].role, 'model');
     assert.equal(payload.contents[2].role, 'user');
-    assert.equal(payload.contents[2].parts[0].functionResponse.name, 'shell_command');
-    assert.equal(payload.contents[2].parts[0].functionResponse.response.tool_use_id, 'toolu_call_1');
+    assert.equal(payload.contents[1].parts[0].text, 'I will inspect files first.');
+    assert.equal(payload.contents[1].parts[1].text, '[Called function: shell_command({"command":"Get-ChildItem"})]');
+    assert.equal(payload.contents[2].parts[0].text, '[Function shell_command returned: file list]');
 
     const anthropic = await response.json();
     assert.equal(anthropic.role, 'assistant');
@@ -107,6 +118,7 @@ test('VertexAIProvider.sendAnthropicRequest bridges gemini models to Vertex gene
     assert.deepEqual(anthropic.usage, { input_tokens: 12, output_tokens: 8 });
   } finally {
     global.fetch = originalFetch;
+    clearThinkingSignatureCache();
   }
 });
 
@@ -334,5 +346,182 @@ test('VertexAIProvider uses global Gemini publisher endpoint when provider locat
     assert.equal(response.headers.get('x-proxypool-upstream-model'), 'gemini-3.1-pro-preview');
   } finally {
     global.fetch = originalFetch;
+  }
+});
+
+test('VertexAIProvider restores cached thoughtSignature for subsequent Gemini tool calls', async () => {
+  clearThinkingSignatureCache();
+
+  const provider = new VertexAIProvider({
+    id: 'vertex_5',
+    name: 'vertex-test',
+    apiKey: 'raw-oauth-token',
+    projectId: 'demo-project',
+    location: 'global'
+  });
+
+  const originalFetch = global.fetch;
+  const capturedBodies = [];
+  const thoughtSignature = 'sig_' + 'x'.repeat(60);
+
+  global.fetch = async (_url, options) => {
+    capturedBodies.push(JSON.parse(options.body));
+
+    if (capturedBodies.length === 1) {
+      return new Response(JSON.stringify({
+        candidates: [{
+          finishReason: 'STOP',
+          content: {
+            parts: [{
+              functionCall: {
+                id: 'toolu_read_1',
+                name: 'default_api:Read',
+                args: { file_path: 'README.md' }
+              },
+              thoughtSignature
+            }]
+          }
+        }],
+        usageMetadata: {
+          promptTokenCount: 10,
+          candidatesTokenCount: 5
+        }
+      }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' }
+      });
+    }
+
+    return new Response(JSON.stringify({
+      candidates: [{
+        finishReason: 'STOP',
+        content: { parts: [{ text: 'done' }] }
+      }],
+      usageMetadata: {
+        promptTokenCount: 11,
+        candidatesTokenCount: 6
+      }
+    }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' }
+    });
+  };
+
+  try {
+    const firstResponse = await provider.sendAnthropicRequest({
+      model: 'gemini-3.1-pro-preview',
+      messages: [{ role: 'user', content: 'read file' }]
+    });
+
+    const firstAnthropic = await firstResponse.json();
+    assert.equal(firstAnthropic.content[0].type, 'tool_use');
+    assert.equal(firstAnthropic.content[0].id, 'toolu_read_1');
+    assert.equal(firstAnthropic.content[0].thoughtSignature, thoughtSignature);
+
+    await provider.sendAnthropicRequest({
+      model: 'gemini-3.1-pro-preview',
+      messages: [
+        {
+          role: 'assistant',
+          content: [
+            {
+              type: 'tool_use',
+              id: 'toolu_read_1',
+              name: 'default_api:Read',
+              input: { file_path: 'README.md' }
+            }
+          ]
+        },
+        {
+          role: 'user',
+          content: [
+            {
+              type: 'tool_result',
+              tool_use_id: 'toolu_read_1',
+              content: 'file contents'
+            }
+          ]
+        }
+      ]
+    });
+
+    assert.equal(capturedBodies.length, 2);
+    const secondBody = capturedBodies[1];
+    assert.equal(secondBody.contents[0].parts[0].functionCall.name, 'default_api:Read');
+    assert.equal(secondBody.contents[0].parts[0].thoughtSignature, thoughtSignature);
+    assert.equal(secondBody.contents[0].parts[0].functionCall.thoughtSignature, undefined);
+  } finally {
+    global.fetch = originalFetch;
+    clearThinkingSignatureCache();
+  }
+});
+
+test('VertexAIProvider degrades uncached prior tool history to text for Gemini to avoid missing thoughtSignature errors', async () => {
+  clearThinkingSignatureCache();
+
+  const provider = new VertexAIProvider({
+    id: 'vertex_6',
+    name: 'vertex-test',
+    apiKey: 'raw-oauth-token',
+    projectId: 'demo-project',
+    location: 'global'
+  });
+
+  const originalFetch = global.fetch;
+  let capturedBody = null;
+
+  global.fetch = async (_url, options) => {
+    capturedBody = JSON.parse(options.body);
+    return new Response(JSON.stringify({
+      candidates: [{
+        finishReason: 'STOP',
+        content: { parts: [{ text: 'ok' }] }
+      }],
+      usageMetadata: {
+        promptTokenCount: 1,
+        candidatesTokenCount: 1
+      }
+    }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' }
+    });
+  };
+
+  try {
+    const response = await provider.sendAnthropicRequest({
+      model: 'gemini-3.1-pro-preview',
+      messages: [
+        {
+          role: 'assistant',
+          content: [
+            {
+              type: 'tool_use',
+              id: 'toolu_skill_1',
+              name: 'default_api:Skill',
+              input: { command: 'imagegen' }
+            }
+          ]
+        },
+        {
+          role: 'user',
+          content: [
+            {
+              type: 'tool_result',
+              tool_use_id: 'toolu_skill_1',
+              content: 'skill output'
+            }
+          ]
+        }
+      ]
+    });
+
+    assert.equal(response.status, 200);
+    assert.equal(capturedBody.contents[0].role, 'model');
+    assert.equal(capturedBody.contents[0].parts[0].text, '[Called function: default_api:Skill({"command":"imagegen"})]');
+    assert.equal(capturedBody.contents[1].role, 'user');
+    assert.equal(capturedBody.contents[1].parts[0].text, '[Function default_api:Skill returned: skill output]');
+  } finally {
+    global.fetch = originalFetch;
+    clearThinkingSignatureCache();
   }
 });

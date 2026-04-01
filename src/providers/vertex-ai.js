@@ -21,12 +21,14 @@ import { BaseProvider } from './base.js';
 import { estimateCostWithRegistry, getDefaultPricing } from '../pricing-registry.js';
 import { sanitizeClaudeBody } from '../claude-api.js';
 import { cleanCacheControl } from '../thinking-utils.js';
+import { getCachedSignature, cacheSignature, SIGNATURE_CONSTANTS } from '../signature-cache.js';
 
 const DEFAULT_MODEL = 'gemini-3-flash-preview';
 const TOKEN_URL = 'https://oauth2.googleapis.com/token';
 const TOKEN_SCOPE = 'https://www.googleapis.com/auth/cloud-platform';
 // Refresh token 5 minutes before expiry
 const TOKEN_REFRESH_BUFFER_MS = 5 * 60 * 1000;
+const { MIN_SIGNATURE_LENGTH } = SIGNATURE_CONSTANTS;
 
 // ─── JWT / OAuth2 helpers ───────────────────────────────────────────────────
 
@@ -624,6 +626,7 @@ export class VertexAIProvider extends BaseProvider {
         const contents = [];
         let systemInstruction = null;
         const toolNamesById = new Map();
+        const toolEncodingById = new Map();
 
         if (system) {
             const text = typeof system === 'string'
@@ -657,15 +660,29 @@ export class VertexAIProvider extends BaseProvider {
                 }
 
                 if (block?.type === 'tool_use') {
+                    let thoughtSignature = block.thoughtSignature;
+                    if (!thoughtSignature && block.id) {
+                        thoughtSignature = getCachedSignature(block.id);
+                    }
+                    if (thoughtSignature && thoughtSignature.length >= MIN_SIGNATURE_LENGTH && block.id) {
+                        cacheSignature(block.id, thoughtSignature);
+                    }
                     if (block.id && block.name) {
                         toolNamesById.set(block.id, block.name);
                     }
-                    parts.push({
-                        functionCall: {
+                    if (thoughtSignature && thoughtSignature.length >= MIN_SIGNATURE_LENGTH) {
+                        if (block.id) toolEncodingById.set(block.id, 'structured');
+                        const functionCall = {
                             name: block.name,
                             args: block.input || {}
-                        }
-                    });
+                        };
+                        parts.push({ functionCall, thoughtSignature });
+                    } else {
+                        if (block.id) toolEncodingById.set(block.id, 'text');
+                        parts.push({
+                            text: `[Called function: ${block.name}(${JSON.stringify(block.input || {})})]`
+                        });
+                    }
                     continue;
                 }
 
@@ -679,15 +696,22 @@ export class VertexAIProvider extends BaseProvider {
                                 .join('\n')
                             : JSON.stringify(block.content ?? '');
                     const functionName = toolNamesById.get(block.tool_use_id) || 'tool_result';
-                    parts.push({
-                        functionResponse: {
-                            name: functionName,
-                            response: {
-                                tool_use_id: block.tool_use_id,
-                                content: block.is_error ? `Error: ${responseText}` : responseText
+                    const encoding = toolEncodingById.get(block.tool_use_id) || 'text';
+                    if (encoding === 'structured') {
+                        parts.push({
+                            functionResponse: {
+                                name: functionName,
+                                response: {
+                                    tool_use_id: block.tool_use_id,
+                                    content: block.is_error ? `Error: ${responseText}` : responseText
+                                }
                             }
-                        }
-                    });
+                        });
+                    } else {
+                        parts.push({
+                            text: `[Function ${functionName} returned: ${block.is_error ? `Error: ${responseText}` : responseText}]`
+                        });
+                    }
                     continue;
                 }
 
@@ -739,11 +763,19 @@ export class VertexAIProvider extends BaseProvider {
             if (part.text !== undefined && !part.thought) {
                 content.push({ type: 'text', text: part.text });
             } else if (part.functionCall?.name) {
+                const thoughtSignature = part.thoughtSignature || part.functionCall.thoughtSignature;
+                const toolUseId = part.functionCall.id || _generateAnthropicToolId();
+                if (thoughtSignature && thoughtSignature.length >= MIN_SIGNATURE_LENGTH) {
+                    cacheSignature(toolUseId, thoughtSignature);
+                }
                 content.push({
                     type: 'tool_use',
-                    id: part.functionCall.id || _generateAnthropicToolId(),
+                    id: toolUseId,
                     name: part.functionCall.name,
-                    input: part.functionCall.args || {}
+                    input: part.functionCall.args || {},
+                    ...(thoughtSignature && thoughtSignature.length >= MIN_SIGNATURE_LENGTH
+                        ? { thoughtSignature }
+                        : {})
                 });
             }
         }
