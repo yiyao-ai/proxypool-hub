@@ -17,6 +17,9 @@ import { recordRequest } from '../usage-tracker.js';
 import { logRequest } from '../request-logger.js';
 import { detectRequestApp, resolveAssignedCredentials } from '../app-routing.js';
 import { resolveModel, resolveModelForced } from '../model-mapping.js';
+import { resolveCredentialForRequest } from '../credential-selector.js';
+import { buildCredentialId } from '../credential-registry.js';
+import { markCredentialError, markCredentialRateLimited, markCredentialSuccess, recordRoutingDecision } from '../runtime-state.js';
 
 const MAX_RETRIES = 5;
 const MAX_WAIT_BEFORE_ERROR_MS = 120000;
@@ -202,6 +205,33 @@ export async function handleMessages(req, res) {
     const hasClaudeAccounts = _getUsableClaudeAccounts().length > 0;
     const hasAntigravityAccounts = settings.antigravityEnabled !== false && listAntigravityAccounts().total > 0;
     const hasCompatibleKeys = _getCompatibleProviders().length > 0;
+    const routingPreview = resolveCredentialForRequest({
+        appId,
+        model: requestedModel,
+        protocol: 'anthropic-messages',
+        settings
+    });
+
+    if (routingPreview.selectedCredential) {
+        recordRoutingDecision({
+            appId,
+            protocol: 'anthropic-messages',
+            model: requestedModel,
+            selectedCredentialId: routingPreview.selectedCredential.id,
+            selectedCredentialKind: routingPreview.selectedCredential.kind,
+            selectedCredentialLabel: routingPreview.selectedCredential.label,
+            reason: routingPreview.reason,
+            outcome: 'selected'
+        });
+    } else {
+        recordRoutingDecision({
+            appId,
+            protocol: 'anthropic-messages',
+            model: requestedModel,
+            reason: routingPreview.reason,
+            outcome: 'unresolved'
+        });
+    }
 
     if (settings.routingMode === 'app-assigned') {
         const assignment = resolveAssignedCredentials(settings, appId);
@@ -328,6 +358,13 @@ async function _handleViaAssignedApiKey(req, res, body, requestedModel, isStream
                 const errorBody = await response.text();
                 if (response.status === 429) recordRateLimit(provider.id, 60000);
                 if (response.status === 401 || response.status === 403) recordError(provider.id);
+                if (response.status === 429) {
+                    markCredentialRateLimited(buildCredentialId('api-key', provider.id), 60000, { model: body.model });
+                } else if (response.status === 401 || response.status === 403) {
+                    markCredentialError(buildCredentialId('api-key', provider.id), `auth_error_${response.status}`, { model: body.model, invalid: true });
+                } else {
+                    markCredentialError(buildCredentialId('api-key', provider.id), `http_${response.status}`, { model: body.model });
+                }
                 recordRequest({ provider: 'anthropic', keyId: provider.id, model: body.model, durationMs, success: false, error: errorBody.slice(0, 200) });
                 logRequest({ route: '/v1/messages', provider: 'anthropic', keyId: provider.id, model: body.model, requestBody: body, responseBody: errorBody, durationMs, status: response.status, success: false, error: errorBody.slice(0, 200) });
                 logger.warn(`[Messages] Assigned API key error ${response.status}: ${provider.name} | model=${body.model}`);
@@ -336,6 +373,10 @@ async function _handleViaAssignedApiKey(req, res, body, requestedModel, isStream
             const contentType = response.headers?.get?.('content-type') || '';
             if (contentType.includes('text/event-stream')) {
                 await _pipeAnthropicSSE(res, response);
+                markCredentialSuccess(buildCredentialId('api-key', provider.id), {
+                    model: body.model,
+                    latencyMs: durationMs
+                });
                 recordRequest({ provider: 'anthropic', keyId: provider.id, model: body.model, durationMs, success: true });
                 logRequest({ route: '/v1/messages', provider: 'anthropic', keyId: provider.id, model: body.model, requestBody: body, durationMs, status: 200, success: true });
                 logger.info(`[Messages] OK via assigned API key (stream) | ${provider.name} | model=${body.model} | ${durationMs}ms`);
@@ -353,6 +394,10 @@ async function _handleViaAssignedApiKey(req, res, body, requestedModel, isStream
             } catch { /* ignore */ }
             const cost = provider.estimateCost(body.model, inputTokens, outputTokens);
             recordUsage(provider.id, { inputTokens, outputTokens, model: body.model });
+            markCredentialSuccess(buildCredentialId('api-key', provider.id), {
+                model: body.model,
+                latencyMs: durationMs
+            });
             recordRequest({ provider: 'anthropic', keyId: provider.id, model: body.model, inputTokens, outputTokens, cost, durationMs, success: true });
             logRequest({ route: '/v1/messages', provider: 'anthropic', keyId: provider.id, model: body.model, requestBody: body, responseBody, inputTokens, outputTokens, cost, durationMs, status: 200, success: true });
             logger.info(`[Messages] OK via assigned API key | ${provider.name} | model=${body.model} | ${inputTokens}+${outputTokens} tokens | $${cost.toFixed(4)} | ${durationMs}ms`);
@@ -372,6 +417,13 @@ async function _handleViaAssignedApiKey(req, res, body, requestedModel, isStream
                 const errorBody = await response.text();
                 if (response.status === 429) recordRateLimit(provider.id, 60000);
                 if (response.status === 401 || response.status === 403) recordError(provider.id);
+                if (response.status === 429) {
+                    markCredentialRateLimited(buildCredentialId('api-key', provider.id), 60000, { model: mappedModel });
+                } else if (response.status === 401 || response.status === 403) {
+                    markCredentialError(buildCredentialId('api-key', provider.id), `auth_error_${response.status}`, { model: mappedModel, invalid: true });
+                } else {
+                    markCredentialError(buildCredentialId('api-key', provider.id), `http_${response.status}`, { model: mappedModel });
+                }
                 recordRequest({ provider: provider.type, keyId: provider.id, model: mappedModel, durationMs, success: false, error: errorBody.slice(0, 200) });
                 logRequest({ route: '/v1/messages', provider: provider.type, keyId: provider.id, model: requestedModel, mappedModel, requestBody: mappedBody, responseBody: errorBody, durationMs, status: response.status, success: false, error: errorBody.slice(0, 200) });
                 logger.warn(`[Messages] Assigned ${provider.type} error ${response.status}: ${provider.name} | model=${requestedModel}→${mappedModel}`);
@@ -393,6 +445,10 @@ async function _handleViaAssignedApiKey(req, res, body, requestedModel, isStream
                     res.write(value);
                 }
                 if (!res.writableEnded) res.end();
+                markCredentialSuccess(buildCredentialId('api-key', provider.id), {
+                    model: actualModel,
+                    latencyMs: durationMs
+                });
                 recordRequest({ provider: provider.type, keyId: provider.id, model: actualModel, durationMs, success: true });
                 logRequest({ route: '/v1/messages', provider: provider.type, keyId: provider.id, model: requestedModel, mappedModel: actualModel, requestBody: mappedBody, durationMs, status: 200, success: true });
                 logger.info(`[Messages] OK via assigned ${provider.type} (stream) | ${provider.name} | model=${requestedModel}→${actualModel} | ${durationMs}ms`);
@@ -405,6 +461,10 @@ async function _handleViaAssignedApiKey(req, res, body, requestedModel, isStream
             const outputTokens = parsed.usage?.output_tokens || 0;
             const cost = provider.estimateCost(actualModel, inputTokens, outputTokens);
             recordUsage(provider.id, { inputTokens, outputTokens, model: actualModel });
+            markCredentialSuccess(buildCredentialId('api-key', provider.id), {
+                model: actualModel,
+                latencyMs: durationMs
+            });
             recordRequest({ provider: provider.type, keyId: provider.id, model: actualModel, inputTokens, outputTokens, cost, durationMs, success: true });
             logRequest({ route: '/v1/messages', provider: provider.type, keyId: provider.id, model: requestedModel, mappedModel: actualModel, requestBody: mappedBody, responseBody, inputTokens, outputTokens, cost, durationMs, status: 200, success: true });
             logger.info(`[Messages] OK via assigned ${provider.type} | ${provider.name} | model=${requestedModel}→${actualModel} | ${inputTokens}+${outputTokens} tokens | $${cost.toFixed(4)} | ${durationMs}ms`);
@@ -413,6 +473,7 @@ async function _handleViaAssignedApiKey(req, res, body, requestedModel, isStream
         }
     } catch (error) {
         recordError(provider.id);
+        markCredentialError(buildCredentialId('api-key', provider.id), error, { model: requestedModel });
         recordRequest({ provider: provider.type, keyId: provider.id, model: requestedModel, durationMs: Date.now() - startTime, success: false, error: error.message });
         logger.error(`[Messages] Assigned ${provider.type} network error: ${provider.name} - ${error.message}`);
         return false;
@@ -432,8 +493,13 @@ async function _handleViaAssignedAccount(req, res, body, requestedModel, upstrea
         } else {
             await _sendDirectWithRotation(res, anthropicRequest, creds, requestedModel, startTime, null);
         }
+        markCredentialSuccess(buildCredentialId('chatgpt-account', creds.email), {
+            model: requestedModel,
+            latencyMs: Date.now() - startTime
+        });
         return true;
-    } catch {
+    } catch (error) {
+        markCredentialError(buildCredentialId('chatgpt-account', email), error, { model: requestedModel });
         return false;
     }
 }
@@ -463,6 +529,10 @@ async function _handleViaAssignedClaudeAccount(req, res, body, requestedModel, i
             recordRequest({ provider: 'claude-pool', keyId: account.email, model: body.model, durationMs, success: true });
             logRequest({ route: '/v1/messages', method: 'POST', provider: 'claude-pool', keyId: account.email, model: requestedModel, mappedModel: body.model, requestBody: body, durationMs, status: 200, success: true });
             logger.success(`[Messages] <<< OK via assigned Claude account (stream) | ${account.email} | model=${body.model} | ${durationMs}ms`);
+            markCredentialSuccess(buildCredentialId('claude-account', account.email), {
+                model: body.model || requestedModel,
+                latencyMs: durationMs
+            });
         } else {
             const result = await sendClaudeMessage(claudeBody, account.accessToken, { clientBeta });
             const durationMs = Date.now() - startTime;
@@ -471,10 +541,18 @@ async function _handleViaAssignedClaudeAccount(req, res, body, requestedModel, i
             recordRequest({ provider: 'claude-pool', keyId: account.email, model: body.model, inputTokens, outputTokens, durationMs, success: true });
             logRequest({ route: '/v1/messages', method: 'POST', provider: 'claude-pool', keyId: account.email, model: requestedModel, mappedModel: body.model, requestBody: body, inputTokens, outputTokens, durationMs, status: 200, success: true });
             logger.success(`[Messages] <<< OK via assigned Claude account | ${account.email} | model=${body.model} | ${inputTokens}+${outputTokens} tokens | ${durationMs}ms`);
+            markCredentialSuccess(buildCredentialId('claude-account', account.email), {
+                model: body.model || requestedModel,
+                latencyMs: durationMs
+            });
             res.json(result);
         }
         return true;
     } catch (error) {
+        markCredentialError(buildCredentialId('claude-account', account.email), error, {
+            model: body.model || requestedModel,
+            invalid: error.message.includes('AUTH_EXPIRED')
+        });
         recordRequest({ provider: 'claude-pool', keyId: account.email, model: body.model, durationMs: Date.now() - startTime, success: false, error: error.message });
         logRequest({ route: '/v1/messages', method: 'POST', provider: 'claude-pool', keyId: account.email, model: requestedModel, mappedModel: body.model, requestBody: body, durationMs: Date.now() - startTime, status: 500, success: false, error: error.message });
         logger.error(`[Messages] Assigned Claude account error: ${account.email} - ${error.message}`);
@@ -505,12 +583,19 @@ async function _handleViaApiKey(req, res, body, requestedModel, startTime) {
             if (response.status === 429) {
                 const retryAfter = response.headers?.get?.('retry-after');
                 recordRateLimit(provider.id, retryAfter ? parseInt(retryAfter) * 1000 : 60000);
+                markCredentialRateLimited(buildCredentialId('api-key', provider.id), retryAfter ? parseInt(retryAfter) * 1000 : 60000, {
+                    model: body.model
+                });
                 logger.warn(`[Messages] API key rate limited: ${provider.name}`);
                 continue;
             }
 
             if (response.status === 401 || response.status === 403) {
                 recordError(provider.id);
+                markCredentialError(buildCredentialId('api-key', provider.id), `auth_error_${response.status}`, {
+                    model: body.model,
+                    invalid: true
+                });
                 logger.error(`[Messages] API key auth failed: ${provider.name}`);
                 continue;
             }
@@ -528,6 +613,9 @@ async function _handleViaApiKey(req, res, body, requestedModel, startTime) {
 
             if (!response.ok) {
                 recordError(provider.id);
+                markCredentialError(buildCredentialId('api-key', provider.id), `http_${response.status}`, {
+                    model: body.model
+                });
                 recordRequest({ provider: 'anthropic', keyId: provider.id, model: body.model, durationMs, success: false, error: responseBody.slice(0, 200) });
                 logRequest({ route: '/v1/messages', provider: 'anthropic', keyId: provider.id, model: body.model, requestBody: body, responseBody, durationMs, status: response.status, success: false, error: responseBody.slice(0, 200) });
                 logger.warn(`[Messages] API key error ${response.status}: ${provider.name} - ${responseBody.slice(0, 200)}`);
@@ -543,6 +631,10 @@ async function _handleViaApiKey(req, res, body, requestedModel, startTime) {
 
             const cost = provider.estimateCost(body.model, inputTokens, outputTokens);
             recordUsage(provider.id, { inputTokens, outputTokens, model: body.model });
+            markCredentialSuccess(buildCredentialId('api-key', provider.id), {
+                model: body.model,
+                latencyMs: durationMs
+            });
             recordRequest({ provider: 'anthropic', keyId: provider.id, model: body.model, inputTokens, outputTokens, cost, durationMs, success: true });
             logRequest({ route: '/v1/messages', provider: 'anthropic', keyId: provider.id, model: body.model, requestBody: body, responseBody, inputTokens, outputTokens, cost, durationMs, status: 200, success: true });
             logger.info(`[Messages] OK via API key | ${provider.name} | model=${body.model} | ${inputTokens}+${outputTokens} tokens | $${cost.toFixed(4)} | ${durationMs}ms`);
@@ -554,6 +646,7 @@ async function _handleViaApiKey(req, res, body, requestedModel, startTime) {
             return;
         } catch (error) {
             recordError(provider.id);
+            markCredentialError(buildCredentialId('api-key', provider.id), error, { model: body.model });
             recordRequest({ provider: 'anthropic', keyId: provider.id, model: body.model, durationMs: Date.now() - startTime, success: false, error: error.message });
             logger.error(`[Messages] API key network error: ${provider.name} - ${error.message}`);
             continue;
@@ -613,11 +706,18 @@ async function _handleViaAccountPool(req, res, body, requestedModel, upstreamMod
                 await _sendDirectWithRotation(res, anthropicRequest, creds, requestedModel, startTime, rotator);
             }
             rotator.notifySuccess(account, upstreamModel);
+            markCredentialSuccess(buildCredentialId('chatgpt-account', creds.email), {
+                model: requestedModel,
+                latencyMs: Date.now() - startTime
+            });
             return;
         } catch (error) {
             if (error.message.startsWith('RATE_LIMITED:')) {
                 const parts = error.message.split(':');
                 const resetMs = parseInt(parts[1], 10);
+                markCredentialRateLimited(buildCredentialId('chatgpt-account', account.email), resetMs || 60000, {
+                    model: requestedModel
+                });
 
                 rotator.notifyRateLimit(account, upstreamModel);
 
@@ -634,9 +734,14 @@ async function _handleViaAccountPool(req, res, body, requestedModel, upstreamMod
 
             if (error.message.includes('AUTH_EXPIRED')) {
                 rotator.markInvalid(account.email, 'Auth expired');
+                markCredentialError(buildCredentialId('chatgpt-account', account.email), error, {
+                    model: requestedModel,
+                    invalid: true
+                });
                 continue;
             }
 
+            markCredentialError(buildCredentialId('chatgpt-account', account.email), error, { model: requestedModel });
             return handleStreamError(res, error, requestedModel, startTime);
         }
     }
@@ -1087,6 +1192,10 @@ async function _handleViaAntigravityAccount(res, body, requestedModel, isStreami
             status: 200,
             success: true
         });
+        markCredentialSuccess(buildCredentialId('antigravity-account', account.email), {
+            model: mappedModel,
+            latencyMs: durationMs
+        });
         if (isStreaming) {
             writeAnthropicSSEFromMessage(res, result);
         } else {
@@ -1094,6 +1203,11 @@ async function _handleViaAntigravityAccount(res, body, requestedModel, isStreami
         }
         return true;
     } catch (error) {
+        if (account?.email) {
+            markCredentialError(buildCredentialId('antigravity-account', account.email), error, {
+                model: requestedModel
+            });
+        }
         logger.error(`[Messages] Antigravity error: ${account.email} - ${error.message}`);
         return false;
     }

@@ -140,6 +140,31 @@ document.addEventListener('alpine:init', () => {
         logSearchQuery: '',
         logFilters: { INFO: true, SUCCESS: true, WARN: true, ERROR: true, DEBUG: false },
         logEventSource: null,
+        apiExplorerPresets: [
+            { name: 'Health', method: 'GET', endpoint: '/health', body: '' },
+            { name: 'Accounts', method: 'GET', endpoint: '/accounts', body: '' },
+            { name: 'Claude Accounts', method: 'GET', endpoint: '/claude-accounts', body: '' },
+            { name: 'Models', method: 'GET', endpoint: '/v1/models', body: '' },
+            { name: 'Usage Overview', method: 'GET', endpoint: '/api/usage/overview', body: '' },
+            { name: 'Request Logs', method: 'GET', endpoint: '/api/request-logs?limit=10', body: '' },
+            {
+                name: 'Chat Completion Test',
+                method: 'POST',
+                endpoint: '/v1/chat/completions',
+                body: JSON.stringify({
+                    model: 'gpt-5.2',
+                    messages: [{ role: 'user', content: 'Say hello' }]
+                }, null, 2)
+            }
+        ],
+        apiExplorerPresetIndex: 0,
+        apiExplorerForm: {
+            method: 'GET',
+            endpoint: '/health',
+            body: ''
+        },
+        apiExplorerLoading: false,
+        apiExplorerResponse: null,
 
         get filteredLogs() {
             const query = this.logSearchQuery.trim().toLowerCase();
@@ -226,6 +251,7 @@ document.addEventListener('alpine:init', () => {
             if (tab === 'apikeys') this.loadApiKeys();
             if (tab === 'usage') this.loadUsageData();
             if (tab === 'pricing') this.loadPricingData();
+            if (tab === 'apiExplorer' && !this.apiExplorerResponse) this.loadApiExplorerPreset(this.apiExplorerPresetIndex);
             if (tab === 'dashboard') this.refreshProxyStatus();
             if (tab === 'chat') {
                 this.loadChatSources();
@@ -234,6 +260,109 @@ document.addEventListener('alpine:init', () => {
             if (tab === 'settings') {
                 if (!this.modelMappingData) this.loadModelMappings();
                 this.refreshProxyStatus();
+            }
+        },
+
+        loadApiExplorerPreset(index) {
+            const preset = this.apiExplorerPresets[index];
+            if (!preset) return;
+
+            this.apiExplorerPresetIndex = index;
+            this.apiExplorerForm = {
+                method: preset.method,
+                endpoint: preset.endpoint,
+                body: preset.body || ''
+            };
+        },
+
+        apiExplorerCanSendBody() {
+            return ['POST', 'PUT', 'PATCH', 'DELETE'].includes(this.apiExplorerForm.method);
+        },
+
+        clearApiExplorerResponse() {
+            this.apiExplorerResponse = null;
+        },
+
+        async copyApiExplorerResponse() {
+            if (!this.apiExplorerResponse?.bodyText) return;
+            try {
+                await navigator.clipboard.writeText(this.apiExplorerResponse.bodyText);
+                this.showToast(this.t('copiedToClipboard'), 'success');
+            } catch {
+                this.showToast(this.t('failedToCopy'), 'error');
+            }
+        },
+
+        async runApiExplorerRequest() {
+            const endpoint = this.apiExplorerForm.endpoint.trim();
+            if (!endpoint) {
+                this.showToast(this.t('endpointRequired'), 'error');
+                return;
+            }
+
+            const method = this.apiExplorerForm.method.toUpperCase();
+            const headers = { Accept: 'application/json' };
+            const options = { method, headers };
+
+            if (this.apiExplorerCanSendBody()) {
+                const body = this.apiExplorerForm.body.trim();
+                if (body) {
+                    try {
+                        JSON.parse(body);
+                        headers['Content-Type'] = 'application/json';
+                        options.body = body;
+                    } catch {
+                        this.showToast(this.t('invalidJsonBody'), 'error');
+                        return;
+                    }
+                }
+            }
+
+            this.apiExplorerLoading = true;
+            const startedAt = performance.now();
+
+            try {
+                const response = await fetch(endpoint, options);
+                const durationMs = Math.round(performance.now() - startedAt);
+                const rawText = await response.text();
+
+                let parsedBody = null;
+                let prettyBody = rawText;
+                try {
+                    parsedBody = rawText ? JSON.parse(rawText) : null;
+                    prettyBody = parsedBody === null ? '' : JSON.stringify(parsedBody, null, 2);
+                } catch {
+                    parsedBody = null;
+                }
+
+                this.apiExplorerResponse = {
+                    ok: response.ok,
+                    status: response.status,
+                    statusText: response.statusText,
+                    durationMs,
+                    contentType: response.headers.get('content-type') || '-',
+                    headers: Array.from(response.headers.entries()),
+                    isJson: parsedBody !== null,
+                    body: parsedBody,
+                    bodyText: rawText,
+                    prettyBody
+                };
+            } catch (error) {
+                this.apiExplorerResponse = {
+                    ok: false,
+                    status: 0,
+                    statusText: 'NETWORK_ERROR',
+                    durationMs: Math.round(performance.now() - startedAt),
+                    contentType: '-',
+                    headers: [],
+                    isJson: false,
+                    body: null,
+                    bodyText: error.message,
+                    prettyBody: error.message
+                };
+                this.showToast(error.message || this.t('requestFailed'), 'error');
+            } finally {
+                this.apiExplorerLoading = false;
             }
         },
 

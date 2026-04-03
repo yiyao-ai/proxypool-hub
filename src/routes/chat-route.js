@@ -17,6 +17,9 @@ import { recordRequest } from '../usage-tracker.js';
 import { resolveModel } from '../model-mapping.js';
 import { logRequest } from '../request-logger.js';
 import { detectRequestApp, resolveAssignedCredential } from '../app-routing.js';
+import { resolveCredentialForRequest } from '../credential-selector.js';
+import { markCredentialError, markCredentialRateLimited, markCredentialSuccess, recordRoutingDecision } from '../runtime-state.js';
+import { buildCredentialId } from '../credential-registry.js';
 
 /**
  * POST /v1/chat/completions
@@ -51,6 +54,33 @@ export async function handleChatCompletion(req, res) {
   // Try openai, azure-openai, gemini, vertex-ai keys for chat completions
   const chatKeyTypes = ['openai', 'azure-openai', 'gemini', 'vertex-ai'];
   const hasApiKeys = hasKeysForTypes(chatKeyTypes);
+  const routingPreview = resolveCredentialForRequest({
+    appId,
+    model: requestedModel,
+    protocol: 'openai-chat',
+    settings
+  });
+
+  if (routingPreview.selectedCredential) {
+    recordRoutingDecision({
+      appId,
+      protocol: 'openai-chat',
+      model: requestedModel,
+      selectedCredentialId: routingPreview.selectedCredential.id,
+      selectedCredentialKind: routingPreview.selectedCredential.kind,
+      selectedCredentialLabel: routingPreview.selectedCredential.label,
+      reason: routingPreview.reason,
+      outcome: 'selected'
+    });
+  } else {
+    recordRoutingDecision({
+      appId,
+      protocol: 'openai-chat',
+      model: requestedModel,
+      reason: routingPreview.reason,
+      outcome: 'unresolved'
+    });
+  }
 
   if (settings.routingMode === 'app-assigned') {
     const assignment = resolveAssignedCredential(settings, appId);
@@ -101,9 +131,16 @@ async function _handleChatAssignment(req, res, body, requestedModel, upstreamMod
     const anthropicRequest = _buildAnthropicRequest(body, upstreamModel);
     try {
       const response = await sendMessage(anthropicRequest, creds.accessToken, creds.accountId);
+      markCredentialSuccess(buildCredentialId('chatgpt-account', creds.email), {
+        model: requestedModel,
+        latencyMs: Date.now() - startTime
+      });
       res.json(_buildOpenAIResponse(response, requestedModel));
       return true;
-    } catch {
+    } catch (error) {
+      markCredentialError(buildCredentialId('chatgpt-account', assignment.credential.email), error, {
+        model: requestedModel
+      });
       return false;
     }
   }
@@ -120,7 +157,21 @@ async function _handleChatViaAssignedApiKey(res, body, requestedModel, startTime
     const mappedModel = resolveModel(provider.type, body.model);
     const mappedBody = { ...body, model: mappedModel };
     const response = await provider.sendRequest(mappedBody);
-    if (!response.ok) return false;
+    if (!response.ok) {
+      if (response.status === 429) {
+        markCredentialRateLimited(buildCredentialId('api-key', provider.id), 60000, { model: mappedModel });
+      } else if (response.status === 401 || response.status === 403) {
+        markCredentialError(buildCredentialId('api-key', provider.id), `auth_error_${response.status}`, {
+          model: mappedModel,
+          invalid: true
+        });
+      } else {
+        markCredentialError(buildCredentialId('api-key', provider.id), `http_${response.status}`, {
+          model: mappedModel
+        });
+      }
+      return false;
+    }
     const responseBody = await response.text();
     let inputTokens = 0, outputTokens = 0;
     try {
@@ -135,9 +186,14 @@ async function _handleChatViaAssignedApiKey(res, body, requestedModel, startTime
     recordUsage(provider.id, { inputTokens, outputTokens, model: mappedModel });
     recordRequest({ provider: provider.type, keyId: provider.id, model: mappedModel, inputTokens, outputTokens, cost, durationMs, success: true });
     logRequest({ route: '/v1/chat/completions', provider: provider.type, keyId: provider.id, model: body.model, mappedModel, requestBody: body, responseBody, inputTokens, outputTokens, cost, durationMs, status: 200, success: true });
+    markCredentialSuccess(buildCredentialId('api-key', provider.id), {
+      model: mappedModel,
+      latencyMs: durationMs
+    });
     res.status(200).type('json').send(responseBody);
     return true;
-  } catch {
+  } catch (error) {
+    markCredentialError(buildCredentialId('api-key', provider.id), error, { model: body.model });
     return false;
   }
 }
@@ -164,17 +220,27 @@ async function _handleChatViaApiKey(res, body, requestedModel, keyTypes, startTi
         if (response.status === 429) {
           const retryAfter = response.headers?.get?.('retry-after');
           recordRateLimit(provider.id, retryAfter ? parseInt(retryAfter) * 1000 : 60000);
+          markCredentialRateLimited(buildCredentialId('api-key', provider.id), retryAfter ? parseInt(retryAfter) * 1000 : 60000, {
+            model: mappedModel
+          });
           logger.warn(`[Chat] API key rate limited: ${provider.name} (${type})`);
           continue;
         }
         if (response.status === 401 || response.status === 403) {
           recordError(provider.id);
+          markCredentialError(buildCredentialId('api-key', provider.id), `auth_error_${response.status}`, {
+            model: mappedModel,
+            invalid: true
+          });
           continue;
         }
 
         const responseBody = await response.text();
         if (!response.ok) {
           recordError(provider.id);
+          markCredentialError(buildCredentialId('api-key', provider.id), `http_${response.status}`, {
+            model: mappedModel
+          });
           recordRequest({ provider: type, keyId: provider.id, model: mappedModel, durationMs, success: false, error: responseBody.slice(0, 200) });
           logRequest({ route: '/v1/chat/completions', provider: type, keyId: provider.id, model: body.model, mappedModel, requestBody: body, responseBody, durationMs, status: response.status, success: false, error: responseBody.slice(0, 200) });
           logger.warn(`[Chat] API key error ${response.status}: ${provider.name} - ${responseBody.slice(0, 200)}`);
@@ -192,11 +258,16 @@ async function _handleChatViaApiKey(res, body, requestedModel, keyTypes, startTi
         recordUsage(provider.id, { inputTokens, outputTokens, model: mappedModel });
         recordRequest({ provider: type, keyId: provider.id, model: mappedModel, inputTokens, outputTokens, cost, durationMs, success: true });
         logRequest({ route: '/v1/chat/completions', provider: type, keyId: provider.id, model: body.model, mappedModel, requestBody: body, responseBody, inputTokens, outputTokens, cost, durationMs, status: 200, success: true });
+        markCredentialSuccess(buildCredentialId('api-key', provider.id), {
+          model: mappedModel,
+          latencyMs: durationMs
+        });
         logger.info(`[Chat] OK via API key | ${type}/${provider.name} | ${body.model}→${mappedModel} | ${inputTokens}+${outputTokens} tokens | $${cost.toFixed(4)} | ${durationMs}ms`);
         res.status(200).type('json').send(responseBody);
         return;
       } catch (error) {
         recordError(provider.id);
+        markCredentialError(buildCredentialId('api-key', provider.id), error, { model: body.model });
         recordRequest({ provider: type, keyId: provider.id, model: body.model, durationMs: Date.now() - startTime, success: false, error: error.message });
         logger.error(`[Chat] API key error: ${provider.name} - ${error.message}`);
         continue;
@@ -222,9 +293,16 @@ async function _handleChatViaAccountPool(res, body, requestedModel, upstreamMode
     const response = await sendMessage(anthropicRequest, creds.accessToken, creds.accountId);
     const duration = Date.now() - startTime;
     logger.response(200, { model: upstreamModel, tokens: response.usage?.output_tokens || 0, duration });
+    markCredentialSuccess(buildCredentialId('chatgpt-account', creds.email), {
+      model: requestedModel,
+      latencyMs: duration
+    });
     res.json(_buildOpenAIResponse(response, requestedModel));
     return;
   } catch (error) {
+    markCredentialError(buildCredentialId('chatgpt-account', creds.email), error, {
+      model: requestedModel
+    });
     handleStreamError(res, error, upstreamModel, startTime);
     return;
   }

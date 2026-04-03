@@ -191,6 +191,13 @@
                         <span x-text="t('pricing')"></span>
                     </button>
                     <button class="nav-item flex items-center gap-3 px-6 py-3 text-sm font-medium text-gray-400 hover:text-white hover:bg-white/5"
+                        :class="{'active': activeTab === 'apiExplorer'}" @click="setActiveTab('apiExplorer')">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 9h8M8 13h5m-8 8h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v14a2 2 0 002 2z" />
+                        </svg>
+                        <span x-text="t('apiExplorer')"></span>
+                    </button>
+                    <button class="nav-item flex items-center gap-3 px-6 py-3 text-sm font-medium text-gray-400 hover:text-white hover:bg-white/5"
                         :class="{'active': activeTab === 'requestLogs'}" @click="setActiveTab('requestLogs'); loadRequestLogs()">
                         <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
@@ -2022,6 +2029,122 @@
                         </tbody>
                     </table>
                     <div x-show="filteredPricingEntries.length === 0" class="py-8 text-center text-gray-600 text-sm" x-text="t('noPricingData')"></div>
+                </div>
+            </div>
+
+            <!-- ─── API Explorer Tab ─────────────────────────────────────── -->
+            <div x-show="activeTab === 'apiExplorer'" x-transition class="view-container">
+                <div class="flex items-center justify-between gap-4 mb-6">
+                    <div class="flex flex-wrap items-center gap-4">
+                        <h1 class="text-2xl font-bold text-white tracking-tight" x-text="t('apiExplorer')"></h1>
+                        <div class="flex items-center h-6 px-3 rounded-full bg-space-800/80 border border-space-border/50 shadow-sm backdrop-blur-sm">
+                            <span class="text-[10px] font-mono text-gray-400 uppercase tracking-wider" x-text="t('apiExplorerDesc')"></span>
+                        </div>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <button class="btn btn-xs btn-outline border-space-border text-gray-400 hover:text-white h-8"
+                            @click="clearApiExplorerResponse()" x-text="t('clearResponse')"></button>
+                        <button class="btn btn-xs btn-outline border-space-border text-gray-400 hover:text-white h-8"
+                            @click="copyApiExplorerResponse()" :disabled="!apiExplorerResponse?.bodyText" x-text="t('copyResponse')"></button>
+                    </div>
+                </div>
+
+                <div class="grid gap-6 xl:grid-cols-[420px_minmax(0,1fr)]">
+                    <div class="space-y-4">
+                        <div class="view-card">
+                            <div class="flex items-center justify-between gap-3 mb-4">
+                                <h2 class="text-sm font-semibold text-white" x-text="t('requestConfig')"></h2>
+                                <select x-model.number="apiExplorerPresetIndex" @change="loadApiExplorerPreset(apiExplorerPresetIndex)"
+                                    class="h-9 bg-space-800 border border-space-border rounded-lg text-xs font-mono px-3 text-white focus:border-neon-purple focus:outline-none max-w-[220px]">
+                                    <template x-for="(preset, index) in apiExplorerPresets" :key="preset.name + index">
+                                        <option :value="index" x-text="preset.name"></option>
+                                    </template>
+                                </select>
+                            </div>
+
+                            <div class="space-y-4">
+                                <div class="grid grid-cols-[110px_minmax(0,1fr)] gap-3">
+                                    <div>
+                                        <label class="text-xs text-gray-500 mb-1.5 block" x-text="t('httpMethod')"></label>
+                                        <select x-model="apiExplorerForm.method"
+                                            class="h-10 w-full bg-space-800 border border-space-border rounded-lg text-sm font-mono px-3 text-white focus:border-neon-purple focus:outline-none">
+                                            <option value="GET">GET</option>
+                                            <option value="POST">POST</option>
+                                            <option value="PUT">PUT</option>
+                                            <option value="PATCH">PATCH</option>
+                                            <option value="DELETE">DELETE</option>
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label class="text-xs text-gray-500 mb-1.5 block" x-text="t('endpointPath')"></label>
+                                        <input type="text" x-model="apiExplorerForm.endpoint"
+                                            class="h-10 w-full bg-space-800 border border-space-border rounded-lg text-sm font-mono px-3 text-white focus:border-neon-purple focus:outline-none"
+                                            placeholder="/health">
+                                    </div>
+                                </div>
+
+                                <div x-show="apiExplorerCanSendBody()">
+                                    <div class="flex items-center justify-between gap-3 mb-1.5">
+                                        <label class="text-xs text-gray-500 block" x-text="t('requestBodyOptional')"></label>
+                                        <button class="text-[11px] font-mono text-neon-cyan hover:text-cyan-300 transition-colors"
+                                            @click="loadApiExplorerPreset(apiExplorerPresetIndex)" x-text="t('loadExample')"></button>
+                                    </div>
+                                    <textarea x-model="apiExplorerForm.body" rows="14"
+                                        class="w-full bg-space-800 border border-space-border rounded-lg text-xs font-mono px-3 py-3 text-white focus:border-neon-purple focus:outline-none resize-y"
+                                        :placeholder="t('requestBodyHint')"></textarea>
+                                </div>
+
+                                <button class="btn bg-neon-purple hover:bg-purple-600 border-none text-white w-full"
+                                    @click="runApiExplorerRequest()" :disabled="apiExplorerLoading"
+                                    x-text="apiExplorerLoading ? t('runningRequest') : t('runRequest')"></button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="space-y-4 min-w-0">
+                        <div class="view-card">
+                            <div class="flex flex-wrap items-center gap-3 mb-4">
+                                <h2 class="text-sm font-semibold text-white" x-text="t('responseMeta')"></h2>
+                                <template x-if="apiExplorerResponse">
+                                    <div class="flex flex-wrap items-center gap-3">
+                                        <span class="text-[11px] font-mono px-2 py-1 rounded border"
+                                            :class="apiExplorerResponse.ok ? 'bg-green-500/10 text-green-400 border-green-500/30' : 'bg-red-500/10 text-red-400 border-red-500/30'"
+                                            x-text="t('statusCode') + ' ' + apiExplorerResponse.status + ' ' + apiExplorerResponse.statusText"></span>
+                                        <span class="text-[11px] font-mono px-2 py-1 rounded bg-space-800 text-gray-300 border border-space-border/60"
+                                            x-text="t('responseTime') + ' ' + apiExplorerResponse.durationMs + 'ms'"></span>
+                                        <span class="text-[11px] font-mono px-2 py-1 rounded bg-space-800 text-gray-300 border border-space-border/60 truncate max-w-full"
+                                            x-text="t('contentType') + ' ' + apiExplorerResponse.contentType"></span>
+                                    </div>
+                                </template>
+                            </div>
+
+                            <template x-if="!apiExplorerResponse">
+                                <div class="py-12 text-center text-gray-600 text-sm" x-text="t('noResponseYet')"></div>
+                            </template>
+
+                            <template x-if="apiExplorerResponse">
+                                <div class="space-y-4">
+                                    <div>
+                                        <div class="text-[10px] text-gray-500 uppercase tracking-wider mb-2" x-text="t('responseData')"></div>
+                                        <pre class="text-xs font-mono text-gray-200 bg-space-950 border border-space-border/20 rounded-lg p-4 max-h-[480px] overflow-auto custom-scrollbar whitespace-pre-wrap break-all"
+                                            x-text="apiExplorerResponse.prettyBody || apiExplorerResponse.bodyText || ''"></pre>
+                                    </div>
+
+                                    <div>
+                                        <div class="text-[10px] text-gray-500 uppercase tracking-wider mb-2" x-text="t('responseHeaders')"></div>
+                                        <div class="bg-space-950 border border-space-border/20 rounded-lg divide-y divide-space-border/20">
+                                            <template x-for="[key, value] in apiExplorerResponse.headers" :key="key">
+                                                <div class="grid grid-cols-[180px_minmax(0,1fr)] gap-3 px-4 py-2 text-xs font-mono">
+                                                    <div class="text-gray-500 break-all" x-text="key"></div>
+                                                    <div class="text-gray-200 break-all" x-text="value"></div>
+                                                </div>
+                                            </template>
+                                        </div>
+                                    </div>
+                                </div>
+                            </template>
+                        </div>
+                    </div>
                 </div>
             </div>
 

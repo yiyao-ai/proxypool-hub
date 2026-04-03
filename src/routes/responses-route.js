@@ -25,6 +25,9 @@ import { sendResponsesSSE } from '../utils/responses-sse.js';
 import { resolveModel } from '../model-mapping.js';
 import { logRequest } from '../request-logger.js';
 import { detectRequestApp, resolveAssignedCredentials } from '../app-routing.js';
+import { resolveCredentialForRequest } from '../credential-selector.js';
+import { buildCredentialId } from '../credential-registry.js';
+import { markCredentialError, markCredentialRateLimited, markCredentialSuccess, recordRoutingDecision } from '../runtime-state.js';
 
 const UPSTREAM_URL = 'https://chatgpt.com/backend-api/codex/responses';
 const UPSTREAM_COMPACT_URL = 'https://chatgpt.com/backend-api/codex/responses/compact';
@@ -326,6 +329,33 @@ export async function handleResponses(req, res) {
     const hasApiKeys = hasKeysForTypes(chatKeyTypes);
     const hasClaudeAccounts = _getUsableClaudeAccounts().length > 0;
     const hasAntigravityAccounts = settings.antigravityEnabled !== false && listAntigravityAccounts().total > 0;
+    const routingPreview = resolveCredentialForRequest({
+        appId,
+        model: modelId,
+        protocol: 'openai-responses',
+        settings
+    });
+
+    if (routingPreview.selectedCredential) {
+        recordRoutingDecision({
+            appId,
+            protocol: 'openai-responses',
+            model: modelId,
+            selectedCredentialId: routingPreview.selectedCredential.id,
+            selectedCredentialKind: routingPreview.selectedCredential.kind,
+            selectedCredentialLabel: routingPreview.selectedCredential.label,
+            reason: routingPreview.reason,
+            outcome: 'selected'
+        });
+    } else {
+        recordRoutingDecision({
+            appId,
+            protocol: 'openai-responses',
+            model: modelId,
+            reason: routingPreview.reason,
+            outcome: 'unresolved'
+        });
+    }
 
     if (settings.routingMode === 'app-assigned') {
         const assignment = resolveAssignedCredentials(settings, appId);
@@ -455,6 +485,13 @@ async function _handleResponsesViaAssignedApiKey(res, parsed, modelId, isStreami
         if (!response.ok) {
             if (response.status === 429) recordRateLimit(provider.id, 60000);
             if (response.status === 401 || response.status === 403) recordError(provider.id);
+            if (response.status === 429) {
+                markCredentialRateLimited(buildCredentialId('api-key', provider.id), 60000, { model: mappedModel || modelId });
+            } else if (response.status === 401 || response.status === 403) {
+                markCredentialError(buildCredentialId('api-key', provider.id), `auth_error_${response.status}`, { model: mappedModel || modelId, invalid: true });
+            } else {
+                markCredentialError(buildCredentialId('api-key', provider.id), `http_${response.status}`, { model: mappedModel || modelId });
+            }
             return false;
         }
 
@@ -466,6 +503,10 @@ async function _handleResponsesViaAssignedApiKey(res, parsed, modelId, isStreami
         const outputTokens = responsesFormat.usage?.output_tokens || 0;
         const cost = provider.estimateCost(mappedModel, inputTokens, outputTokens);
         recordUsage(provider.id, { inputTokens, outputTokens, model: mappedModel });
+        markCredentialSuccess(buildCredentialId('api-key', provider.id), {
+            model: mappedModel,
+            latencyMs: durationMs
+        });
         recordRequest({ provider: provider.type, keyId: provider.id, model: mappedModel, inputTokens, outputTokens, cost, durationMs, success: true });
         logRequest({ route: '/responses', provider: provider.type, keyId: provider.id, model: modelId, mappedModel, requestBody: parsed, responseBody, inputTokens, outputTokens, cost, durationMs, status: 200, success: true });
         logger.success(`[Codex] <<< Assigned API KEY OK | ${provider.type}/${provider.name} | model=${modelId} | ${durationMs}ms`);
@@ -473,6 +514,7 @@ async function _handleResponsesViaAssignedApiKey(res, parsed, modelId, isStreami
         if (isStreaming) sendResponsesSSE(res, responsesFormat); else res.json(responsesFormat);
         return true;
     } catch (error) {
+        markCredentialError(buildCredentialId('api-key', provider.id), error, { model: modelId });
         logger.error(`[Codex] Assigned API key error: ${provider.name} - ${error.message}`);
         return false;
     }
@@ -489,12 +531,20 @@ async function _handleResponsesViaAssignedClaudeAccount(res, parsed, modelId, is
         const responsesFormat = _anthropicToResponsesFormat(claudeResponse, modelId);
         const inputTokens = claudeResponse.usage?.input_tokens || 0;
         const outputTokens = claudeResponse.usage?.output_tokens || 0;
+        markCredentialSuccess(buildCredentialId('claude-account', account.email), {
+            model: anthropicBody.model,
+            latencyMs: durationMs
+        });
         recordRequest({ provider: 'claude-pool', keyId: account.email, model: anthropicBody.model, inputTokens, outputTokens, durationMs, success: true });
         logRequest({ route: '/responses', provider: 'claude-pool', keyId: account.email, model: modelId, mappedModel: anthropicBody.model, requestBody: parsed, inputTokens, outputTokens, durationMs, status: 200, success: true });
         logger.success(`[Codex] <<< Assigned Claude account OK | ${account.email} | model=${modelId} | ${inputTokens}+${outputTokens} tokens | ${durationMs}ms`);
         if (isStreaming) sendResponsesSSE(res, responsesFormat); else res.json(responsesFormat);
         return true;
     } catch (error) {
+        markCredentialError(buildCredentialId('claude-account', account.email), error, {
+            model: anthropicBody.model,
+            invalid: error.message.includes('AUTH_EXPIRED')
+        });
         logger.error(`[Codex] Assigned Claude account error: ${account.email} - ${error.message}`);
         return false;
     }
@@ -546,11 +596,16 @@ async function _handleResponsesViaAssignedAccount(req, res, rawBody, contentEnco
         }
 
         const duration = Date.now() - startTime;
+        markCredentialSuccess(buildCredentialId('chatgpt-account', creds.email), {
+            model: modelId,
+            latencyMs: duration
+        });
         recordRequest({ provider: 'chatgpt-pool', keyId: creds.email, model: modelId, durationMs: duration, success: true });
         logRequest({ route: '/responses', method: 'POST', provider: 'chatgpt-pool', keyId: creds.email, model: modelId, mappedModel: modelId, durationMs: duration, status: 200, success: true });
         logger.success(`[Codex] <<< Assigned account OK | account=${creds.email} | model=${modelId} | ${duration}ms`);
         return true;
     } catch (error) {
+        markCredentialError(buildCredentialId('chatgpt-account', email), error, { model: modelId });
         logger.error(`[Codex] Assigned account error: ${email} - ${error.message}`);
         return false;
     }
@@ -893,11 +948,18 @@ async function _handleResponsesViaApiKey(res, parsed, modelId, isStreaming, keyT
                 if (response.status === 429) {
                     const retryAfter = response.headers?.get?.('retry-after');
                     recordRateLimit(provider.id, retryAfter ? parseInt(retryAfter) * 1000 : 60000);
+                    markCredentialRateLimited(buildCredentialId('api-key', provider.id), retryAfter ? parseInt(retryAfter) * 1000 : 60000, {
+                        model: mappedModel
+                    });
                     logger.warn(`[Codex Proxy] API key rate limited: ${provider.name}`);
                     continue;
                 }
                 if (response.status === 401 || response.status === 403) {
                     recordError(provider.id);
+                    markCredentialError(buildCredentialId('api-key', provider.id), `auth_error_${response.status}`, {
+                        model: mappedModel,
+                        invalid: true
+                    });
                     continue;
                 }
 
@@ -906,6 +968,9 @@ async function _handleResponsesViaApiKey(res, parsed, modelId, isStreaming, keyT
                         fatalRequestError = true;
                     }
                     recordError(provider.id);
+                    markCredentialError(buildCredentialId('api-key', provider.id), `http_${response.status}`, {
+                        model: mappedModel
+                    });
                     recordRequest({ provider: type, keyId: provider.id, model: mappedModel, durationMs, success: false, error: responseBody.slice(0, 200) });
                     logRequest({ route: '/responses', provider: type, keyId: provider.id, model: modelId, mappedModel, requestBody: parsed, responseBody, durationMs, status: response.status, success: false, error: responseBody.slice(0, 200) });
                     logger.warn(`[Codex Proxy] API key error ${response.status}: ${provider.name} - ${responseBody.slice(0, 200)}`);
@@ -929,6 +994,10 @@ async function _handleResponsesViaApiKey(res, parsed, modelId, isStreaming, keyT
                 const outputTokens = responsesFormat.usage?.output_tokens || 0;
                 const cost = provider.estimateCost(mappedModel, inputTokens, outputTokens);
                 recordUsage(provider.id, { inputTokens, outputTokens, model: mappedModel });
+                markCredentialSuccess(buildCredentialId('api-key', provider.id), {
+                    model: mappedModel,
+                    latencyMs: durationMs
+                });
                 recordRequest({ provider: type, keyId: provider.id, model: mappedModel, inputTokens, outputTokens, cost, durationMs, success: true });
                 logRequest({ route: '/responses', provider: type, keyId: provider.id, model: modelId, mappedModel, requestBody: parsed, responseBody, inputTokens, outputTokens, cost, durationMs, status: 200, success: true });
 
@@ -942,6 +1011,7 @@ async function _handleResponsesViaApiKey(res, parsed, modelId, isStreaming, keyT
                 return;
             } catch (error) {
                 recordError(provider.id);
+                markCredentialError(buildCredentialId('api-key', provider.id), error, { model: modelId });
                 recordRequest({ provider: type, keyId: provider.id, model: modelId, durationMs: Date.now() - startTime, success: false, error: error.message });
                 logger.error(`[Codex Proxy] API key error: ${provider.name} - ${error.message}`);
                 continue;
@@ -1015,6 +1085,10 @@ async function _handleResponsesViaAccountPool(req, res, rawBody, contentEncoding
                 if (upstreamResponse.status === 401) {
                     rotator.markInvalid(creds.email, 'Token expired');
                     rotator.notifyFailure(account, modelId);
+                    markCredentialError(buildCredentialId('chatgpt-account', creds.email), 'AUTH_EXPIRED', {
+                        model: modelId,
+                        invalid: true
+                    });
                     logger.warn(`[Codex] Auth expired for ${creds.email}, trying next...`);
                     continue;
                 }
@@ -1023,6 +1097,9 @@ async function _handleResponsesViaAccountPool(req, res, rawBody, contentEncoding
                     const resetMs = parseResetTime(upstreamResponse, errorText);
                     rotator.markRateLimited(creds.email, resetMs, modelId);
                     rotator.notifyRateLimit(account, modelId);
+                    markCredentialRateLimited(buildCredentialId('chatgpt-account', creds.email), resetMs, {
+                        model: modelId
+                    });
 
                     if (resetMs <= SHORT_RATE_LIMIT_THRESHOLD_MS) {
                         logger.warn(`[Codex] Short rate limit on ${creds.email}, waiting ${resetMs}ms...`);
@@ -1035,6 +1112,9 @@ async function _handleResponsesViaAccountPool(req, res, rawBody, contentEncoding
                 }
 
                 logger.error(`[Codex Proxy] Upstream error ${upstreamResponse.status}: ${errorText.slice(0, 200)}`);
+                markCredentialError(buildCredentialId('chatgpt-account', creds.email), `http_${upstreamResponse.status}`, {
+                    model: modelId
+                });
                 recordRequest({ provider: 'chatgpt-pool', keyId: creds.email, model: modelId, durationMs: Date.now() - startTime, success: false, error: errorText.slice(0, 200) });
                 logRequest({ route: '/responses', method: 'POST', provider: 'chatgpt-pool', keyId: creds.email, model: modelId, durationMs: Date.now() - startTime, status: upstreamResponse.status, success: false, error: errorText.slice(0, 200) });
                 return res.status(upstreamResponse.status)
@@ -1081,6 +1161,10 @@ async function _handleResponsesViaAccountPool(req, res, rawBody, contentEncoding
             }
 
             const duration = Date.now() - startTime;
+            markCredentialSuccess(buildCredentialId('chatgpt-account', creds.email), {
+                model: modelId,
+                latencyMs: duration
+            });
             recordRequest({ provider: 'chatgpt-pool', keyId: creds.email, model: modelId, durationMs: duration, success: true });
             logRequest({ route: '/responses', method: 'POST', provider: 'chatgpt-pool', keyId: creds.email, model: modelId, mappedModel: modelId, durationMs: duration, status: 200, success: true });
             logger.success(`[Codex] <<< OK | account=${creds.email} | model=${modelId} | ${duration}ms`);
@@ -1095,6 +1179,9 @@ async function _handleResponsesViaAccountPool(req, res, rawBody, contentEncoding
                 return true;
             }
             const duration = Date.now() - startTime;
+            markCredentialError(buildCredentialId('chatgpt-account', creds.email), error, {
+                model: modelId
+            });
             recordRequest({ provider: 'chatgpt-pool', keyId: creds.email, model: modelId, durationMs: duration, success: false, error: error.message });
             logRequest({ route: '/responses', method: 'POST', provider: 'chatgpt-pool', keyId: creds.email, model: modelId, durationMs: duration, success: false, error: error.message });
             logger.error(`[Codex Proxy] Network error on ${creds.email}: ${error.message}`);
@@ -1339,6 +1426,10 @@ async function _handleResponsesViaClaudeAccount(res, parsed, modelId, isStreamin
 
             const inputTokens = claudeResponse.usage?.input_tokens || 0;
             const outputTokens = claudeResponse.usage?.output_tokens || 0;
+            markCredentialSuccess(buildCredentialId('claude-account', account.email), {
+                model: mappedModel,
+                latencyMs: durationMs
+            });
             recordRequest({ provider: 'claude-pool', keyId: account.email, model: mappedModel, inputTokens, outputTokens, durationMs, success: true });
             logRequest({ route: '/responses', provider: 'claude-pool', keyId: account.email, model: modelId, mappedModel, requestBody: parsed, inputTokens, outputTokens, durationMs, status: 200, success: true });
 
@@ -1365,6 +1456,10 @@ async function _handleResponsesViaClaudeAccount(res, parsed, modelId, isStreamin
                             const responsesFormat = _anthropicToResponsesFormat(retryResponse, modelId);
                             const inputTokens = retryResponse.usage?.input_tokens || 0;
                             const outputTokens = retryResponse.usage?.output_tokens || 0;
+                            markCredentialSuccess(buildCredentialId('claude-account', account.email), {
+                                model: anthropicBody.model,
+                                latencyMs: retryDurationMs
+                            });
                             recordRequest({ provider: 'claude-pool', keyId: account.email, model: anthropicBody.model, inputTokens, outputTokens, durationMs: retryDurationMs, success: true });
                             logger.success(`[Codex] <<< Claude account OK (after refresh) | ${account.email} | model=${modelId} | ${inputTokens}+${outputTokens} tokens | ${retryDurationMs}ms`);
                             if (isStreaming) { sendResponsesSSE(res, responsesFormat); } else { res.json(responsesFormat); }
@@ -1378,9 +1473,18 @@ async function _handleResponsesViaClaudeAccount(res, parsed, modelId, isStreamin
                 continue;
             }
             if (error.message.startsWith('RATE_LIMITED:')) {
+                const parts = error.message.split(':');
+                const waitMs = Number(parts[1]) || 60000;
+                markCredentialRateLimited(buildCredentialId('claude-account', account.email), waitMs, {
+                    model: anthropicBody.model
+                });
                 logger.warn(`[Codex] Claude account rate limited: ${account.email}`);
                 continue;
             }
+            markCredentialError(buildCredentialId('claude-account', account.email), error, {
+                model: modelId,
+                invalid: error.message.includes('AUTH_EXPIRED')
+            });
             recordRequest({ provider: 'claude-pool', keyId: account.email, model: modelId, durationMs, success: false, error: error.message });
             logger.error(`[Codex] Claude account error: ${account.email} - ${error.message}`);
             continue;
@@ -1409,6 +1513,10 @@ async function _handleResponsesViaAntigravityAccount(res, parsed, modelId, isStr
             durationMs,
             success: true
         });
+        markCredentialSuccess(buildCredentialId('antigravity-account', account.email), {
+            model: modelId,
+            latencyMs: durationMs
+        });
         logRequest({
             route: '/responses',
             provider: 'antigravity',
@@ -1425,6 +1533,11 @@ async function _handleResponsesViaAntigravityAccount(res, parsed, modelId, isStr
         if (isStreaming) sendResponsesSSE(res, responsesFormat); else res.json(responsesFormat);
         return true;
     } catch (error) {
+        if (account?.email) {
+            markCredentialError(buildCredentialId('antigravity-account', account.email), error, {
+                model: modelId
+            });
+        }
         logger.error(`[Responses] Antigravity error: ${account.email} - ${error.message}`);
         return false;
     }

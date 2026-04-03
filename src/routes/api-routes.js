@@ -32,6 +32,7 @@ import { handleListResources, handleGetResourceSummary, handleGetResourceById } 
 import { handleGetRequestLogs, handleGetLogDates, handleGetLogSettings, handleUpdateLogSettings } from './request-logs-route.js';
 import { handleGetToolsStatus, handleGetNodeInfo, handleInstallTool, handleInstallNode, handleLaunchTool, handleCheckUpdates, handleUpdateTool } from './tools-route.js';
 import { handleListChatSources, handleChatWithSource, handleStreamChatWithSource } from './chat-ui-route.js';
+import { handleGetRuntimeCredentials, handleGetRoutingDecisions, handleGetRoutingPreview } from './runtime-route.js';
 import {
   handleListAccounts,
   handleAccountStatus,
@@ -254,6 +255,11 @@ export function registerApiRoutes(app, { port }) {
   app.get('/api/request-logs/dates', handleGetLogDates);
   app.get('/api/request-logs/settings', handleGetLogSettings);
   app.put('/api/request-logs/settings', handleUpdateLogSettings);
+
+  // ─── Runtime Diagnostics ────────────────────────────────────────────────
+  app.get('/api/runtime/credentials', handleGetRuntimeCredentials);
+  app.get('/api/runtime/routing-decisions', handleGetRoutingDecisions);
+  app.get('/api/runtime/routing-preview', handleGetRoutingPreview);
 
   // ─── Tool Installer ────────────────────────────────────────────────────
   app.get('/api/tools/status', handleGetToolsStatus);
