@@ -169,9 +169,8 @@
 
 对应实现：
 
-- [src/format-converter.js](D:/proxypool-hub/src/format-converter.js)
+- [src/translators](D:/proxypool-hub/src/translators)
 - [src/direct-api.js](D:/proxypool-hub/src/direct-api.js)
-- [src/response-streamer.js](D:/proxypool-hub/src/response-streamer.js)
 
 ### 3.6 Web 仪表盘与产品化能力
 
@@ -385,7 +384,7 @@
 
 典型实现：
 
-- [src/format-converter.js](D:/proxypool-hub/src/format-converter.js)
+- [src/translators](D:/proxypool-hub/src/translators)
 - [src/direct-api.js](D:/proxypool-hub/src/direct-api.js)
 
 优点：
@@ -733,7 +732,7 @@
 - [src/account-manager.js](D:/proxypool-hub/src/account-manager.js)
 - [src/api-key-manager.js](D:/proxypool-hub/src/api-key-manager.js)
 - [src/app-routing.js](D:/proxypool-hub/src/app-routing.js)
-- [src/format-converter.js](D:/proxypool-hub/src/format-converter.js)
+- [src/translators](D:/proxypool-hub/src/translators)
 - [src/direct-api.js](D:/proxypool-hub/src/direct-api.js)
 - [src/tool-installer.js](D:/proxypool-hub/src/tool-installer.js)
 

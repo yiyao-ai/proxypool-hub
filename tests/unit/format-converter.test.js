@@ -1,16 +1,19 @@
 /**
- * Unit tests for src/format-converter.js
- * Tests Anthropic ↔ OpenAI Responses API conversion logic.
- * No server required — pure logic tests.
+ * Unit tests for the Phase 1 translator kernel.
+ * Tests Anthropic ↔ OpenAI Responses conversion logic.
  */
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  convertAnthropicToResponsesAPI,
+  translateAnthropicToOpenAIResponsesRequest as convertAnthropicToResponsesAPI
+} from '../../src/translators/request/anthropic-to-openai-responses.js';
+import {
   convertOutputToAnthropic,
-  generateMessageId
-} from '../../src/format-converter.js';
+  generateMessageId,
+  translateOpenAIResponsesToAnthropicMessage
+} from '../../src/translators/response/openai-responses-to-anthropic.js';
+import { getCachedSignature, getCachedSignatureFamily, clearThinkingSignatureCache } from '../../src/signature-cache.js';
 
 // ─── convertAnthropicToResponsesAPI ──────────────────────────────────────────
 
@@ -363,6 +366,98 @@ test('convertOutputToAnthropic: converts reasoning to thinking block', () => {
   assert.equal(result[0].type, 'thinking');
   assert.equal(result[0].thinking, '');
   assert.equal(result[0].signature, '');
+});
+
+test('convertAnthropicToResponsesAPI: assistant thinking is omitted from input but caches reasoning signature', () => {
+  clearThinkingSignatureCache();
+  const signature = 's'.repeat(60);
+  const req = {
+    model: 'gpt-5.2',
+    messages: [{
+      role: 'assistant',
+      content: [
+        { type: 'thinking', thinking: 'internal reasoning', signature },
+        { type: 'text', text: 'Answer draft' }
+      ]
+    }]
+  };
+
+  const result = convertAnthropicToResponsesAPI(req);
+  assert.equal(result.input.length, 1);
+  assert.equal(result.input[0].type, 'message');
+  assert.equal(result.input[0].role, 'assistant');
+  assert.equal(result.input[0].content, 'Answer draft');
+  assert.equal(getCachedSignatureFamily(signature), 'openai');
+});
+
+test('convertAnthropicToResponsesAPI: assistant tool_use restores cached thought signature implicitly', () => {
+  clearThinkingSignatureCache();
+  const toolSignature = 't'.repeat(60);
+
+  convertAnthropicToResponsesAPI({
+    model: 'gpt-5.2',
+    messages: [{
+      role: 'assistant',
+      content: [{
+        type: 'tool_use',
+        id: 'toolu_restore',
+        name: 'shell_command',
+        input: { command: 'Get-ChildItem' },
+        thoughtSignature: toolSignature
+      }]
+    }]
+  });
+
+  const result = convertAnthropicToResponsesAPI({
+    model: 'gpt-5.2',
+    messages: [{
+      role: 'assistant',
+      content: [{
+        type: 'tool_use',
+        id: 'toolu_restore',
+        name: 'shell_command',
+        input: { command: 'Get-ChildItem' }
+      }]
+    }]
+  });
+
+  const toolCall = result.input.find(item => item.type === 'function_call');
+  assert.ok(toolCall);
+  assert.equal(toolCall.call_id, 'fc_restore');
+  assert.equal(getCachedSignature('toolu_restore'), toolSignature);
+});
+
+test('translateOpenAIResponsesToAnthropicMessage: preserves reasoning and tool signatures', () => {
+  clearThinkingSignatureCache();
+  const reasoningSignature = 'r'.repeat(60);
+  const toolSignature = 'u'.repeat(60);
+
+  const result = translateOpenAIResponsesToAnthropicMessage({
+    output: [
+      {
+        type: 'reasoning',
+        text: 'step by step',
+        signature: reasoningSignature
+      },
+      {
+        type: 'function_call',
+        call_id: 'fc_sig',
+        id: 'fc_sig',
+        name: 'search',
+        arguments: '{"q":"repo"}',
+        signature: toolSignature
+      }
+    ],
+    usage: { input_tokens: 2, output_tokens: 3 }
+  }, { model: 'claude-sonnet-4-6' });
+
+  assert.equal(result.content[0].type, 'thinking');
+  assert.equal(result.content[0].thinking, 'step by step');
+  assert.equal(result.content[0].signature, reasoningSignature);
+  assert.equal(result.content[1].type, 'tool_use');
+  assert.equal(result.content[1].thoughtSignature, toolSignature);
+  assert.equal(getCachedSignatureFamily(reasoningSignature), 'openai');
+  assert.equal(getCachedSignature('toolu_sig'), toolSignature);
 });
 
 test('convertOutputToAnthropic: empty output returns default text block', () => {

@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { clearThinkingSignatureCache, getCachedSignature, getCachedSignatureFamily } from '../../src/signature-cache.js';
 
 import {
   streamOpenAIResponsesAsAnthropicEvents,
@@ -67,4 +68,54 @@ test('openai responses sse parser extracts completed response payload', async ()
   const parsed = await parseOpenAIResponsesSSE(response);
   assert.equal(parsed.output[0].type, 'message');
   assert.equal(parsed.usage.output_tokens, 4);
+});
+
+test('openai responses sse translator emits thinking signature delta and caches signatures', async () => {
+  clearThinkingSignatureCache();
+  const reasoningSignature = 'r'.repeat(60);
+  const toolSignature = 't'.repeat(60);
+  const response = createSseResponse([
+    {
+      type: 'response.output_item.added',
+      item: { type: 'reasoning', id: 'rs_1' }
+    },
+    {
+      type: 'response.reasoning.delta',
+      delta: 'considering options',
+      signature: reasoningSignature
+    },
+    {
+      type: 'response.output_item.done',
+      item: { type: 'reasoning', id: 'rs_1', signature: reasoningSignature }
+    },
+    {
+      type: 'response.output_item.added',
+      item: { type: 'function_call', call_id: 'fc_sig1', id: 'fc_sig1', name: 'shell_command' }
+    },
+    {
+      type: 'response.function_call_arguments.delta',
+      delta: '{"command":"dir"}'
+    },
+    {
+      type: 'response.function_call_arguments.done',
+      signature: toolSignature
+    },
+    {
+      type: 'response.completed',
+      response: {
+        usage: { input_tokens: 2, output_tokens: 4 }
+      }
+    }
+  ]);
+
+  const events = [];
+  for await (const event of streamOpenAIResponsesAsAnthropicEvents(response, 'gpt-5.4')) {
+    events.push(event);
+  }
+
+  const signatureDelta = events.find(event => event.event === 'content_block_delta' && event.data?.delta?.type === 'signature_delta');
+  assert.ok(signatureDelta);
+  assert.equal(signatureDelta.data.delta.signature, reasoningSignature);
+  assert.equal(getCachedSignatureFamily(reasoningSignature), 'openai');
+  assert.equal(getCachedSignature('toolu_sig1'), toolSignature);
 });

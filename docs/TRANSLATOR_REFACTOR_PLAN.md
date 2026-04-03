@@ -38,6 +38,22 @@
 - 不在第一阶段重做 UI、账户管理或日志系统。
 - 不在第一阶段修改所有协议，只先打通最复杂、最有价值的链路。
 
+## 2.2 当前阶段状态
+
+截至 2026-04-03，Phase 1 的主目标已经完成：
+
+- `Anthropic Messages <-> OpenAI Responses` 主链路已迁入 `src/translators/`
+- `direct-api.js` 已通过 translator registry 调用新 request / response / SSE translator
+- `OpenAIProvider` 与 `AzureOpenAIProvider` 的 Anthropic bridge 已接入新 translator 内核
+- 历史 `format-converter.js` / `response-streamer.js` 包装层已完成下线，运行时代码统一走 `src/translators/`
+
+当前进入的不是“继续建立内核”，而是：
+
+- Phase 1 收尾
+- 旧包装层清理
+- 验收测试补强
+- 为下一阶段 provider 扩展做准备
+
 ---
 
 ## 2.1 必须保持的产品目标
@@ -110,11 +126,11 @@
 
 ### 3.1 转换逻辑分散
 
-当前与协议转换直接相关的逻辑散落在如下位置：
+当前与协议转换直接相关的逻辑曾经散落在如下位置：
 
-- `src/format-converter.js`
+- 历史 Responses wrapper
 - `src/kilo-format-converter.js`
-- `src/response-streamer.js`
+- 历史 SSE wrapper
 - `src/routes/messages-route.js`
 - `src/routes/responses-route.js`
 - `src/routes/codex-route.js`
@@ -408,9 +424,9 @@ Translator Layer 在本项目里还必须承担一个关键职责：
 
 迁移范围：
 
-- 当前 `src/format-converter.js`
-- 当前 `src/response-streamer.js`
-- 当前 `src/direct-api.js` 中与格式转换直接相关的部分
+- 历史 Responses wrapper
+- 历史 SSE wrapper
+- `src/direct-api.js` 中与格式转换直接相关的部分
 
 建议拆分：
 
@@ -695,7 +711,7 @@ Translator Layer 在本项目里还必须承担一个关键职责：
 4. 新建 `openai-responses -> anthropic` response translator
 5. 新建 `chatgpt-responses-executor`
 6. 让 `direct-api.js` 优先接入新 translator
-7. 保留旧 `format-converter.js` 和 `response-streamer.js`，待验证稳定后再删
+7. 清理旧 Responses/SSE wrapper，并确认所有入口统一转向 `src/translators/`
 
 第一阶段同时必须确认：
 

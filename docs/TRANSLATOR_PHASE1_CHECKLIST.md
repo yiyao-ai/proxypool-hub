@@ -86,7 +86,7 @@ src/
 
 来源：
 
-- `src/format-converter.js`
+- 历史 Responses wrapper / 旧转换实现
 - `src/kilo-format-converter.js`
 
 需要抽离的能力：
@@ -123,8 +123,7 @@ src/
 
 - `src/thinking-utils.js`
 - `src/signature-cache.js`
-- `src/format-converter.js`
-- `src/response-streamer.js`
+- 历史 Responses wrapper / 旧 SSE wrapper
 
 需要抽离的能力：
 
@@ -139,7 +138,7 @@ src/
 
 来源：
 
-- `src/format-converter.js`
+- 历史 Responses wrapper / 旧转换实现
 - `src/providers/azure-openai.js`
 - `src/providers/gemini.js`
 - `src/providers/vertex-ai.js`
@@ -158,8 +157,8 @@ src/
 
 来源：
 
-- `src/response-streamer.js`
-- `src/format-converter.js`
+- 历史 SSE wrapper
+- 历史 Responses wrapper / 旧转换实现
 - `src/kilo-format-converter.js`
 - `src/providers/format-bridge.js`
 - `src/providers/gemini.js`
@@ -183,7 +182,7 @@ src/
 
 - `messages-route.js`
 - `direct-api.js`
-- `format-converter.js`
+- 历史 Responses wrapper
 
 第一阶段新链路目标：
 
@@ -197,7 +196,7 @@ src/
 旧链路：
 
 - `direct-api.js`
-- `format-converter.js`
+- 历史 Responses wrapper
 
 第一阶段新链路目标：
 
@@ -210,7 +209,7 @@ src/
 
 旧链路：
 
-- `response-streamer.js`
+- 历史 SSE wrapper
 - `messages-route.js`
 
 第一阶段新链路目标：
@@ -255,7 +254,7 @@ src/
 
 以下测试可直接作为第一阶段迁移基线：
 
-- `tests/unit/format-converter.test.js`
+- `tests/unit/format-converter.test.js`（当前作为 Phase 1 translator kernel 的历史命名回归测试保留）
 - `tests/unit/azure-openai-provider.test.js`
 - `tests/unit/gemini-provider.test.js`
 - `tests/unit/vertex-ai-provider.test.js`
@@ -319,6 +318,29 @@ src/
 - tool call 回归
 - 图片路径回归
 - `tool_result` 图像内容回归
+
+---
+
+## 8.1 当前验收状态（2026-04-03）
+
+当前代码与测试状态如下：
+
+- 已完成：
+  - 新目录结构已建立
+  - translator registry 已接入
+  - `direct-api.js` 主链路已切换到新 translator
+  - OpenAI / Azure 的 Anthropic bridge 已复用新 translator
+  - text / tool_use / tool_result / 图片输入 / multimodal tool_result / SSE 已有测试覆盖
+  - thinking / signature 关键路径已补充回归测试
+  - 历史 Responses/SSE wrapper 文件已删除
+
+- 剩余收尾：
+  - 将所有残余测试命名与文档表述从旧 converter 术语切换到 translator kernel 术语
+
+结论：
+
+- Phase 1 已可视为“架构完成 + 验证通过”
+- 后续工作应以清理与扩展为主，而不是重新建设第一阶段能力
 
 ---
 

@@ -71,7 +71,7 @@
 - `tool_result` 中图像内容 -> Responses multimodal output
 - `tool_result` 中图像内容 -> Gemini/Vertex functionResponse 或降级 user multimodal parts
 
-但这些能力分散在多个 provider 和 converter 中，且存在 provider 差异化降级逻辑。
+但这些能力仍分散在多个 provider 和 translator 模块中，且存在 provider 差异化降级逻辑。
 
 ### 3.3 thinking / reasoning 兼容也已存在，但目前实现分散
 
@@ -147,7 +147,8 @@
 
 现有基线主要分布在：
 
-- [format-converter.js](D:/proxypool-hub/src/format-converter.js)
+- [anthropic-to-openai-responses.js](D:/proxypool-hub/src/translators/request/anthropic-to-openai-responses.js)
+- [openai-responses-to-anthropic.js](D:/proxypool-hub/src/translators/response/openai-responses-to-anthropic.js)
 - [format-converter.test.js](D:/proxypool-hub/tests/unit/format-converter.test.js)
 
 ## 5.2 Azure OpenAI Anthropic bridge 已覆盖工具和多模态

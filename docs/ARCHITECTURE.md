@@ -77,9 +77,13 @@ proxypool-hub/
     ├── claude-api.js           # Anthropic upstream client
     ├── kilo-api.js             # Kilo AI free model client
     │
-    ├── format-converter.js     # Anthropic ↔ OpenAI Responses conversion
+    ├── translators/            # Phase 1 protocol translation kernel
+    │   ├── registry.js
+    │   ├── request/
+    │   ├── response/
+    │   ├── normalizers/
+    │   └── shared/
     ├── kilo-format-converter.js # Anthropic ↔ OpenAI Chat conversion
-    ├── response-streamer.js    # SSE stream converter
     ├── thinking-utils.js       # Extended thinking support
     │
     ├── model-mapper.js         # Model → upstream routing (Kilo/account)
@@ -136,7 +140,7 @@ proxypool-hub/
 | `account-rotation/` | Random, sequential strategies for multi-account routing |
 | `model-mapper.js` | Routes models to Kilo (free) or account pool |
 | `model-mapping.js` | Maps model names to provider-native equivalents |
-| `format-converter.js` | Bidirectional Anthropic ↔ OpenAI Responses API conversion |
+| `translators/` | Shared request/response/SSE protocol translation kernel |
 | `usage-tracker.js` | Per-request cost estimation and usage aggregation |
 | `request-logger.js` | Persistent request/response logging with daily rotation |
 
@@ -147,9 +151,9 @@ proxypool-hub/
 1. Claude Code sends Anthropic-format request to `POST /v1/messages`
 2. `messages-route.js` resolves model routing (Kilo free / ChatGPT account / Claude account / API key)
 3. Account rotator selects an account based on strategy (random/sequential)
-4. `format-converter.js` converts Anthropic format to OpenAI Responses API format
+4. `src/translators/request/anthropic-to-openai-responses.js` converts Anthropic format to OpenAI Responses format
 5. `direct-api.js` sends request to ChatGPT backend with account credentials
-6. `response-streamer.js` converts OpenAI SSE events back to Anthropic SSE format
+6. `src/translators/response/openai-responses-sse-to-anthropic-sse.js` converts OpenAI SSE events back to Anthropic SSE format
 7. Response is streamed to Claude Code
 
 ### Smart Token Refresh
