@@ -87,12 +87,27 @@ export function sanitizeClaudeBody(body) {
         cleaned.messages = _fixMessageOrder(cleaned.messages);
     }
     if (Array.isArray(cleaned.tools)) {
-        cleaned.tools = cleaned.tools.map(tool => ({
-            ...tool,
-            input_schema: sanitizeClaudeToolSchema(tool?.input_schema)
-        }));
+        cleaned.tools = cleaned.tools.map(tool => sanitizeClaudeTool(tool));
     }
     return cleaned;
+}
+
+function sanitizeClaudeTool(tool) {
+    if (!tool || typeof tool !== 'object' || Array.isArray(tool)) {
+        return tool;
+    }
+
+    // Anthropic hosted tools use their own type-specific shape and reject
+    // custom-tool fields like input_schema on the messages endpoint.
+    if (typeof tool.type === 'string' && tool.type.length > 0) {
+        const { input_schema, ...rest } = tool;
+        return rest;
+    }
+
+    return {
+        ...tool,
+        input_schema: sanitizeClaudeToolSchema(tool.input_schema)
+    };
 }
 
 function hasTopLevelClaudeUnsupportedComposition(schema) {

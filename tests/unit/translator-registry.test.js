@@ -7,6 +7,7 @@ test('registry translates anthropic messages request into openai responses reque
   const result = translateRequest('anthropic-messages', 'openai-responses', {
     model: 'gpt-5.2',
     system: [{ type: 'text', text: 'Be concise.' }],
+    tool_choice: { type: 'tool', name: 'search_repo' },
     messages: [
       {
         role: 'user',
@@ -31,6 +32,16 @@ test('registry translates anthropic messages request into openai responses reque
   assert.ok(Array.isArray(result.input[0].content));
   assert.equal(result.input[0].content[0].type, 'input_text');
   assert.equal(result.input[0].content[1].type, 'input_image');
+  assert.deepEqual(result.tool_choice, { type: 'function', function: { name: 'search_repo' } });
+});
+
+test('registry translates anthropic any tool_choice into required for openai responses', () => {
+  const result = translateRequest('anthropic-messages', 'openai-responses', {
+    messages: [{ role: 'user', content: 'use a tool if needed' }],
+    tool_choice: { type: 'any' }
+  });
+
+  assert.equal(result.tool_choice, 'required');
 });
 
 test('registry translates openai responses payload into anthropic message', () => {

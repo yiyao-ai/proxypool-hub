@@ -17,6 +17,37 @@ function convertAnthropicToolsToOpenAI(tools) {
     }));
 }
 
+function convertAnthropicToolChoice(toolChoice) {
+    if (!toolChoice) {
+        return 'auto';
+    }
+
+    if (typeof toolChoice === 'string') {
+        return toolChoice;
+    }
+
+    if (toolChoice.type === 'auto') {
+        return 'auto';
+    }
+
+    if (toolChoice.type === 'any') {
+        return 'required';
+    }
+
+    if (toolChoice.type === 'none') {
+        return 'none';
+    }
+
+    if (toolChoice.type === 'tool' && toolChoice.name) {
+        return {
+            type: 'function',
+            function: { name: toolChoice.name }
+        };
+    }
+
+    return 'auto';
+}
+
 export function translateAnthropicToOpenAIResponsesRequest(anthropicRequest, context = {}) {
     const instructions = extractSystemPrompt(anthropicRequest.system);
 
@@ -24,7 +55,7 @@ export function translateAnthropicToOpenAIResponsesRequest(anthropicRequest, con
         model: anthropicRequest.model || context.defaultModel || 'gpt-5.2-codex',
         input: convertAnthropicMessagesToResponsesInput(anthropicRequest.messages || []),
         tools: convertAnthropicToolsToOpenAI(anthropicRequest.tools),
-        tool_choice: anthropicRequest.tool_choice || 'auto',
+        tool_choice: convertAnthropicToolChoice(anthropicRequest.tool_choice),
         parallel_tool_calls: true,
         store: false,
         stream: context.stream ?? anthropicRequest.stream ?? true,

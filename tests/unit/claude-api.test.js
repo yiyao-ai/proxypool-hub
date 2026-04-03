@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { sendClaudeStream, _testExports } from '../../src/claude-api.js';
+import { sendClaudeStream, sanitizeClaudeBody, _testExports } from '../../src/claude-api.js';
 
 test('buildClaudeNetworkError includes processed and original fetch cause details', () => {
   const cause = new Error('connect ETIMEDOUT api.anthropic.com');
@@ -34,4 +34,27 @@ test('sendClaudeStream surfaces wrapped network errors with original cause detai
   } finally {
     global.fetch = originalFetch;
   }
+});
+
+test('sanitizeClaudeBody preserves hosted Anthropic tools without injecting input_schema', () => {
+  const result = sanitizeClaudeBody({
+    model: 'claude-opus-4-6',
+    messages: [{ role: 'user', content: 'search the web' }],
+    tools: [{
+      type: 'web_search_20250305',
+      name: 'web_search',
+      max_uses: 5,
+      input_schema: {
+        type: 'object',
+        properties: {
+          query: { type: 'string' }
+        }
+      }
+    }]
+  });
+
+  assert.equal(result.tools[0].type, 'web_search_20250305');
+  assert.equal(result.tools[0].name, 'web_search');
+  assert.equal(result.tools[0].max_uses, 5);
+  assert.equal('input_schema' in result.tools[0], false);
 });
