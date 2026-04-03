@@ -5,6 +5,7 @@
  */
 
 import { BaseProvider } from './base.js';
+import { mergeRequestEchoIntoContext } from '../translators/normalizers/request-echo.js';
 import { translateAnthropicToOpenAIResponsesRequest } from '../translators/request/anthropic-to-openai-responses.js';
 import { translateOpenAIResponsesToAnthropicMessage } from '../translators/response/openai-responses-to-anthropic.js';
 import { estimateCostWithRegistry, getDefaultPricing } from '../pricing-registry.js';
@@ -91,10 +92,10 @@ export class OpenAIProvider extends BaseProvider {
         if (!response.ok) return response;
 
         const data = await response.json();
-        const anthropicResponse = translateOpenAIResponsesToAnthropicMessage(data, {
-            model: body.model,
-            requestEcho: openaiBody.__translatorMeta?.requestEcho
-        });
+        const anthropicResponse = translateOpenAIResponsesToAnthropicMessage(
+            data,
+            mergeRequestEchoIntoContext({ model: body.model }, openaiBody)
+        );
 
         return new Response(JSON.stringify(anthropicResponse), {
             status: 200,

@@ -1,0 +1,54 @@
+[
+  {
+    "name": "tool_use_stream",
+    "events": [
+      {
+        "type": "response.output_item.added",
+        "item": { "type": "function_call", "call_id": "fc_tool1", "name": "shell_command" }
+      },
+      {
+        "type": "response.function_call_arguments.delta",
+        "delta": "{\"command\":\"Get-ChildItem\"}"
+      },
+      {
+        "type": "response.completed",
+        "response": {
+          "usage": { "input_tokens": 1, "output_tokens": 2 }
+        }
+      }
+    ],
+    "model": "gpt-5.4",
+    "assert": {
+      "eventTypes": ["message_start", "content_block_start", "content_block_delta"],
+      "stop_reason": "tool_use"
+    }
+  },
+  {
+    "name": "incomplete_stream",
+    "events": [
+      {
+        "type": "response.output_item.added",
+        "item": { "type": "message", "id": "msg_1" }
+      },
+      {
+        "type": "response.output_text.delta",
+        "delta": "partial answer"
+      },
+      {
+        "type": "response.completed",
+        "response": {
+          "status": "incomplete",
+          "output": [
+            { "type": "message", "content": [{ "type": "output_text", "text": "partial answer" }] }
+          ],
+          "usage": { "input_tokens": 2, "output_tokens": 8 }
+        }
+      }
+    ],
+    "model": "gpt-5.4",
+    "assert": {
+      "stop_reason": "max_tokens",
+      "output_tokens": 8
+    }
+  }
+]

@@ -3,6 +3,7 @@
  * Makes direct HTTP calls to ChatGPT's backend API
  */
 
+import { mergeRequestEchoIntoContext } from './translators/normalizers/request-echo.js';
 import { translateRequest, translateResponse } from './translators/registry.js';
 import { executeChatGPTResponsesRequest, parseResetTime } from './executors/chatgpt-responses-executor.js';
 
@@ -23,11 +24,10 @@ export async function* sendMessageStream(anthropicRequest, accessToken, accountI
         currentEmail
     });
 
-    yield* translateResponse('openai-responses', 'anthropic-messages', response, {
+    yield* translateResponse('openai-responses', 'anthropic-messages', response, mergeRequestEchoIntoContext({
         mode: 'stream',
-        model: anthropicRequest.model,
-        requestEcho: request.__translatorMeta?.requestEcho
-    });
+        model: anthropicRequest.model
+    }, request));
 }
 
 export async function openMessageStream(anthropicRequest, accessToken, accountId, accountRotator = null, currentEmail = null) {
@@ -63,10 +63,9 @@ export async function sendMessage(anthropicRequest, accessToken, accountId) {
         mode: 'parse'
     });
 
-    return translateResponse('openai-responses', 'anthropic-messages', apiResponse, {
+    return translateResponse('openai-responses', 'anthropic-messages', apiResponse, mergeRequestEchoIntoContext({
         model: anthropicRequest.model,
-        requestEcho: request.__translatorMeta?.requestEcho
-    });
+    }, request));
 }
 
 export { parseResetTime };

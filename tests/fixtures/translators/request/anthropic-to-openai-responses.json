@@ -1,0 +1,63 @@
+[
+  {
+    "name": "multimodal_user_with_named_tool_choice",
+    "input": {
+      "model": "gpt-5.2",
+      "system": [
+        { "type": "text", "text": "Be concise." }
+      ],
+      "tool_choice": { "type": "tool", "name": "search_repo" },
+      "messages": [
+        {
+          "role": "user",
+          "content": [
+            { "type": "text", "text": "look at this" },
+            {
+              "type": "image",
+              "source": {
+                "type": "url",
+                "url": "https://example.com/cat.jpg",
+                "media_type": "image/jpeg"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    "context": { "stream": false },
+    "assert": {
+      "model": "gpt-5.2",
+      "stream": false,
+      "instructions": "Be concise.",
+      "tool_choice": { "type": "function", "function": { "name": "search_repo" } },
+      "firstInputContentTypes": ["input_text", "input_image"]
+    }
+  },
+  {
+    "name": "hosted_tool_is_omitted_with_metadata",
+    "input": {
+      "model": "gpt-5.2",
+      "messages": [
+        { "role": "user", "content": "search the web" }
+      ],
+      "tools": [
+        {
+          "type": "web_search_20250305",
+          "name": "web_search",
+          "max_uses": 3
+        }
+      ],
+      "tool_choice": {
+        "type": "tool",
+        "name": "web_search"
+      }
+    },
+    "assert": {
+      "toolsLength": 0,
+      "tool_choice": "auto",
+      "unsupportedToolsLength": 1,
+      "unsupportedHostedType": "web_search_20250305",
+      "toolChoiceReason": "target_does_not_support_hosted_tool_choice"
+    }
+  }
+]

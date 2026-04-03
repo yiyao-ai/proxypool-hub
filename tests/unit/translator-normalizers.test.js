@@ -3,10 +3,22 @@ import assert from 'node:assert/strict';
 
 import { convertAnthropicUserContent } from '../../src/translators/normalizers/multimodal.js';
 import {
+  attachRequestEcho,
+  buildRequestEcho,
+  mergeRequestEchoIntoContext,
+  readRequestEcho,
+  resolveResponseModel
+} from '../../src/translators/normalizers/request-echo.js';
+import {
   normalizeAnthropicReasoningConfig,
   normalizeAnthropicResponsesRequestOptions
 } from '../../src/translators/normalizers/responses-request.js';
 import { sanitizeToolSchema } from '../../src/translators/normalizers/schemas.js';
+import {
+  canonicalizeAnthropicTools,
+  convertAnthropicToolChoiceToOpenAIResponses,
+  convertAnthropicToolsToOpenAIResponses
+} from '../../src/translators/normalizers/tools.js';
 import { toOpenAIToolId, toAnthropicToolId } from '../../src/translators/normalizers/tool-ids.js';
 import { normalizeOpenAIResponsesUsage } from '../../src/translators/normalizers/usage.js';
 import { inferAnthropicStopReasonFromResponsesOutput } from '../../src/translators/normalizers/stop-reasons.js';
@@ -172,4 +184,96 @@ test('responses request normalizer maps disabled and adaptive anthropic thinking
     }),
     { effort: 'high' }
   );
+});
+
+test('request-echo normalizer builds, attaches, reads, and merges requestEcho consistently', () => {
+  const request = { model: 'gpt-5.4' };
+  const requestEcho = buildRequestEcho(
+    { model: 'claude-sonnet-4-6', instructions: 'Be concise.' },
+    { reasoning: { effort: 'high' } }
+  );
+
+  attachRequestEcho(request, requestEcho);
+
+  assert.deepEqual(readRequestEcho(request), {
+    model: 'claude-sonnet-4-6',
+    instructions: 'Be concise.',
+    reasoning: { effort: 'high' }
+  });
+
+  const mergedContext = mergeRequestEchoIntoContext({ mode: 'stream' }, request);
+  assert.equal(mergedContext.mode, 'stream');
+  assert.equal(mergedContext.requestEcho.model, 'claude-sonnet-4-6');
+
+  assert.equal(
+    resolveResponseModel({ model: 'gpt-5.4' }, mergedContext),
+    'claude-sonnet-4-6'
+  );
+});
+
+test('tools normalizer canonicalizes function and hosted anthropic tools explicitly', () => {
+  const canonical = canonicalizeAnthropicTools([
+    {
+      name: 'search_repo',
+      description: 'Search the repo',
+      input_schema: {
+        type: 'object',
+        properties: {
+          query: { type: 'string', minLength: 1 }
+        }
+      }
+    },
+    {
+      type: 'web_search_20250305',
+      name: 'web_search',
+      max_uses: 3
+    }
+  ]);
+
+  assert.equal(canonical[0].kind, 'function');
+  assert.equal(canonical[0].name, 'search_repo');
+  assert.equal(canonical[0].parameters.properties.query.type, 'string');
+  assert.equal('minLength' in canonical[0].parameters.properties.query, false);
+  assert.equal(canonical[1].kind, 'hosted');
+  assert.equal(canonical[1].name, 'web_search');
+  assert.equal(canonical[1].hostedType, 'web_search_20250305');
+});
+
+test('tools normalizer omits hosted tools for openai responses and reports them explicitly', () => {
+  const result = convertAnthropicToolsToOpenAIResponses([
+    {
+      name: 'search_repo',
+      input_schema: { type: 'object', properties: { query: { type: 'string' } } }
+    },
+    {
+      type: 'web_search_20250305',
+      name: 'web_search'
+    }
+  ]);
+
+  assert.equal(result.tools.length, 1);
+  assert.equal(result.tools[0].type, 'function');
+  assert.equal(result.tools[0].name, 'search_repo');
+  assert.equal(result.unsupportedTools.length, 1);
+  assert.equal(result.unsupportedTools[0].name, 'web_search');
+  assert.equal(result.unsupportedTools[0].hostedType, 'web_search_20250305');
+  assert.equal(result.unsupportedTools[0].action, 'omit');
+});
+
+test('tools normalizer downgrades hosted tool_choice for unsupported targets explicitly', () => {
+  const canonical = canonicalizeAnthropicTools([
+    {
+      type: 'web_search_20250305',
+      name: 'web_search'
+    }
+  ]);
+
+  const result = convertAnthropicToolChoiceToOpenAIResponses(
+    { type: 'tool', name: 'web_search' },
+    canonical
+  );
+
+  assert.equal(result.value, 'auto');
+  assert.equal(result.meta.reason, 'target_does_not_support_hosted_tool_choice');
+  assert.equal(result.meta.requestedTool, 'web_search');
 });

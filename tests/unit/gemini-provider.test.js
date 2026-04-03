@@ -2,7 +2,9 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { GeminiProvider } from '../../src/providers/gemini.js';
+import { clearThinkingSignatureCache } from '../../src/signature-cache.js';
 import { logger } from '../../src/utils/logger.js';
+import { translateAnthropicToGeminiRequest } from '../../src/translators/request/anthropic-to-gemini.js';
 
 test('GeminiProvider.sendAnthropicRequest downgrades tool_result image content to user multimodal parts', async () => {
   const provider = new GeminiProvider({
@@ -376,4 +378,54 @@ test('GeminiProvider.sendAnthropicRequest forwards anthropic document blocks as 
   } finally {
     global.fetch = originalFetch;
   }
+});
+
+test('translateAnthropicToGeminiRequest forces structured tool calls for Gemini capability profile', () => {
+  clearThinkingSignatureCache();
+
+  const result = translateAnthropicToGeminiRequest({
+    _proxypoolAppId: 'claude-code',
+    tools: [{
+      name: 'Read',
+      input_schema: { type: 'object', properties: {} }
+    }],
+    messages: [{
+      role: 'assistant',
+      content: [{
+        type: 'tool_use',
+        id: 'toolu_read_1',
+        name: 'Read',
+        input: { file_path: 'README.md' }
+      }]
+    }]
+  }, {
+    capabilityProfile: 'gemini'
+  });
+
+  assert.equal(result.contents[0].parts[0].functionCall.name, 'Read');
+  assert.deepEqual(result.contents[0].parts[0].functionCall.args, { file_path: 'README.md' });
+  assert.deepEqual(result.generationConfig.thinkingConfig, { thinkingBudget: 0 });
+});
+
+test('translateAnthropicToGeminiRequest keeps default profile signature-based without cached thoughtSignature', () => {
+  clearThinkingSignatureCache();
+
+  const result = translateAnthropicToGeminiRequest({
+    tools: [{
+      name: 'Read',
+      input_schema: { type: 'object', properties: {} }
+    }],
+    messages: [{
+      role: 'assistant',
+      content: [{
+        type: 'tool_use',
+        id: 'toolu_read_2',
+        name: 'Read',
+        input: { file_path: 'README.md' }
+      }]
+    }]
+  });
+
+  assert.equal(result.contents[0].parts[0].text, '[Called function: Read({"file_path":"README.md"})]');
+  assert.equal('thinkingConfig' in result.generationConfig, false);
 });

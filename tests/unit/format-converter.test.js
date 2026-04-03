@@ -410,6 +410,29 @@ test('convertAnthropicToResponsesAPI: sanitizeSchema handles array type → pick
   assert.equal(valProp.type, 'string');
 });
 
+test('convertAnthropicToResponsesAPI: hosted tools are omitted and downgrade metadata is preserved', () => {
+  const req = {
+    model: 'gpt-5.2',
+    messages: [{ role: 'user', content: 'search the web' }],
+    tools: [{
+      type: 'web_search_20250305',
+      name: 'web_search',
+      max_uses: 3
+    }],
+    tool_choice: {
+      type: 'tool',
+      name: 'web_search'
+    }
+  };
+
+  const result = convertAnthropicToResponsesAPI(req);
+  assert.deepEqual(result.tools, []);
+  assert.equal(result.tool_choice, 'auto');
+  assert.equal(result.__translatorMeta.unsupportedTools.length, 1);
+  assert.equal(result.__translatorMeta.unsupportedTools[0].hostedType, 'web_search_20250305');
+  assert.equal(result.__translatorMeta.toolChoiceMeta.reason, 'target_does_not_support_hosted_tool_choice');
+});
+
 // ─── convertOutputToAnthropic ─────────────────────────────────────────────────
 
 test('convertOutputToAnthropic: converts message output_text to text block', () => {

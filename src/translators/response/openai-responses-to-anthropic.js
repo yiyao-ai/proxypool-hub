@@ -1,4 +1,5 @@
 import crypto from 'crypto';
+import { resolveResponseModel } from '../normalizers/request-echo.js';
 import { convertResponsesOutputToAnthropicContent } from '../shared/content-blocks.js';
 import { normalizeOpenAIResponsesUsage } from '../normalizers/usage.js';
 import { inferAnthropicStopReasonFromResponsesResponse } from '../normalizers/responses-events.js';
@@ -11,7 +12,7 @@ export function generateMessageId() {
 }
 
 export function translateOpenAIResponsesToAnthropicMessage(apiResponse, context = {}) {
-    const responseModel = context.model || context.requestEcho?.model || apiResponse?.model;
+    const responseModel = resolveResponseModel(apiResponse, context);
     const usage = normalizeOpenAIResponsesUsage(apiResponse?.usage);
     const stopReason = apiResponse?.status === 'incomplete'
         ? 'max_tokens'

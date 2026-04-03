@@ -12,6 +12,7 @@ import {
     summarizeAnthropicToolsForGemini
 } from '../translators/request/anthropic-to-gemini.js';
 import { translateGeminiToAnthropicMessage } from '../translators/response/gemini-to-anthropic.js';
+import { resolveAnthropicGeminiCapabilities } from '../translators/registry.js';
 
 const DEFAULT_BASE_URL = 'https://generativelanguage.googleapis.com/v1beta';
 
@@ -461,15 +462,19 @@ export class GeminiProvider extends BaseProvider {
     async sendAnthropicRequest(body) {
         const appId = body?._proxypoolAppId || 'unknown-anthropic-client';
         const geminiModel = this._mapToGeminiModel(body.model);
+        const capabilities = resolveAnthropicGeminiCapabilities({
+            provider: 'gemini',
+            appId,
+            hasTools: Array.isArray(body.tools) && body.tools.length > 0
+        });
         const geminiBody = translateAnthropicToGeminiRequest(body, {
-            forceStructuredToolCalls: true,
-            disableThinkingBudget: Array.isArray(body.tools) && body.tools.length > 0 && appId === 'claude-code',
+            capabilityProfile: 'gemini',
             onMultimodalToolResultDowngrade: ({ functionName, toolUseId }) => {
                 logger.info(`[Gemini] Downgrading multimodal tool_result to user parts | tool=${functionName} | tool_use_id=${toolUseId}`);
             }
         });
 
-        if (Array.isArray(body.tools) && body.tools.length > 0 && appId === 'claude-code') {
+        if (capabilities.disableThinkingBudget) {
             const toolSummary = summarizeAnthropicToolsForGemini(body.tools);
             logger.info(`[Gemini] Enabled Claude Code tool compatibility | model=${geminiModel} | tools=${toolSummary.count} | tool_names=${toolSummary.names.join(',')}`);
         }

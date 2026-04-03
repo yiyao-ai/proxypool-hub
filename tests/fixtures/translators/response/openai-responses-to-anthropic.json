@@ -1,0 +1,37 @@
+[
+  {
+    "name": "message_and_tool_use",
+    "input": {
+      "output": [
+        { "type": "message", "content": [{ "type": "output_text", "text": "hello" }] },
+        { "type": "function_call", "call_id": "fc_123", "name": "search", "arguments": "{\"q\":\"repo\"}" }
+      ],
+      "usage": { "input_tokens": 10, "output_tokens": 20, "cache_read_input_tokens": 3 }
+    },
+    "context": { "model": "claude-sonnet-4" },
+    "assert": {
+      "model": "claude-sonnet-4",
+      "stop_reason": "tool_use",
+      "contentTypes": ["text", "tool_use"],
+      "usage": { "input_tokens": 10, "output_tokens": 20, "cache_read_input_tokens": 3, "cache_creation_input_tokens": 0 }
+    }
+  },
+  {
+    "name": "incomplete_response_maps_to_max_tokens",
+    "input": {
+      "status": "incomplete",
+      "output": [
+        { "type": "message", "content": [{ "type": "output_text", "text": "cut off" }] }
+      ],
+      "usage": { "input_tokens": 3, "output_tokens": 9 }
+    },
+    "context": {
+      "requestEcho": { "model": "gpt-5.4" }
+    },
+    "assert": {
+      "model": "gpt-5.4",
+      "stop_reason": "max_tokens",
+      "firstText": "cut off"
+    }
+  }
+]

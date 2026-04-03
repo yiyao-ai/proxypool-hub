@@ -1,7 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { translateRequest, translateResponse } from '../../src/translators/registry.js';
+import {
+  resolveAnthropicGeminiCapabilities,
+  translateRequest,
+  translateResponse
+} from '../../src/translators/registry.js';
 
 test('registry translates anthropic messages request into openai responses request', () => {
   const result = translateRequest('anthropic-messages', 'openai-responses', {
@@ -61,4 +65,27 @@ test('registry translates openai responses payload into anthropic message', () =
   assert.equal(result.usage.input_tokens, 10);
   assert.equal(result.usage.output_tokens, 20);
   assert.equal(result.usage.cache_read_input_tokens, 3);
+});
+
+test('registry resolves Gemini capability profile for Claude Code tool bridge', () => {
+  const result = resolveAnthropicGeminiCapabilities({
+    provider: 'gemini',
+    appId: 'claude-code',
+    hasTools: true
+  });
+
+  assert.equal(result.profileId, 'gemini');
+  assert.equal(result.structuredToolCallMode, 'force');
+  assert.equal(result.disableThinkingBudget, true);
+});
+
+test('registry keeps default Gemini capability profile signature-based for generic callers', () => {
+  const result = resolveAnthropicGeminiCapabilities({
+    appId: 'other-client',
+    hasTools: true
+  });
+
+  assert.equal(result.profileId, 'default');
+  assert.equal(result.structuredToolCallMode, 'signature');
+  assert.equal(result.disableThinkingBudget, false);
 });

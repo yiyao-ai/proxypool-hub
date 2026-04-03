@@ -1,6 +1,7 @@
 import { cacheToolUseSignature, restoreToolUseSignature, cleanCacheControl, SIGNATURE_CONSTANTS } from '../normalizers/thinking.js';
 import { sanitizeGeminiToolSchema } from '../normalizers/gemini-schema.js';
 import { toAnthropicToolId } from '../normalizers/tool-ids.js';
+import { resolveAnthropicGeminiCapabilities } from '../registry.js';
 
 const { MIN_SIGNATURE_LENGTH } = SIGNATURE_CONSTANTS;
 
@@ -113,7 +114,36 @@ function summarizeAnthropicToolsForGemini(tools) {
     };
 }
 
+function resolveTranslatorCapabilities(body, context = {}) {
+    const profile = resolveAnthropicGeminiCapabilities({
+        capabilityProfile: context.capabilityProfile,
+        provider: context.provider,
+        appId: context.appId || body?._proxypoolAppId,
+        _proxypoolAppId: body?._proxypoolAppId,
+        hasTools: Array.isArray(body?.tools) && body.tools.length > 0
+    });
+
+    let structuredToolCallMode = profile.structuredToolCallMode;
+    if (context.forceStructuredToolCalls === true) {
+        structuredToolCallMode = 'force';
+    } else if (context.enableStructuredToolCalls === false) {
+        structuredToolCallMode = 'text';
+    } else if (context.enableStructuredToolCalls === true && structuredToolCallMode !== 'force') {
+        structuredToolCallMode = 'signature';
+    }
+
+    const disableThinkingBudget = context.disableThinkingBudget === true
+        || profile.disableThinkingBudget;
+
+    return {
+        ...profile,
+        structuredToolCallMode,
+        disableThinkingBudget
+    };
+}
+
 export function translateAnthropicToGeminiRequest(body, context = {}) {
+    const capabilities = resolveTranslatorCapabilities(body, context);
     const messages = cleanCacheControl(body.messages || []);
     const contents = [];
     const toolNamesById = new Map();
@@ -152,9 +182,8 @@ export function translateAnthropicToGeminiRequest(body, context = {}) {
                     toolNamesById.set(block.id, block.name);
                 }
 
-                const shouldForceStructured = context.forceStructuredToolCalls === true;
-                const shouldUseStructured = shouldForceStructured || (
-                    context.enableStructuredToolCalls !== false &&
+                const shouldUseStructured = capabilities.structuredToolCallMode === 'force' || (
+                    capabilities.structuredToolCallMode !== 'text' &&
                     thoughtSignature &&
                     thoughtSignature.length >= MIN_SIGNATURE_LENGTH
                 );
@@ -196,7 +225,7 @@ export function translateAnthropicToGeminiRequest(body, context = {}) {
                 const encoding = toolEncodingById.get(block.tool_use_id) || 'text';
                 const hasVisionParts = hasGeminiVisionParts(responseParts);
 
-                if (context.enableStructuredToolCalls !== false && encoding === 'structured' && !hasVisionParts) {
+                if (capabilities.structuredToolCallMode !== 'text' && encoding === 'structured' && !hasVisionParts) {
                     parts.push({
                         functionResponse: {
                             name: functionName,
@@ -271,7 +300,7 @@ export function translateAnthropicToGeminiRequest(body, context = {}) {
     const tools = convertAnthropicToolsToGemini(body.tools);
     if (tools) request.tools = tools;
 
-    if (context.disableThinkingBudget === true) {
+    if (capabilities.disableThinkingBudget) {
         request.generationConfig.thinkingConfig = { thinkingBudget: 0 };
     }
 
@@ -282,7 +311,8 @@ export {
     anthropicContentArrayToGeminiParts,
     hasGeminiVisionParts,
     convertAnthropicToolsToGemini,
-    summarizeAnthropicToolsForGemini
+    summarizeAnthropicToolsForGemini,
+    resolveTranslatorCapabilities
 };
 
 export default {
@@ -290,5 +320,6 @@ export default {
     anthropicContentArrayToGeminiParts,
     hasGeminiVisionParts,
     convertAnthropicToolsToGemini,
-    summarizeAnthropicToolsForGemini
+    summarizeAnthropicToolsForGemini,
+    resolveTranslatorCapabilities
 };

@@ -4,9 +4,19 @@ import { streamOpenAIResponsesAsAnthropicEvents, parseOpenAIResponsesSSE } from 
 
 const requestTranslators = new Map();
 const responseTranslators = new Map();
+const capabilityProfiles = new Map();
 
 function getKey(from, to, mode = 'default') {
     return `${from}->${to}#${mode}`;
+}
+
+function normalizeCapabilityProfile(profile = {}) {
+    return {
+        structuredToolCallMode: profile.structuredToolCallMode || 'signature',
+        disableThinkingBudgetAppsWithTools: Array.isArray(profile.disableThinkingBudgetAppsWithTools)
+            ? [...profile.disableThinkingBudgetAppsWithTools]
+            : []
+    };
 }
 
 export function registerRequestTranslator(from, to, fn) {
@@ -15,6 +25,31 @@ export function registerRequestTranslator(from, to, fn) {
 
 export function registerResponseTranslator(from, to, mode, fn) {
     responseTranslators.set(getKey(from, to, mode), fn);
+}
+
+export function registerCapabilityProfile(from, to, profileId, profile) {
+    capabilityProfiles.set(getKey(from, to, profileId), normalizeCapabilityProfile(profile));
+}
+
+export function resolveCapabilityProfile(from, to, context = {}) {
+    const profileId = context.capabilityProfile || context.provider || 'default';
+    const profile = capabilityProfiles.get(getKey(from, to, profileId))
+        || capabilityProfiles.get(getKey(from, to, 'default'))
+        || normalizeCapabilityProfile();
+
+    const hasTools = context.hasTools === true;
+    const appId = context.appId || context._proxypoolAppId || 'unknown';
+
+    return {
+        profileId,
+        structuredToolCallMode: profile.structuredToolCallMode,
+        disableThinkingBudget: hasTools && profile.disableThinkingBudgetAppsWithTools.includes(appId),
+        disableThinkingBudgetAppsWithTools: [...profile.disableThinkingBudgetAppsWithTools]
+    };
+}
+
+export function resolveAnthropicGeminiCapabilities(context = {}) {
+    return resolveCapabilityProfile('anthropic-messages', 'gemini', context);
 }
 
 export function translateRequest(from, to, payload, context = {}) {
@@ -61,9 +96,21 @@ registerResponseTranslator(
     parseOpenAIResponsesSSE
 );
 
+registerCapabilityProfile('anthropic-messages', 'gemini', 'default', {
+    structuredToolCallMode: 'signature'
+});
+
+registerCapabilityProfile('anthropic-messages', 'gemini', 'gemini', {
+    structuredToolCallMode: 'force',
+    disableThinkingBudgetAppsWithTools: ['claude-code']
+});
+
 export default {
+    registerCapabilityProfile,
     registerRequestTranslator,
     registerResponseTranslator,
+    resolveAnthropicGeminiCapabilities,
+    resolveCapabilityProfile,
     translateRequest,
     translateResponse
 };

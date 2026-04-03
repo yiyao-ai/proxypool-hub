@@ -1,0 +1,54 @@
+[
+  {
+    "name": "tool_use_roundtrip",
+    "request": {
+      "model": "gpt-5.4",
+      "messages": [
+        {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "tool_use",
+              "id": "toolu_search1",
+              "name": "search",
+              "input": { "query": "translator architecture" }
+            }
+          ]
+        }
+      ]
+    },
+    "assert": {
+      "functionCallId": "fc_search1",
+      "toolUseId": "toolu_search1",
+      "toolName": "search",
+      "stop_reason": "tool_use"
+    }
+  },
+  {
+    "name": "document_roundtrip",
+    "request": {
+      "model": "gpt-5.4",
+      "messages": [
+        {
+          "role": "user",
+          "content": [
+            {
+              "type": "document",
+              "title": "design.pdf",
+              "source": {
+                "type": "base64",
+                "media_type": "application/pdf",
+                "data": "JVBERi0xLjQK"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    "assert": {
+      "inputFileName": "design.pdf",
+      "outputType": "document",
+      "outputMediaType": "application/pdf"
+    }
+  }
+]
