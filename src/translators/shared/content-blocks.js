@@ -3,6 +3,83 @@ import { cacheReasoningSignature, cacheToolUseSignature, SIGNATURE_CONSTANTS } f
 
 const { MIN_SIGNATURE_LENGTH } = SIGNATURE_CONSTANTS;
 
+function parseDataUrl(value, defaultMediaType = 'application/octet-stream') {
+    if (typeof value !== 'string' || !value.startsWith('data:')) {
+        return null;
+    }
+
+    const trimmed = value.slice(5);
+    const [header, data = ''] = trimmed.split(';base64,');
+    if (!data) {
+        return null;
+    }
+
+    return {
+        mediaType: header || defaultMediaType,
+        data
+    };
+}
+
+function convertResponsesContentPartToAnthropic(part) {
+    if (!part || typeof part !== 'object') {
+        return null;
+    }
+
+    if (part.type === 'output_text') {
+        return { type: 'text', text: part.text || '' };
+    }
+
+    if (part.type === 'input_file') {
+        if (typeof part.file_data === 'string' && part.file_data.length > 0) {
+            const parsed = parseDataUrl(part.file_data);
+            if (parsed) {
+                return {
+                    type: 'document',
+                    title: part.filename,
+                    source: {
+                        type: 'base64',
+                        media_type: part.media_type || parsed.mediaType,
+                        data: parsed.data
+                    }
+                };
+            }
+        }
+
+        if (typeof part.file_url === 'string' && part.file_url.length > 0) {
+            return {
+                type: 'document',
+                title: part.filename,
+                source: {
+                    type: 'url',
+                    media_type: part.media_type || 'application/octet-stream',
+                    url: part.file_url
+                }
+            };
+        }
+
+        if (typeof part.file_id === 'string' && part.file_id.length > 0) {
+            return {
+                type: 'document',
+                title: part.filename,
+                source: {
+                    type: 'file',
+                    media_type: part.media_type || 'application/octet-stream',
+                    file_id: part.file_id
+                }
+            };
+        }
+
+        return {
+            type: 'text',
+            text: part.filename
+                ? `[document: ${part.filename}]`
+                : '[document]'
+        };
+    }
+
+    return null;
+}
+
 export function convertResponsesOutputToAnthropicContent(output) {
     if (!Array.isArray(output)) {
         return [{ type: 'text', text: '' }];
@@ -13,8 +90,9 @@ export function convertResponsesOutputToAnthropicContent(output) {
     for (const item of output) {
         if (item?.type === 'message') {
             for (const part of item.content || []) {
-                if (part?.type === 'output_text') {
-                    content.push({ type: 'text', text: part.text });
+                const anthropicPart = convertResponsesContentPartToAnthropic(part);
+                if (anthropicPart) {
+                    content.push(anthropicPart);
                 }
             }
             continue;
@@ -66,5 +144,6 @@ export function convertResponsesOutputToAnthropicContent(output) {
 }
 
 export default {
+    convertResponsesContentPartToAnthropic,
     convertResponsesOutputToAnthropicContent
 };

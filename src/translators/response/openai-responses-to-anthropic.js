@@ -1,7 +1,7 @@
 import crypto from 'crypto';
 import { convertResponsesOutputToAnthropicContent } from '../shared/content-blocks.js';
 import { normalizeOpenAIResponsesUsage } from '../normalizers/usage.js';
-import { inferAnthropicStopReasonFromResponsesOutput } from '../normalizers/stop-reasons.js';
+import { inferAnthropicStopReasonFromResponsesResponse } from '../normalizers/responses-events.js';
 
 export const SOURCE_PROTOCOL = 'openai-responses';
 export const TARGET_PROTOCOL = 'anthropic-messages';
@@ -11,13 +11,19 @@ export function generateMessageId() {
 }
 
 export function translateOpenAIResponsesToAnthropicMessage(apiResponse, context = {}) {
+    const responseModel = context.model || context.requestEcho?.model || apiResponse?.model;
+    const usage = normalizeOpenAIResponsesUsage(apiResponse?.usage);
+    const stopReason = apiResponse?.status === 'incomplete'
+        ? 'max_tokens'
+        : inferAnthropicStopReasonFromResponsesResponse(apiResponse);
+
     if (!apiResponse) {
         return {
             id: generateMessageId(),
             type: 'message',
             role: 'assistant',
             content: [{ type: 'text', text: '' }],
-            model: context.model,
+            model: responseModel,
             stop_reason: 'end_turn',
             stop_sequence: null,
             usage: normalizeOpenAIResponsesUsage()
@@ -29,10 +35,10 @@ export function translateOpenAIResponsesToAnthropicMessage(apiResponse, context 
         type: 'message',
         role: 'assistant',
         content: convertResponsesOutputToAnthropicContent(apiResponse.output),
-        model: context.model,
-        stop_reason: inferAnthropicStopReasonFromResponsesOutput(apiResponse.output),
+        model: responseModel,
+        stop_reason: stopReason,
         stop_sequence: null,
-        usage: normalizeOpenAIResponsesUsage(apiResponse.usage)
+        usage
     };
 }
 

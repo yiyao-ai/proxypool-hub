@@ -1,6 +1,15 @@
 import { toAnthropicToolId } from '../normalizers/tool-ids.js';
 import { cacheReasoningSignature, cacheToolUseSignature, SIGNATURE_CONSTANTS } from '../normalizers/thinking.js';
 import { normalizeOpenAIResponsesUsage } from '../normalizers/usage.js';
+import {
+    getCompletedResponseFromEvent,
+    getResponsesFunctionArgumentsDelta,
+    getResponsesReasoningDelta,
+    getResponsesTextDelta,
+    inferAnthropicStopReasonFromResponsesResponse,
+    normalizeResponsesEventUsage,
+    parseResponsesSSEEventLine
+} from '../normalizers/responses-events.js';
 import { generateMessageId } from './openai-responses-to-anthropic.js';
 import {
     buildAnthropicMessageStart,
@@ -22,6 +31,7 @@ export async function* streamOpenAIResponsesAsAnthropicEvents(response, model) {
     let currentThinkingSignature = '';
     let stopReason = 'end_turn';
     let usage = normalizeOpenAIResponsesUsage();
+    let completedResponse = null;
 
     const reader = response.body.getReader();
     const decoder = new TextDecoder();
@@ -51,17 +61,23 @@ export async function* streamOpenAIResponsesAsAnthropicEvents(response, model) {
         buffer = lines.pop() || '';
 
         for (const line of lines) {
-            if (!line.startsWith('data:')) continue;
-
-            const jsonText = line.slice(5).trim();
-            if (!jsonText) continue;
-
-            try {
-                const event = JSON.parse(jsonText);
+            const event = parseResponsesSSEEventLine(line);
+            if (!event) continue;
                 const eventType = event.type;
 
-                if (eventType === 'response.completed' && event.response?.usage) {
-                    usage = normalizeOpenAIResponsesUsage(event.response.usage);
+                const eventUsage = normalizeResponsesEventUsage(event);
+                if (eventUsage) {
+                    usage = eventUsage;
+                }
+
+                const maybeCompletedResponse = getCompletedResponseFromEvent(event);
+                if (maybeCompletedResponse) {
+                    completedResponse = maybeCompletedResponse;
+                    if (maybeCompletedResponse.status === 'incomplete') {
+                        stopReason = 'max_tokens';
+                    } else if (Array.isArray(maybeCompletedResponse.output)) {
+                        stopReason = inferAnthropicStopReasonFromResponsesResponse(maybeCompletedResponse);
+                    }
                 }
 
                 if (eventType === 'response.output_item.added') {
@@ -115,39 +131,39 @@ export async function* streamOpenAIResponsesAsAnthropicEvents(response, model) {
                     }
                 }
 
-                if (eventType === 'response.output_text.delta' && event.delta) {
+                const textDelta = getResponsesTextDelta(event);
+                if (textDelta) {
                     if (currentBlockType === 'thinking') {
                         yield buildContentBlockDelta({
                             index: blockIndex,
-                            delta: { type: 'thinking_delta', thinking: event.delta }
+                            delta: { type: 'thinking_delta', thinking: textDelta }
                         });
                     } else if (currentBlockType === 'text') {
                         yield buildContentBlockDelta({
                             index: blockIndex,
-                            delta: { type: 'text_delta', text: event.delta }
+                            delta: { type: 'text_delta', text: textDelta }
                         });
                     }
                 }
 
-                if ((eventType === 'response.reasoning.delta' || eventType === 'response.thinking.delta') && currentBlockType === 'thinking') {
-                    const delta = event.delta || event.thinking;
+                const reasoningDelta = getResponsesReasoningDelta(event);
+                if (reasoningDelta && currentBlockType === 'thinking') {
                     if (event.signature && event.signature.length >= MIN_SIGNATURE_LENGTH) {
                         currentThinkingSignature = event.signature;
                         cacheReasoningSignature(event.signature, 'openai');
                     }
 
-                    if (delta) {
-                        yield buildContentBlockDelta({
-                            index: blockIndex,
-                            delta: { type: 'thinking_delta', thinking: delta }
-                        });
-                    }
-                }
-
-                if (eventType === 'response.function_call_arguments.delta' && event.delta && currentBlockType === 'tool_use') {
                     yield buildContentBlockDelta({
                         index: blockIndex,
-                        delta: { type: 'input_json_delta', partial_json: event.delta }
+                        delta: { type: 'thinking_delta', thinking: reasoningDelta }
+                    });
+                }
+
+                const argumentsDelta = getResponsesFunctionArgumentsDelta(event);
+                if (argumentsDelta && currentBlockType === 'tool_use') {
+                    yield buildContentBlockDelta({
+                        index: blockIndex,
+                        delta: { type: 'input_json_delta', partial_json: argumentsDelta }
                     });
                 }
 
@@ -167,9 +183,6 @@ export async function* streamOpenAIResponsesAsAnthropicEvents(response, model) {
                         cacheToolUseSignature(currentBlockId, item.signature);
                     }
                 }
-            } catch {
-                // Ignore malformed or partial lines.
-            }
         }
     }
 
@@ -186,6 +199,10 @@ export async function* streamOpenAIResponsesAsAnthropicEvents(response, model) {
         yield buildContentBlockStop({ index: 0 });
     } else if (currentBlockType !== null) {
         yield* closeCurrentBlock();
+    }
+
+    if (completedResponse && Array.isArray(completedResponse.output) && stopReason !== 'max_tokens') {
+        stopReason = inferAnthropicStopReasonFromResponsesResponse(completedResponse);
     }
 
     yield buildMessageDelta({ stopReason, usage });
@@ -207,18 +224,12 @@ export async function parseOpenAIResponsesSSE(response) {
         buffer = lines.pop() || '';
 
         for (const line of lines) {
-            if (!line.startsWith('data:')) continue;
+            const event = parseResponsesSSEEventLine(line);
+            if (!event) continue;
 
-            const jsonText = line.slice(5).trim();
-            if (!jsonText) continue;
-
-            try {
-                const event = JSON.parse(jsonText);
-                if (event.type === 'response.completed') {
-                    finalResponse = event.response;
-                }
-            } catch {
-                // Ignore malformed or partial lines.
+            const completedResponse = getCompletedResponseFromEvent(event);
+            if (completedResponse) {
+                finalResponse = completedResponse;
             }
         }
     }

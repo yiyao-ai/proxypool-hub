@@ -92,7 +92,8 @@ export class OpenAIProvider extends BaseProvider {
 
         const data = await response.json();
         const anthropicResponse = translateOpenAIResponsesToAnthropicMessage(data, {
-            model: body.model
+            model: body.model,
+            requestEcho: openaiBody.__translatorMeta?.requestEcho
         });
 
         return new Response(JSON.stringify(anthropicResponse), {

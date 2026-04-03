@@ -90,14 +90,15 @@ export function convertAnthropicMessagesToResponsesInput(messages) {
 
     for (const message of cleanedMessages) {
         if (message?.role === 'user') {
-            const { textParts, toolResults, imageParts } = convertAnthropicUserContent(message.content);
+            const { textParts, toolResults, imageParts, fileParts } = convertAnthropicUserContent(message.content);
 
-            if (textParts.length > 0 || imageParts.length > 0) {
+            if (textParts.length > 0 || imageParts.length > 0 || fileParts.length > 0) {
                 let content;
-                if (imageParts.length > 0) {
+                if (imageParts.length > 0 || fileParts.length > 0) {
                     content = [
                         ...textParts.map(text => ({ type: 'input_text', text })),
-                        ...imageParts
+                        ...imageParts,
+                        ...fileParts
                     ];
                 } else {
                     content = textParts.length === 1

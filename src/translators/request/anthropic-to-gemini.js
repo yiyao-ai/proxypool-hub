@@ -43,6 +43,42 @@ function anthropicContentArrayToGeminiParts(content) {
                 });
             }
         }
+        if (item?.type === 'document' || item?.type === 'file') {
+            const source = item.source || {};
+            if (source.type === 'base64' && source.data) {
+                parts.push({
+                    inlineData: {
+                        mimeType: source.media_type || 'application/octet-stream',
+                        data: source.data
+                    }
+                });
+            } else if (source.type === 'url' && source.url) {
+                parts.push({
+                    fileData: {
+                        mimeType: source.media_type || 'application/octet-stream',
+                        fileUri: source.url
+                    }
+                });
+            } else if (typeof item.file_data === 'string' && item.file_data.startsWith('data:')) {
+                const trimmed = item.file_data.slice(5);
+                const [header, data = ''] = trimmed.split(';base64,');
+                if (data) {
+                    parts.push({
+                        inlineData: {
+                            mimeType: item.media_type || header || 'application/octet-stream',
+                            data
+                        }
+                    });
+                }
+            } else if (typeof item.file_url === 'string' && item.file_url.length > 0) {
+                parts.push({
+                    fileData: {
+                        mimeType: item.media_type || 'application/octet-stream',
+                        fileUri: item.file_url
+                    }
+                });
+            }
+        }
     }
 
     return parts;
@@ -197,6 +233,11 @@ export function translateAnthropicToGeminiRequest(body, context = {}) {
             }
 
             if (block?.type === 'image') {
+                parts.push(...anthropicContentArrayToGeminiParts([block]));
+                continue;
+            }
+
+            if (block?.type === 'document' || block?.type === 'file') {
                 parts.push(...anthropicContentArrayToGeminiParts([block]));
             }
         }

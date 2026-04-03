@@ -30,6 +30,8 @@ test('convertAnthropicToResponsesAPI: basic structure with string system', () =>
   assert.ok(Array.isArray(result.input));
   assert.equal(result.stream, true);
   assert.equal(result.store, false);
+  assert.ok(result.__translatorMeta);
+  assert.equal(result.__translatorMeta.requestEcho.instructions, 'You are helpful.');
 });
 
 test('convertAnthropicToResponsesAPI: system as array of text blocks', () => {
@@ -52,6 +54,36 @@ test('convertAnthropicToResponsesAPI: no system prompt sets empty instructions',
   };
   const result = convertAnthropicToResponsesAPI(req);
   assert.equal(result.instructions, '');
+});
+
+test('convertAnthropicToResponsesAPI: request options map to responses fields and requestEcho', () => {
+  const req = {
+    model: 'gpt-5.2',
+    messages: [{ role: 'user', content: 'hi' }],
+    max_tokens: 8192,
+    metadata: { source: 'phase2-test' },
+    temperature: 0.2,
+    top_p: 0.95,
+    stop_sequences: ['DONE'],
+    user: 'demo-user',
+    thinking: {
+      type: 'enabled',
+      budget_tokens: 12000
+    }
+  };
+
+  const result = convertAnthropicToResponsesAPI(req, { stream: false });
+
+  assert.equal(result.max_output_tokens, 8192);
+  assert.deepEqual(result.metadata, { source: 'phase2-test' });
+  assert.equal(result.temperature, 0.2);
+  assert.equal(result.top_p, 0.95);
+  assert.equal(result.stop, 'DONE');
+  assert.equal(result.user, 'demo-user');
+  assert.deepEqual(result.reasoning, { effort: 'high' });
+  assert.equal(result.stream, false);
+  assert.deepEqual(result.__translatorMeta.requestEcho.reasoning, { effort: 'high' });
+  assert.equal(result.__translatorMeta.requestEcho.max_output_tokens, 8192);
 });
 
 test('convertAnthropicToResponsesAPI: user text message becomes input_text', () => {
@@ -139,6 +171,32 @@ test('convertAnthropicToResponsesAPI: anthropic image url blocks become input_im
   assert.equal(userMsg.content[0].media_type, 'image/jpeg');
 });
 
+test('convertAnthropicToResponsesAPI: anthropic document blocks become input_file parts', () => {
+  const req = {
+    model: 'gpt-5.2',
+    messages: [{
+      role: 'user',
+      content: [{
+        type: 'document',
+        title: 'spec.pdf',
+        source: {
+          type: 'base64',
+          media_type: 'application/pdf',
+          data: 'JVBERi0xLjQK'
+        }
+      }]
+    }]
+  };
+
+  const result = convertAnthropicToResponsesAPI(req);
+  const userMsg = result.input.find(i => i.role === 'user');
+  assert.ok(Array.isArray(userMsg.content));
+  assert.equal(userMsg.content[0].type, 'input_file');
+  assert.equal(userMsg.content[0].filename, 'spec.pdf');
+  assert.equal(userMsg.content[0].media_type, 'application/pdf');
+  assert.equal(userMsg.content[0].file_data, 'data:application/pdf;base64,JVBERi0xLjQK');
+});
+
 test('convertAnthropicToResponsesAPI: tool_result becomes function_call_output', () => {
   const req = {
     model: 'gpt-5.2',
@@ -206,6 +264,38 @@ test('convertAnthropicToResponsesAPI: tool_result image content becomes function
   assert.equal(toolOutput.output[1].type, 'input_image');
   assert.equal(toolOutput.output[1].data, 'iVBORw0KGgoAAAANSUhEUgAAAAUA');
   assert.equal(toolOutput.output[1].media_type, 'image/png');
+});
+
+test('convertAnthropicToResponsesAPI: tool_result document content becomes function_call_output file output', () => {
+  const req = {
+    model: 'gpt-5.2',
+    messages: [{
+      role: 'user',
+      content: [{
+        type: 'tool_result',
+        tool_use_id: 'toolu_doc1',
+        content: [
+          { type: 'text', text: 'Attached report' },
+          {
+            type: 'document',
+            title: 'report.txt',
+            source: {
+              type: 'base64',
+              media_type: 'text/plain',
+              data: 'aGVsbG8='
+            }
+          }
+        ]
+      }]
+    }]
+  };
+
+  const result = convertAnthropicToResponsesAPI(req);
+  const toolOutput = result.input.find(i => i.type === 'function_call_output');
+  assert.ok(Array.isArray(toolOutput.output));
+  assert.equal(toolOutput.output[0].type, 'input_text');
+  assert.equal(toolOutput.output[1].type, 'input_file');
+  assert.equal(toolOutput.output[1].filename, 'report.txt');
 });
 
 test('convertAnthropicToResponsesAPI: assistant tool_use becomes function_call', () => {
@@ -368,6 +458,25 @@ test('convertOutputToAnthropic: converts reasoning to thinking block', () => {
   assert.equal(result[0].signature, '');
 });
 
+test('convertOutputToAnthropic: converts input_file message parts to anthropic document blocks', () => {
+  const output = [{
+    type: 'message',
+    content: [{
+      type: 'input_file',
+      filename: 'spec.pdf',
+      media_type: 'application/pdf',
+      file_data: 'data:application/pdf;base64,JVBERi0xLjQK'
+    }]
+  }];
+
+  const result = convertOutputToAnthropic(output);
+  assert.equal(result[0].type, 'document');
+  assert.equal(result[0].title, 'spec.pdf');
+  assert.equal(result[0].source.type, 'base64');
+  assert.equal(result[0].source.media_type, 'application/pdf');
+  assert.equal(result[0].source.data, 'JVBERi0xLjQK');
+});
+
 test('convertAnthropicToResponsesAPI: assistant thinking is omitted from input but caches reasoning signature', () => {
   clearThinkingSignatureCache();
   const signature = 's'.repeat(60);
@@ -458,6 +567,39 @@ test('translateOpenAIResponsesToAnthropicMessage: preserves reasoning and tool s
   assert.equal(result.content[1].thoughtSignature, toolSignature);
   assert.equal(getCachedSignatureFamily(reasoningSignature), 'openai');
   assert.equal(getCachedSignature('toolu_sig'), toolSignature);
+});
+
+test('translateOpenAIResponsesToAnthropicMessage: prefers response or requestEcho model when explicit model context is missing', () => {
+  const responseModel = translateOpenAIResponsesToAnthropicMessage({
+    model: 'gpt-5.4',
+    output: [{ type: 'message', content: [{ type: 'output_text', text: 'done' }] }],
+    usage: { input_tokens: 1, output_tokens: 1 }
+  }, {});
+
+  assert.equal(responseModel.model, 'gpt-5.4');
+
+  const echoModel = translateOpenAIResponsesToAnthropicMessage({
+    output: [{ type: 'message', content: [{ type: 'output_text', text: 'done' }] }],
+    usage: { input_tokens: 1, output_tokens: 1 }
+  }, {
+    requestEcho: { model: 'gpt-5.2-codex' }
+  });
+
+  assert.equal(echoModel.model, 'gpt-5.2-codex');
+});
+
+test('translateOpenAIResponsesToAnthropicMessage: maps incomplete response status to max_tokens stop reason', () => {
+  const result = translateOpenAIResponsesToAnthropicMessage({
+    status: 'incomplete',
+    output: [{ type: 'message', content: [{ type: 'output_text', text: 'cut off' }] }],
+    usage: { input_tokens: 3, output_tokens: 9 }
+  }, {
+    requestEcho: { model: 'gpt-5.4' }
+  });
+
+  assert.equal(result.model, 'gpt-5.4');
+  assert.equal(result.stop_reason, 'max_tokens');
+  assert.equal(result.usage.output_tokens, 9);
 });
 
 test('convertOutputToAnthropic: empty output returns default text block', () => {

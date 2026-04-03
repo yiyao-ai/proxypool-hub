@@ -70,6 +70,38 @@ test('openai responses sse parser extracts completed response payload', async ()
   assert.equal(parsed.usage.output_tokens, 4);
 });
 
+test('openai responses sse translator uses completed response status to emit max_tokens stop reason', async () => {
+  const response = createSseResponse([
+    {
+      type: 'response.output_item.added',
+      item: { type: 'message', id: 'msg_1' }
+    },
+    {
+      type: 'response.output_text.delta',
+      delta: 'partial answer'
+    },
+    {
+      type: 'response.completed',
+      response: {
+        status: 'incomplete',
+        output: [
+          { type: 'message', content: [{ type: 'output_text', text: 'partial answer' }] }
+        ],
+        usage: { input_tokens: 2, output_tokens: 8 }
+      }
+    }
+  ]);
+
+  const events = [];
+  for await (const event of streamOpenAIResponsesAsAnthropicEvents(response, 'gpt-5.4')) {
+    events.push(event);
+  }
+
+  assert.equal(events.at(-2).event, 'message_delta');
+  assert.equal(events.at(-2).data.delta.stop_reason, 'max_tokens');
+  assert.equal(events.at(-2).data.usage.output_tokens, 8);
+});
+
 test('openai responses sse translator emits thinking signature delta and caches signatures', async () => {
   clearThinkingSignatureCache();
   const reasoningSignature = 'r'.repeat(60);

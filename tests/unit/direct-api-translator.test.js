@@ -35,11 +35,15 @@ test('direct-api sendMessage uses translator kernel for non-stream responses', a
   try {
     const result = await sendMessage({
       model: 'gpt-5.4',
+      max_tokens: 2048,
+      thinking: { type: 'disabled' },
       messages: [{ role: 'user', content: 'inspect repo' }]
     }, 'token', 'account');
 
     assert.equal(capturedBody.model, 'gpt-5.4');
     assert.equal(capturedBody.stream, false);
+    assert.equal(capturedBody.max_output_tokens, 2048);
+    assert.deepEqual(capturedBody.reasoning, { effort: 'none' });
     assert.equal(capturedBody.input[0].role, 'user');
     assert.equal(result.content[0].text, 'done');
     assert.equal(result.usage.output_tokens, 6);

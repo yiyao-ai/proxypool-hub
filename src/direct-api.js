@@ -25,7 +25,8 @@ export async function* sendMessageStream(anthropicRequest, accessToken, accountI
 
     yield* translateResponse('openai-responses', 'anthropic-messages', response, {
         mode: 'stream',
-        model: anthropicRequest.model
+        model: anthropicRequest.model,
+        requestEcho: request.__translatorMeta?.requestEcho
     });
 }
 
@@ -63,7 +64,8 @@ export async function sendMessage(anthropicRequest, accessToken, accountId) {
     });
 
     return translateResponse('openai-responses', 'anthropic-messages', apiResponse, {
-        model: anthropicRequest.model
+        model: anthropicRequest.model,
+        requestEcho: request.__translatorMeta?.requestEcho
     });
 }
 

@@ -600,3 +600,67 @@ test('AzureOpenAIProvider.sendAnthropicRequest preserves tool_result image conte
     global.fetch = originalFetch;
   }
 });
+
+test('AzureOpenAIProvider.sendAnthropicRequest preserves anthropic document blocks as responses input_file content', async () => {
+  const provider = new AzureOpenAIProvider({
+    id: 'azure_8',
+    name: 'azure-test',
+    apiKey: 'test-key',
+    baseUrl: 'https://example-resource.openai.azure.com/',
+    deploymentName: 'deployment-gpt54'
+  });
+
+  const originalFetch = global.fetch;
+  let capturedOptions = null;
+
+  global.fetch = async (_url, options) => {
+    capturedOptions = options;
+    return new Response(JSON.stringify({
+      id: 'resp_doc_azure_1',
+      object: 'response',
+      model: 'deployment-gpt54',
+      status: 'completed',
+      output: [{
+        type: 'message',
+        id: 'msg_doc_1',
+        content: [{ type: 'output_text', text: 'document received' }]
+      }],
+      usage: {
+        input_tokens: 10,
+        output_tokens: 4,
+        total_tokens: 14
+      }
+    }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' }
+    });
+  };
+
+  try {
+    await provider.sendAnthropicRequest({
+      model: 'claude-opus-4-6',
+      messages: [{
+        role: 'user',
+        content: [{
+          type: 'document',
+          title: 'spec.pdf',
+          source: {
+            type: 'base64',
+            media_type: 'application/pdf',
+            data: 'JVBERi0xLjQK'
+          }
+        }]
+      }]
+    });
+
+    const payload = JSON.parse(capturedOptions.body);
+    const userMessage = payload.input.find(item => item.type === 'message' && item.role === 'user');
+    assert.ok(Array.isArray(userMessage.content));
+    assert.equal(userMessage.content[0].type, 'input_file');
+    assert.equal(userMessage.content[0].filename, 'spec.pdf');
+    assert.equal(userMessage.content[0].image_url, undefined);
+    assert.equal(userMessage.content[0].file_data, 'data:application/pdf;base64,JVBERi0xLjQK');
+  } finally {
+    global.fetch = originalFetch;
+  }
+});

@@ -124,3 +124,63 @@ test('OpenAIProvider.sendAnthropicRequest uses responses translator path and ret
     global.fetch = originalFetch;
   }
 });
+
+test('OpenAIProvider.sendAnthropicRequest forwards anthropic document blocks as responses input_file content', async () => {
+  const provider = new OpenAIProvider({
+    id: 'openai_3',
+    name: 'openai-test',
+    apiKey: 'sk-test',
+    baseUrl: 'https://api.openai.com/v1'
+  });
+
+  const originalFetch = global.fetch;
+  let capturedOptions = null;
+
+  global.fetch = async (_url, options) => {
+    capturedOptions = options;
+    return new Response(JSON.stringify({
+      id: 'resp_doc_1',
+      object: 'response',
+      model: 'gpt-5.4',
+      status: 'completed',
+      output: [{
+        type: 'message',
+        content: [{ type: 'output_text', text: 'received document' }]
+      }],
+      usage: {
+        input_tokens: 7,
+        output_tokens: 3
+      }
+    }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' }
+    });
+  };
+
+  try {
+    await provider.sendAnthropicRequest({
+      model: 'claude-sonnet-4',
+      messages: [{
+        role: 'user',
+        content: [{
+          type: 'document',
+          title: 'spec.pdf',
+          source: {
+            type: 'base64',
+            media_type: 'application/pdf',
+            data: 'JVBERi0xLjQK'
+          }
+        }]
+      }]
+    });
+
+    const payload = JSON.parse(capturedOptions.body);
+    const userMessage = payload.input.find(item => item.type === 'message' && item.role === 'user');
+    assert.ok(Array.isArray(userMessage.content));
+    assert.equal(userMessage.content[0].type, 'input_file');
+    assert.equal(userMessage.content[0].filename, 'spec.pdf');
+    assert.equal(userMessage.content[0].file_data, 'data:application/pdf;base64,JVBERi0xLjQK');
+  } finally {
+    global.fetch = originalFetch;
+  }
+});

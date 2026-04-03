@@ -321,3 +321,59 @@ test('GeminiProvider.sendAnthropicRequest strips nested unsupported schema keys 
     global.fetch = originalFetch;
   }
 });
+
+test('GeminiProvider.sendAnthropicRequest forwards anthropic document blocks as Gemini file parts', async () => {
+  const provider = new GeminiProvider({
+    id: 'gemini_doc_1',
+    name: 'gemini-test',
+    apiKey: 'test-key'
+  });
+
+  const originalFetch = global.fetch;
+  let capturedBody = null;
+
+  global.fetch = async (_url, options) => {
+    capturedBody = JSON.parse(options.body);
+    return new Response(JSON.stringify({
+      candidates: [{
+        finishReason: 'STOP',
+        content: { parts: [{ text: 'document received' }] }
+      }],
+      usageMetadata: {
+        promptTokenCount: 4,
+        candidatesTokenCount: 2
+      }
+    }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' }
+    });
+  };
+
+  try {
+    await provider.sendAnthropicRequest({
+      model: 'claude-opus-4-6',
+      messages: [{
+        role: 'user',
+        content: [{
+          type: 'document',
+          title: 'notes.txt',
+          source: {
+            type: 'base64',
+            media_type: 'text/plain',
+            data: 'aGVsbG8='
+          }
+        }]
+      }]
+    });
+
+    assert.equal(capturedBody.contents[0].role, 'user');
+    assert.deepEqual(capturedBody.contents[0].parts[0], {
+      inlineData: {
+        mimeType: 'text/plain',
+        data: 'aGVsbG8='
+      }
+    });
+  } finally {
+    global.fetch = originalFetch;
+  }
+});

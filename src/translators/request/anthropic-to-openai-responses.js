@@ -1,5 +1,6 @@
 import { extractSystemPrompt, convertAnthropicMessagesToResponsesInput } from '../normalizers/anthropic-messages.js';
 import { sanitizeToolSchema } from '../normalizers/schemas.js';
+import { normalizeAnthropicResponsesRequestOptions } from '../normalizers/responses-request.js';
 
 export const SOURCE_PROTOCOL = 'anthropic-messages';
 export const TARGET_PROTOCOL = 'openai-responses';
@@ -50,18 +51,40 @@ function convertAnthropicToolChoice(toolChoice) {
 
 export function translateAnthropicToOpenAIResponsesRequest(anthropicRequest, context = {}) {
     const instructions = extractSystemPrompt(anthropicRequest.system);
+    const { normalized: requestOptions, requestEcho } = normalizeAnthropicResponsesRequestOptions(
+        anthropicRequest,
+        {
+            parallelToolCalls: context.parallelToolCalls,
+            store: context.store
+        }
+    );
 
-    return {
+    const request = {
         model: anthropicRequest.model || context.defaultModel || 'gpt-5.2-codex',
         input: convertAnthropicMessagesToResponsesInput(anthropicRequest.messages || []),
         tools: convertAnthropicToolsToOpenAI(anthropicRequest.tools),
         tool_choice: convertAnthropicToolChoice(anthropicRequest.tool_choice),
-        parallel_tool_calls: true,
-        store: false,
+        ...requestOptions,
         stream: context.stream ?? anthropicRequest.stream ?? true,
         include: [],
         instructions: instructions || ''
     };
+
+    Object.defineProperty(request, '__translatorMeta', {
+        value: {
+            requestEcho: {
+                model: request.model,
+                instructions: request.instructions,
+                tool_choice: request.tool_choice,
+                tools: request.tools,
+                ...requestEcho
+            }
+        },
+        enumerable: false,
+        configurable: true
+    });
+
+    return request;
 }
 
 export default {

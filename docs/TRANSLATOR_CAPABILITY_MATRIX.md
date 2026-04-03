@@ -44,6 +44,7 @@
 - 模型切换
 - provider 切换
 - 多模态图片输入
+- 多模态文件输入
 - `tool_result` 富内容
 - thinking / reasoning
 
@@ -84,6 +85,20 @@
 
 这类逻辑必须在重构中纳入共享 normalizer，而不是继续分散在各 provider。
 
+### 3.4 Phase 2 已补请求参数、文件输入与 stop_reason 一致性
+
+截至 2026-04-03，`Anthropic Messages <-> OpenAI Responses` 主链路在 Phase 2 已补齐以下能力：
+
+- 请求侧增加 `max_tokens -> max_output_tokens`
+- 请求侧增加 `metadata / temperature / top_p / stop_sequences / user`
+- 请求侧增加 `thinking -> reasoning.effort` 的最小兼容映射
+- 新增 `requestEcho` translator 上下文，用于后续协议保真回填
+- 新增 `document/file -> input_file`
+- 新增 `tool_result` 中 `text + image + document` 混合内容保留
+- 统一流式与非流式 `stop_reason`，支持 `response.status=incomplete -> max_tokens`
+
+这些能力已经进入当前 translator 单测基线。
+
 ---
 
 ## 4. 能力矩阵
@@ -97,25 +112,25 @@
 
 ## 4.1 Claude Code / Anthropic Messages 入口
 
-| Upstream | 文本 | 流式 | 工具调用 | 模型切换 | provider 切换 | 图片输入 | `tool_result` 富内容 | thinking / reasoning | 备注 |
-|---|---|---|---|---|---|---|---|---|---|
-| ChatGPT account via Responses | 支持 | 支持 | 支持 | 支持 | 支持 | 支持 | 支持 | 支持 | 主链路，当前最复杂，重构第一优先级 |
-| Claude account | 支持 | 支持 | 支持 | 支持 | 支持 | 支持 | 支持 | 支持 | 近似直通 Anthropic，主要做 body sanitize |
-| Anthropic API key | 支持 | 支持 | 支持 | 支持 | 支持 | 支持 | 支持 | 支持 | 近似直通 Anthropic |
-| Azure OpenAI | 支持 | 当前主要为非流式 Anthropic bridge | 支持 | 支持 | 支持 | 支持 | 支持 | 支持（有清洗） | 依赖 Responses bridge，已覆盖多模态测试 |
-| OpenAI API key | 支持 | 取决于 chat path | 支持 | 支持 | 支持 | 支持（图片转 chat image_url） | `tool_result` 主要降为 text/tool | thinking 主要跳过 | 当前基于 chat-completions bridge，能力不如 Responses 路径完整 |
-| Gemini API key | 支持 | 非流式 bridge | 支持 | 支持 | 支持 | 支持 | 支持（有降级） | 支持（有降级） | tool + thinking 并存时会禁用 thinking |
-| Vertex AI | 支持 | 非流式 bridge，Claude rawPredict 可直通 | 支持 | 支持 | 支持 | 支持 | 支持（有降级） | 支持（有降级） | Claude 模型与 Gemini 模型桥接路径不同 |
-| Kilo free route | 支持 | 支持 | 支持 | 支持 | 路由内切换 | 未见明确图片路径 | 主要文本工具结果 | 支持部分 reasoning 适配 | 当前更偏文本工具链路 |
+| Upstream | 文本 | 流式 | 工具调用 | 模型切换 | provider 切换 | 图片输入 | 文件输入 | `tool_result` 富内容 | thinking / reasoning | 备注 |
+|---|---|---|---|---|---|---|---|---|---|---|
+| ChatGPT account via Responses | 支持 | 支持 | 支持 | 支持 | 支持 | 支持 | 支持 | 支持 | 支持 | 主链路，Phase 2 已补请求参数、文件输入与 stop_reason 一致性 |
+| Claude account | 支持 | 支持 | 支持 | 支持 | 支持 | 支持 | 支持 | 支持 | 支持 | 近似直通 Anthropic，主要做 body sanitize |
+| Anthropic API key | 支持 | 支持 | 支持 | 支持 | 支持 | 支持 | 支持 | 支持 | 支持 | 近似直通 Anthropic |
+| Azure OpenAI | 支持 | 当前主要为非流式 Anthropic bridge | 支持 | 支持 | 支持 | 支持 | 部分支持 | 支持 | 支持（有清洗） | 文件输入在 translator 已支持，provider 侧仍需继续补验证 |
+| OpenAI API key | 支持 | 取决于 chat path | 支持 | 支持 | 支持 | 支持（图片转 chat image_url） | 部分支持 | `tool_result` 主要降为 text/tool | thinking 主要跳过 | 当前基于 chat-completions bridge，能力不如 Responses 路径完整 |
+| Gemini API key | 支持 | 非流式 bridge | 支持 | 支持 | 支持 | 支持 | 支持（有降级） | 支持（有降级） | 支持（有降级） | tool + thinking 并存时会禁用 thinking |
+| Vertex AI | 支持 | 非流式 bridge，Claude rawPredict 可直通 | 支持 | 支持 | 支持 | 支持 | 支持（有降级） | 支持（有降级） | 支持（有降级） | Claude 模型与 Gemini 模型桥接路径不同 |
+| Kilo free route | 支持 | 支持 | 支持 | 支持 | 路由内切换 | 未见明确图片路径 | 未确认 | 主要文本工具结果 | 支持部分 reasoning 适配 | 当前更偏文本工具链路 |
 
 ## 4.2 Codex CLI / OpenAI Responses 与 Codex Internal
 
-| Upstream | 文本 | 流式 | 工具调用 | 模型切换 | provider 切换 | 图片输入 | `tool_result` 富内容 | thinking / reasoning | 备注 |
-|---|---|---|---|---|---|---|---|---|---|
-| ChatGPT account | 支持 | 支持 | 支持 | 支持 | 支持 | 支持 | 支持 | 支持 | 当前原生路径之一 |
-| Claude account | 支持 | 支持 | 支持 | 支持 | 支持 | 支持 | 支持 | 支持 | 依赖 `codex-route.js` 中 OpenAI/Anthropic 双向转换 |
-| OpenAI / Azure OpenAI | 支持 | 支持 | 支持 | 支持 | 支持 | 支持 | 支持 | 支持 | 已有 tool sequence 修复与 responses 兼容逻辑 |
-| Gemini / Vertex | 支持 | 取决于具体 route | 支持（有降级） | 支持 | 支持 | 支持（有降级） | 支持（有降级） | 支持（有降级） | 受 Gemini thought signature 等限制 |
+| Upstream | 文本 | 流式 | 工具调用 | 模型切换 | provider 切换 | 图片输入 | 文件输入 | `tool_result` 富内容 | thinking / reasoning | 备注 |
+|---|---|---|---|---|---|---|---|---|---|---|
+| ChatGPT account | 支持 | 支持 | 支持 | 支持 | 支持 | 支持 | 支持 | 支持 | 支持 | 当前原生路径之一 |
+| Claude account | 支持 | 支持 | 支持 | 支持 | 支持 | 支持 | 支持 | 支持 | 支持 | 依赖 `codex-route.js` 中 OpenAI/Anthropic 双向转换 |
+| OpenAI / Azure OpenAI | 支持 | 支持 | 支持 | 支持 | 支持 | 支持 | 支持 | 支持 | 支持 | 已有 tool sequence 修复与 responses 兼容逻辑 |
+| Gemini / Vertex | 支持 | 取决于具体 route | 支持（有降级） | 支持 | 支持 | 支持（有降级） | 支持（有降级） | 支持（有降级） | 支持（有降级） | 受 Gemini thought signature 等限制 |
 
 ## 4.3 OpenClaw
 
@@ -144,12 +159,21 @@
 - Anthropic `image` block 可转为 Responses `input_image`
 - Anthropic 图片 URL 可转为 `input_image.image_url`
 - `tool_result` 中图像内容可转为 `function_call_output.output[]`
+- Anthropic `document/file` block 可转为 Responses `input_file`
+- `tool_result` 中 document/image/text 混合内容可转为结构化 output
+- Responses `input_file` message part 可恢复为 Anthropic `document`
+- `response.status=incomplete` 可稳定映射为 Anthropic `max_tokens`
 
 现有基线主要分布在：
 
 - [anthropic-to-openai-responses.js](D:/proxypool-hub/src/translators/request/anthropic-to-openai-responses.js)
 - [openai-responses-to-anthropic.js](D:/proxypool-hub/src/translators/response/openai-responses-to-anthropic.js)
+- [openai-responses-sse-to-anthropic-sse.js](D:/proxypool-hub/src/translators/response/openai-responses-sse-to-anthropic-sse.js)
+- [responses-request.js](D:/proxypool-hub/src/translators/normalizers/responses-request.js)
+- [responses-events.js](D:/proxypool-hub/src/translators/normalizers/responses-events.js)
 - [format-converter.test.js](D:/proxypool-hub/tests/unit/format-converter.test.js)
+- [translator-normalizers.test.js](D:/proxypool-hub/tests/unit/translator-normalizers.test.js)
+- [translator-sse.test.js](D:/proxypool-hub/tests/unit/translator-sse.test.js)
 
 ## 5.2 Azure OpenAI Anthropic bridge 已覆盖工具和多模态
 
