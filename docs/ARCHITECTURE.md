@@ -2,6 +2,10 @@
 
 ## Overview
 
+Related design docs:
+
+- [协议转换层重构计划](D:/proxypool-hub/docs/TRANSLATOR_REFACTOR_PLAN.md)
+
 ```
 ┌─────────────┐  ┌───────────┐  ┌────────────┐  ┌──────────┐
 │ Claude Code │  │ Codex CLI │  │ Gemini CLI │  │ OpenClaw │
