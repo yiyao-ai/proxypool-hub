@@ -14,7 +14,7 @@ import { getStatus, ACCOUNTS_FILE } from '../account-manager.js';
 import { handleMessages } from './messages-route.js';
 import { handleChatCompletion, handleCountTokens } from './chat-route.js';
 import { handleListModels, handleAccountModels, handleAccountUsage } from './models-route.js';
-import { handleGetHaikuModel, handleSetHaikuModel, handleGetKiloModels, handleGetAccountStrategy, handleSetAccountStrategy, handleGetRoutingPriority, handleSetRoutingPriority, handleGetRoutingMode, handleSetRoutingMode, handleGetStrictCodexCompatibility, handleSetStrictCodexCompatibility, handleGetAppRouting, handleSetAppRouting, handleGetEnableFreeModels, handleSetEnableFreeModels, handleGetDiscoveredModels, handleRefreshDiscoveredModels } from './settings-route.js';
+import { handleGetHaikuModel, handleSetHaikuModel, handleGetKiloModels, handleGetAccountStrategy, handleSetAccountStrategy, handleGetRoutingPriority, handleSetRoutingPriority, handleGetRoutingMode, handleSetRoutingMode, handleGetStrictCodexCompatibility, handleSetStrictCodexCompatibility, handleGetStrictTranslatorCompatibility, handleSetStrictTranslatorCompatibility, handleGetAppRouting, handleSetAppRouting, handleGetEnableFreeModels, handleSetEnableFreeModels, handleGetDiscoveredModels, handleRefreshDiscoveredModels } from './settings-route.js';
 import { handleGetLogs, handleStreamLogs } from './logs-route.js';
 import { handleGetClaudeConfig, handleSetProxyMode, handleSetDirectMode, handleSetClaudeApiEndpoint } from './claude-config-route.js';
 import { handleListApiKeys, handleGetApiKey, handleAddApiKey, handleRemoveApiKey, handleUpdateApiKey, handleValidateApiKey, handleGetApiKeyStats } from './api-keys-route.js';
@@ -119,6 +119,8 @@ export function registerApiRoutes(app, { port }) {
   app.post('/settings/routing-mode', handleSetRoutingMode);
   app.get('/settings/strict-codex-compatibility', handleGetStrictCodexCompatibility);
   app.post('/settings/strict-codex-compatibility', handleSetStrictCodexCompatibility);
+  app.get('/settings/strict-translator-compatibility', handleGetStrictTranslatorCompatibility);
+  app.post('/settings/strict-translator-compatibility', handleSetStrictTranslatorCompatibility);
   app.get('/settings/app-routing', handleGetAppRouting);
   app.post('/settings/app-routing', handleSetAppRouting);
   app.get('/settings/enable-free-models', handleGetEnableFreeModels);

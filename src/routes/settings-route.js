@@ -134,6 +134,14 @@ export function handleGetStrictCodexCompatibility(req, res) {
   });
 }
 
+export function handleGetStrictTranslatorCompatibility(req, res) {
+  const settings = getServerSettings();
+  res.json({
+    success: true,
+    strictTranslatorCompatibility: settings.strictTranslatorCompatibility === true
+  });
+}
+
 export function handleSetStrictCodexCompatibility(req, res) {
   const { strictCodexCompatibility } = req.body || {};
 
@@ -148,6 +156,23 @@ export function handleSetStrictCodexCompatibility(req, res) {
   res.json({
     success: true,
     strictCodexCompatibility: settings.strictCodexCompatibility !== false
+  });
+}
+
+export function handleSetStrictTranslatorCompatibility(req, res) {
+  const { strictTranslatorCompatibility } = req.body || {};
+
+  if (typeof strictTranslatorCompatibility !== 'boolean') {
+    return res.status(400).json({
+      success: false,
+      error: 'strictTranslatorCompatibility is required and must be a boolean'
+    });
+  }
+
+  const settings = setServerSettings({ strictTranslatorCompatibility });
+  res.json({
+    success: true,
+    strictTranslatorCompatibility: settings.strictTranslatorCompatibility === true
   });
 }
 
@@ -292,10 +317,14 @@ export default {
   handleSetAccountStrategy,
   handleGetRoutingPriority,
   handleGetRoutingMode,
+  handleGetStrictCodexCompatibility,
+  handleGetStrictTranslatorCompatibility,
   handleSetRoutingMode,
   handleGetAppRouting,
   handleSetAppRouting,
   handleSetRoutingPriority,
+  handleSetStrictCodexCompatibility,
+  handleSetStrictTranslatorCompatibility,
   handleGetEnableFreeModels,
   handleSetEnableFreeModels,
   handleGetDiscoveredModels,

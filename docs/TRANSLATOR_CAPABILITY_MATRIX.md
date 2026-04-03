@@ -99,6 +99,20 @@
 
 这些能力已经进入当前 translator 单测基线。
 
+### 3.5 截至 2026-04-04，`/v1/messages` 已进入 capability-aware routing 阶段
+
+当前已新增以下行为：
+
+- compatible provider 不再只按最少请求数尝试
+- route 会先分析请求是否包含 hosted tools / image / file / structured `tool_result`
+- 再按 provider capability 做排序
+
+这意味着：
+
+- `web_search_*` 请求会优先尝试 Vertex Claude rawPredict 一类可支持链路
+- 明显不兼容的 bridge 仍可作为后备，但不再排在最前
+- strict translator mode 开启时，route 会把 downgrade 升级为显式 `400`
+
 ---
 
 ## 4. 能力矩阵
@@ -118,9 +132,9 @@
 | Claude account | 支持 | 支持 | 支持 | 支持 | 支持 | 支持 | 支持 | 支持 | 支持 | 近似直通 Anthropic，主要做 body sanitize |
 | Anthropic API key | 支持 | 支持 | 支持 | 支持 | 支持 | 支持 | 支持 | 支持 | 支持 | 近似直通 Anthropic |
 | Azure OpenAI | 支持 | 当前主要为非流式 Anthropic bridge | 支持 | 支持 | 支持 | 支持 | 部分支持 | 支持 | 支持（有清洗） | 文件输入在 translator 已支持，provider 侧仍需继续补验证 |
-| OpenAI API key | 支持 | 取决于 chat path | 支持 | 支持 | 支持 | 支持（图片转 chat image_url） | 部分支持 | `tool_result` 主要降为 text/tool | thinking 主要跳过 | 当前基于 chat-completions bridge，能力不如 Responses 路径完整 |
-| Gemini API key | 支持 | 非流式 bridge | 支持 | 支持 | 支持 | 支持 | 支持（有降级） | 支持（有降级） | 支持（有降级） | tool + thinking 并存时会禁用 thinking |
-| Vertex AI | 支持 | 非流式 bridge，Claude rawPredict 可直通 | 支持 | 支持 | 支持 | 支持 | 支持（有降级） | 支持（有降级） | 支持（有降级） | Claude 模型与 Gemini 模型桥接路径不同 |
+| OpenAI API key | 支持 | 取决于 chat path | 支持 | 支持 | 支持 | 支持（图片转 chat image_url） | 部分支持 | `tool_result` 主要降为 text/tool | thinking 主要跳过 | hosted tools 当前显式拒绝；在 `/v1/messages` capability-aware ranking 中不会作为 hosted-tool 优先候选 |
+| Gemini API key | 支持 | 非流式 bridge | 支持 | 支持 | 支持 | 支持 | 支持（有降级） | 支持（有降级） | 支持（有降级） | tool + thinking 并存时会禁用 thinking；hosted tools 当前显式拒绝 |
+| Vertex AI | 支持 | 非流式 bridge，Claude rawPredict 可直通 | 支持 | 支持 | 支持 | 支持 | 支持（有降级） | 支持（有降级） | 支持（有降级） | Claude 模型与 Gemini 模型桥接路径不同；Vertex Claude 支持 `web_search_*` passthrough，Vertex Gemini 显式拒绝 |
 | Kilo free route | 支持 | 支持 | 支持 | 支持 | 路由内切换 | 未见明确图片路径 | 未确认 | 主要文本工具结果 | 支持部分 reasoning 适配 | 当前更偏文本工具链路 |
 
 ## 4.2 Codex CLI / OpenAI Responses 与 Codex Internal
@@ -262,6 +276,18 @@
 这意味着：
 
 - 第一阶段优先迁移 Responses 主链路是正确的
+
+### 6.4 Strict Translator Compatibility 可将降级升级为拒绝
+
+当前行为：
+
+- 默认仍允许兼容 bridge 返回带 downgrade metadata 的响应
+- 当开启 `strictTranslatorCompatibility` 后，`/v1/messages` 会把 translator downgrade 升级为显式 `400 invalid_request_error`
+
+这意味着：
+
+- 可以按部署需求选择“兼容优先”或“语义严格优先”
+- hosted tools、tool_choice 降级不再只能依赖日志排查
 
 ---
 

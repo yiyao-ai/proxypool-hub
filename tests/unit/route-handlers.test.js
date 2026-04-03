@@ -29,7 +29,7 @@ function mockReq(body = {}, params = {}, query = {}) {
 
 // ─── settings-route ───────────────────────────────────────────────────────────
 
-import { handleGetHaikuModel, handleSetHaikuModel, handleGetAppRouting, handleGetStrictCodexCompatibility, handleSetStrictCodexCompatibility } from '../../src/routes/settings-route.js';
+import { handleGetHaikuModel, handleSetHaikuModel, handleGetAppRouting, handleGetStrictCodexCompatibility, handleSetStrictCodexCompatibility, handleGetStrictTranslatorCompatibility, handleSetStrictTranslatorCompatibility } from '../../src/routes/settings-route.js';
 import { handleGetPricing, handleUpdatePricing, handleResetPricing } from '../../src/routes/pricing-route.js';
 import { handleGetApiKey } from '../../src/routes/api-keys-route.js';
 
@@ -67,6 +67,23 @@ test('handleSetStrictCodexCompatibility: rejects non-boolean payload', () => {
   const req = mockReq({ strictCodexCompatibility: 'yes' });
   const res = mockRes();
   handleSetStrictCodexCompatibility(req, res);
+  assert.equal(res._status, 400);
+  assert.equal(res._body.success, false);
+});
+
+test('handleGetStrictTranslatorCompatibility: returns current strict translator flag', () => {
+  const req = mockReq();
+  const res = mockRes();
+  handleGetStrictTranslatorCompatibility(req, res);
+  assert.equal(res._status, 200);
+  assert.equal(res._body.success, true);
+  assert.equal(typeof res._body.strictTranslatorCompatibility, 'boolean');
+});
+
+test('handleSetStrictTranslatorCompatibility: rejects non-boolean payload', () => {
+  const req = mockReq({ strictTranslatorCompatibility: 'yes' });
+  const res = mockRes();
+  handleSetStrictTranslatorCompatibility(req, res);
   assert.equal(res._status, 400);
   assert.equal(res._body.success, false);
 });

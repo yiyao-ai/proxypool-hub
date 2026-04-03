@@ -20,6 +20,8 @@ import { resolveModel, resolveModelForced } from '../model-mapping.js';
 import { resolveCredentialForRequest } from '../credential-selector.js';
 import { buildCredentialId } from '../credential-registry.js';
 import { markCredentialError, markCredentialRateLimited, markCredentialSuccess, recordRoutingDecision } from '../runtime-state.js';
+import { analyzeAnthropicRequestFeatures } from '../translators/request-features.js';
+import { rankAnthropicProvidersForRequest } from '../translators/provider-capabilities.js';
 
 const MAX_RETRIES = 5;
 const MAX_WAIT_BEFORE_ERROR_MS = 120000;
@@ -196,6 +198,45 @@ function _readTranslatorDowngradeHeaders(response) {
     };
 }
 
+function _shouldRejectTranslatorDowngrade(settings, translatorDowngrade) {
+    if (settings?.strictTranslatorCompatibility !== true) {
+        return false;
+    }
+
+    return Boolean(
+        translatorDowngrade?.unsupportedTools
+        || translatorDowngrade?.toolChoiceReason
+    );
+}
+
+function _buildTranslatorDowngradeError(provider, requestedModel, actualModel, translatorDowngrade) {
+    const details = [];
+    if (translatorDowngrade?.unsupportedTools) {
+        details.push(`unsupported_tools=${translatorDowngrade.unsupportedTools}`);
+    }
+    if (translatorDowngrade?.toolChoiceReason) {
+        details.push(`tool_choice_reason=${translatorDowngrade.toolChoiceReason}`);
+    }
+
+    return {
+        type: 'error',
+        error: {
+            type: 'invalid_request_error',
+            message: `Translator downgrade rejected by strict translator compatibility mode for ${provider.type}/${provider.name} on ${requestedModel}→${actualModel}. ${details.join(' | ')}`
+        }
+    };
+}
+
+function _summarizeCompatibleProviderRanking(rankedProviders = []) {
+    if (!Array.isArray(rankedProviders) || rankedProviders.length === 0) {
+        return '(none)';
+    }
+
+    return rankedProviders
+        .map(({ provider, score, capabilities }) => `${provider.type}/${provider.name}:${score}[hosted=${capabilities.supportsHostedTools ? 'y' : 'n'},img=${capabilities.supportsInputImage ? 'y' : 'n'},file=${capabilities.supportsInputFile ? 'y' : 'n'},tool_result=${capabilities.supportsStructuredToolResult ? 'y' : 'n'}]`)
+        .join(' | ');
+}
+
 export async function handleMessages(req, res) {
     const startTime = Date.now();
     const body = req.body;
@@ -211,6 +252,7 @@ export async function handleMessages(req, res) {
     const hasApiKeys = !!selectKey('anthropic');
     const hasClaudeAccounts = _getUsableClaudeAccounts().length > 0;
     const hasAntigravityAccounts = settings.antigravityEnabled !== false && listAntigravityAccounts().total > 0;
+    const requestFeatures = analyzeAnthropicRequestFeatures(body);
     const hasCompatibleKeys = _getCompatibleProviders().length > 0;
     const routingPreview = resolveCredentialForRequest({
         appId,
@@ -269,7 +311,7 @@ export async function handleMessages(req, res) {
             if (result !== false) return;
         }
         if (hasCompatibleKeys) {
-            const result = await _handleViaCompatibleKeys(res, body, requestedModel, isStreaming, startTime, appId);
+            const result = await _handleViaCompatibleKeys(res, body, requestedModel, isStreaming, startTime, appId, settings, requestFeatures);
             if (result !== false) return;
         }
         if (hasAccounts) {
@@ -299,7 +341,7 @@ export async function handleMessages(req, res) {
             if (result !== false) return;
         }
         if (hasCompatibleKeys) {
-            const result = await _handleViaCompatibleKeys(res, body, requestedModel, isStreaming, startTime, appId);
+            const result = await _handleViaCompatibleKeys(res, body, requestedModel, isStreaming, startTime, appId, settings, requestFeatures);
             if (result !== false) return;
         }
         if (hasAntigravityAccounts) {
@@ -872,17 +914,23 @@ function _getCompatibleProviders() {
  * Each provider handles its own format conversion internally.
  * Returns false if no providers succeed.
  */
-async function _handleViaCompatibleKeys(res, body, requestedModel, isStreaming, startTime, appId = 'unknown-anthropic-client') {
-    const providers = _getCompatibleProviders();
-    if (providers.length === 0) return false;
+async function _handleViaCompatibleKeys(res, body, requestedModel, isStreaming, startTime, appId = 'unknown-anthropic-client', settings = {}, requestFeatures = analyzeAnthropicRequestFeatures(body)) {
+    const rankedProviders = rankAnthropicProvidersForRequest(_getCompatibleProviders(), body, {
+        appId,
+        requestedModel,
+        tools: body.tools,
+        features: requestFeatures
+    });
+    if (rankedProviders.length === 0) return false;
 
-    // Least-requests-first load balancing
-    providers.sort((a, b) => a.totalRequests - b.totalRequests);
+    logger.info(
+        `[Messages] Capability-aware provider ranking | model=${requestedModel} | hosted_tools=${requestFeatures.hostedToolNames.join(',') || '(none)'} | image=${requestFeatures.hasImageInput} | file=${requestFeatures.hasFileInput} | structured_tool_result=${requestFeatures.hasStructuredToolResult} | ranked=${_summarizeCompatibleProviderRanking(rankedProviders)}`
+    );
 
-    const MAX_ATTEMPTS = Math.min(3, providers.length);
+    const MAX_ATTEMPTS = Math.min(3, rankedProviders.length);
 
     for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
-        const provider = providers[attempt];
+        const { provider } = rankedProviders[attempt];
 
         try {
             const mappedModel = _resolveMessagesProviderModel(provider.type, requestedModel);
@@ -916,6 +964,24 @@ async function _handleViaCompatibleKeys(res, body, requestedModel, isStreaming, 
                 logRequest({ route: '/v1/messages', provider: provider.type, keyId: provider.id, model: requestedModel, mappedModel: actualModel, requestBody: mappedBody, responseBody: errorBody, durationMs, status: response.status, success: false, error: errorBody.slice(0, 200) });
                 logger.warn(`[Messages] ${provider.type} error ${response.status}: ${provider.name} - ${errorBody.slice(0, 200)}`);
                 continue;
+            }
+
+            if (_shouldRejectTranslatorDowngrade(settings, translatorDowngrade)) {
+                const errorBody = _buildTranslatorDowngradeError(
+                    provider,
+                    requestedModel,
+                    actualModel,
+                    translatorDowngrade
+                );
+                const errorText = JSON.stringify(errorBody);
+                recordError(provider.id);
+                recordRequest({ provider: provider.type, keyId: provider.id, model: actualModel, durationMs, success: false, error: errorBody.error.message.slice(0, 200) });
+                logRequest({ route: '/v1/messages', provider: provider.type, keyId: provider.id, model: requestedModel, mappedModel: actualModel, requestBody: mappedBody, responseBody: errorText, durationMs, status: 400, success: false, error: errorBody.error.message.slice(0, 200) });
+                logger.warn(
+                    `[Messages] Strict translator compatibility rejected response | provider=${provider.type}/${provider.name} | model=${requestedModel}→${actualModel} | unsupported_tools=${translatorDowngrade.unsupportedTools || '(none)'} | tool_choice_reason=${translatorDowngrade.toolChoiceReason || '(none)'}`
+                );
+                res.status(400).json(errorBody);
+                return true;
             }
 
             // Check if response is streaming (SSE) or JSON
@@ -1233,6 +1299,9 @@ function sleep(ms) {
 export default { handleMessages };
 
 export const _testExports = {
+    _buildTranslatorDowngradeError,
     _readTranslatorDowngradeHeaders,
+    _summarizeCompatibleProviderRanking,
+    _shouldRejectTranslatorDowngrade,
     _streamDirectWithRotation
 };
