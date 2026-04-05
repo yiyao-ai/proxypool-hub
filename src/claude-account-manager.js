@@ -27,6 +27,14 @@ let autoRefreshIntervalId = null;
 const tokenCache = new Map();
 let accountsData = null;
 
+function normalizeScopes(scopes) {
+    if (Array.isArray(scopes)) return scopes.filter(Boolean);
+    if (typeof scopes === 'string') {
+        return scopes.split(/\s+/).map(scope => scope.trim()).filter(Boolean);
+    }
+    return [];
+}
+
 function ensureConfigDir() {
     if (!existsSync(CONFIG_DIR)) {
         mkdirSync(CONFIG_DIR, { recursive: true, mode: 0o700 });
@@ -160,7 +168,9 @@ function listAccounts() {
         lastUsed: account.lastUsed,
         isActive: account.email === data.activeAccount,
         enabled: account.enabled !== false,
-        tokenExpired: account.expiresAt ? account.expiresAt < Date.now() : false
+        tokenExpired: account.expiresAt ? account.expiresAt < Date.now() : false,
+        hasProfileScope: normalizeScopes(account.scopes).includes('user:profile'),
+        rateLimitTier: account.rateLimitTier || null
     }));
 
     return {
@@ -356,6 +366,7 @@ function importFromClaudeCode() {
             accountId: null,
             displayName: null,
             subscriptionType,
+            rateLimitTier: oauth.rateLimitTier || null,
             hasClaudePro: false,
             hasClaudeMax: subscriptionType === 'max',
             organizationName: null,

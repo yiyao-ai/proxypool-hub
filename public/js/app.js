@@ -36,6 +36,12 @@ document.addEventListener('alpine:init', () => {
         // Claude accounts
         claudeAccounts: [],
         antigravityAccounts: [],
+        showClaudeUsageModal: false,
+        selectedClaudeAccount: null,
+        claudeUsageRefreshing: false,
+        showAntigravityQuotaModal: false,
+        selectedAntigravityAccount: null,
+        antigravityQuotaRefreshing: false,
 
         haikuKiloModel: 'minimax/minimax-m2.5:free',
         accountStrategy: 'sequential',
@@ -676,17 +682,240 @@ document.addEventListener('alpine:init', () => {
         },
 
         // ─── Claude Account Methods ────────────────────────────────────────
-        async refreshClaudeAccounts() {
+        async refreshClaudeAccounts({ refreshUsage = false } = {}) {
             const { ok, data } = await this.api('/claude-accounts');
             if (ok) {
                 this.claudeAccounts = data.accounts || [];
+                await this.refreshClaudeQuotaData({ force: refreshUsage });
             }
         },
 
-        async refreshAntigravityAccounts() {
+        async refreshAntigravityAccounts({ refreshQuota = false } = {}) {
             const { ok, data } = await this.api('/antigravity-accounts');
             if (ok) {
                 this.antigravityAccounts = data.accounts || [];
+                await this.refreshAntigravityQuotaData({ force: refreshQuota });
+            }
+        },
+
+        async refreshClaudeQuotaData({ force = false } = {}) {
+            if (!this.claudeAccounts.length) return;
+            const endpoint = force ? '/claude-accounts/quota/all?refresh=true' : '/claude-accounts/quota/all';
+            const { ok, data } = await this.api(endpoint);
+            if (!ok || !data?.accounts) return;
+
+            const usageMap = new Map(
+                data.accounts.map((entry) => [entry.email, entry])
+            );
+
+            this.claudeAccounts = this.claudeAccounts.map((account) => ({
+                ...account,
+                usageSummary: usageMap.get(account.email) || account.usageSummary || null
+            }));
+
+            if (this.selectedClaudeAccount?.email) {
+                const refreshed = this.claudeAccounts.find((account) => account.email === this.selectedClaudeAccount.email);
+                if (refreshed) this.selectedClaudeAccount = refreshed;
+            }
+        },
+
+        claudeUsageWindow(account, key) {
+            return account?.usageSummary?.usage?.[key] || null;
+        },
+
+        claudeUsagePercent(windowData) {
+            const value = Number(windowData?.utilization);
+            return Number.isFinite(value) ? Math.max(0, Math.min(100, Math.round(value))) : null;
+        },
+
+        claudeUsageRemaining(windowData) {
+            const used = this.claudeUsagePercent(windowData);
+            if (used === null) return null;
+            return Math.max(0, 100 - used);
+        },
+
+        claudeUsageBarClass(windowData) {
+            const used = this.claudeUsagePercent(windowData);
+            if (used === null) return 'bg-gray-600';
+            if (used >= 90) return 'bg-red-500';
+            if (used >= 70) return 'bg-yellow-500';
+            return 'bg-cyan-400';
+        },
+
+        claudeUsageTextClass(windowData) {
+            const used = this.claudeUsagePercent(windowData);
+            if (used === null) return 'text-gray-500';
+            if (used >= 90) return 'text-red-400';
+            if (used >= 70) return 'text-yellow-400';
+            return 'text-cyan-300';
+        },
+
+        claudeUsageWindowLabel(account, key, fallback = '-') {
+            const used = this.claudeUsagePercent(this.claudeUsageWindow(account, key));
+            return used === null ? fallback : `${used}% used`;
+        },
+
+        claudeUsageResetLabel(windowData) {
+            if (!windowData?.resetsAt) return '-';
+            const resetAt = new Date(windowData.resetsAt);
+            if (Number.isNaN(resetAt.getTime())) return '-';
+            return resetAt.toLocaleString();
+        },
+
+        claudeUsageSourceLabel(account) {
+            const source = account?.usageSummary?.source;
+            if (source === 'oauth_usage') return 'OAuth usage API';
+            if (source === 'response_headers') return 'Observed headers';
+            return 'Usage unavailable';
+        },
+
+        claudeUsageUnavailableReason(account) {
+            const availability = account?.usageSummary?.availability;
+            if (!availability) return null;
+            if (availability.fetchError && /does not support this OAuth token/i.test(availability.fetchError)) {
+                return 'This token cannot call /api/oauth/usage';
+            }
+            if (availability.hasProfileScope === false) {
+                return 'Missing user:profile scope';
+            }
+            return availability.fetchError || null;
+        },
+
+        claudeRuntimeStatusLabel(account) {
+            const runtime = account?.usageSummary?.runtime;
+            if (!runtime) return 'Unknown';
+            if (runtime.status === 'rejected') return 'Blocked';
+            if (runtime.status === 'allowed_warning') return 'Warning';
+            if (runtime.status === 'allowed') return 'Available';
+            return runtime.status || 'Unknown';
+        },
+
+        claudeRuntimeStatusClass(account) {
+            const status = account?.usageSummary?.runtime?.status;
+            if (status === 'rejected') return 'bg-red-500/10 text-red-400 border border-red-500/30';
+            if (status === 'allowed_warning') return 'bg-yellow-500/10 text-yellow-400 border border-yellow-500/30';
+            if (status === 'allowed') return 'bg-green-500/10 text-green-400 border border-green-500/30';
+            return 'bg-gray-500/10 text-gray-400 border border-gray-500/30';
+        },
+
+        claudeExtraUsageLabel(account) {
+            const extra = account?.usageSummary?.usage?.extraUsage;
+            if (!extra) return null;
+            if (extra.monthlyLimit !== null && extra.usedCredits !== null) {
+                return `$${extra.usedCredits} / $${extra.monthlyLimit}`;
+            }
+            const utilization = Number(extra.utilization);
+            return Number.isFinite(utilization) ? `${Math.round(utilization)}%` : null;
+        },
+
+        openClaudeUsageModal(account) {
+            this.selectedClaudeAccount = account;
+            this.showClaudeUsageModal = true;
+            this.refreshSingleClaudeQuota(account.email);
+        },
+
+        async refreshSingleClaudeQuota(email) {
+            this.claudeUsageRefreshing = true;
+            const { ok, data } = await this.api(`/claude-accounts/${encodeURIComponent(email)}/quota/refresh`, { method: 'POST' });
+            this.claudeUsageRefreshing = false;
+            if (!ok || !data?.account) return;
+
+            this.claudeAccounts = this.claudeAccounts.map((account) => (
+                account.email === email
+                    ? { ...account, usageSummary: data.account }
+                    : account
+            ));
+
+            if (this.selectedClaudeAccount?.email === email) {
+                const refreshed = this.claudeAccounts.find((account) => account.email === email);
+                if (refreshed) this.selectedClaudeAccount = refreshed;
+            }
+        },
+
+        async refreshAntigravityQuotaData({ force = false } = {}) {
+            if (!this.antigravityAccounts.length) return;
+            const endpoint = force ? '/antigravity-accounts/quota/all?refresh=true' : '/antigravity-accounts/quota/all';
+            const { ok, data } = await this.api(endpoint);
+            if (!ok || !data?.accounts) return;
+
+            const quotaMap = new Map(
+                data.accounts.map((entry) => [entry.email, entry])
+            );
+
+            this.antigravityAccounts = this.antigravityAccounts.map((account) => ({
+                ...account,
+                quotaSummary: quotaMap.get(account.email) || account.quotaSummary || null
+            }));
+
+            if (this.selectedAntigravityAccount?.email) {
+                const refreshed = this.antigravityAccounts.find((account) => account.email === this.selectedAntigravityAccount.email);
+                if (refreshed) this.selectedAntigravityAccount = refreshed;
+            }
+        },
+
+        antigravityQuotaModels(account) {
+            return (account?.quotaSummary?.models || [])
+                .filter((model) => model?.quota?.remainingPercent !== null && model?.quota?.remainingPercent !== undefined)
+                .sort((a, b) => (a.quota.remainingPercent ?? 101) - (b.quota.remainingPercent ?? 101));
+        },
+
+        antigravityQuotaPreviewModels(account) {
+            return this.antigravityQuotaModels(account).slice(0, 3);
+        },
+
+        antigravityQuotaPercent(model) {
+            const value = Number(model?.quota?.remainingPercent);
+            return Number.isFinite(value) ? Math.max(0, Math.min(100, Math.round(value))) : null;
+        },
+
+        antigravityQuotaBarClass(model) {
+            const remaining = this.antigravityQuotaPercent(model);
+            if (remaining === null) return 'bg-gray-600';
+            if (remaining <= 20) return 'bg-red-500';
+            if (remaining <= 50) return 'bg-yellow-500';
+            return 'bg-cyan-400';
+        },
+
+        antigravityQuotaTextClass(model) {
+            const remaining = this.antigravityQuotaPercent(model);
+            if (remaining === null) return 'text-gray-500';
+            if (remaining <= 20) return 'text-red-400';
+            if (remaining <= 50) return 'text-yellow-400';
+            return 'text-cyan-300';
+        },
+
+        antigravityQuotaResetLabel(model) {
+            if (!model?.quota?.resetTime) return '-';
+            const resetAt = new Date(model.quota.resetTime);
+            return Number.isNaN(resetAt.getTime()) ? '-' : resetAt.toLocaleString();
+        },
+
+        antigravityQuotaSummaryLabel(account) {
+            const count = this.antigravityQuotaModels(account).length;
+            return count > 0 ? `${count} model quotas` : 'No quota data';
+        },
+
+        openAntigravityQuotaModal(account) {
+            this.selectedAntigravityAccount = account;
+            this.showAntigravityQuotaModal = true;
+            this.refreshSingleAntigravityQuota(account.email);
+        },
+
+        async refreshSingleAntigravityQuota(email) {
+            this.antigravityQuotaRefreshing = true;
+            const { ok, data } = await this.api(`/antigravity-accounts/${encodeURIComponent(email)}/quota/refresh`, { method: 'POST' });
+            this.antigravityQuotaRefreshing = false;
+            if (!ok || !data?.account) return;
+
+            this.antigravityAccounts = this.antigravityAccounts.map((account) => (
+                account.email === email
+                    ? { ...account, quotaSummary: data.account }
+                    : account
+            ));
+
+            if (this.selectedAntigravityAccount?.email === email) {
+                const refreshed = this.antigravityAccounts.find((account) => account.email === email);
+                if (refreshed) this.selectedAntigravityAccount = refreshed;
             }
         },
 
@@ -706,6 +935,7 @@ document.addEventListener('alpine:init', () => {
                             this.showToast(this.t('claudeAccountAdded'), 'success');
                             clearInterval(checkAdded);
                         }
+                        await this.refreshClaudeQuotaData({ force: true });
                     }
                 }, 2000);
 
@@ -719,7 +949,7 @@ document.addEventListener('alpine:init', () => {
             const { ok, data } = await this.api('/claude-accounts/import', { method: 'POST' });
             if (ok && data.success) {
                 this.showToast(data.message, 'success');
-                this.refreshClaudeAccounts();
+                this.refreshClaudeAccounts({ refreshUsage: true });
             } else {
                 this.showToast(data?.message || this.t('importFailed'), 'error');
             }
@@ -732,7 +962,7 @@ document.addEventListener('alpine:init', () => {
             });
             if (ok && data.success) {
                 this.showToast(data.message, 'success');
-                this.refreshClaudeAccounts();
+                this.refreshClaudeAccounts({ refreshUsage: true });
             } else {
                 this.showToast(data?.message || this.t('failedToSwitch'), 'error');
             }
@@ -742,7 +972,7 @@ document.addEventListener('alpine:init', () => {
             const { ok, data } = await this.api(`/claude-accounts/${encodeURIComponent(email)}/refresh`, { method: 'POST' });
             if (ok && data.success) {
                 this.showToast(data.message, 'success');
-                this.refreshClaudeAccounts();
+                this.refreshClaudeAccounts({ refreshUsage: true });
             } else {
                 this.showToast(data?.message || this.t('refreshFailed'), 'error');
             }
@@ -753,7 +983,7 @@ document.addEventListener('alpine:init', () => {
             const { ok, data } = await this.api('/claude-accounts/refresh/all', { method: 'POST' });
             if (ok) {
                 this.showToast(this.t('allTokensRefreshed'), 'success');
-                this.refreshClaudeAccounts();
+                this.refreshClaudeAccounts({ refreshUsage: true });
             } else {
                 this.showToast(data?.message || this.t('refreshFailed'), 'error');
             }
@@ -766,7 +996,7 @@ document.addEventListener('alpine:init', () => {
             });
             if (ok && data.success) {
                 this.showToast(data.message, 'success');
-                this.refreshClaudeAccounts();
+                this.refreshClaudeAccounts({ refreshUsage: true });
             } else {
                 this.showToast(data?.message || data?.error || this.t('updateFailed'), 'error');
             }
@@ -777,7 +1007,7 @@ document.addEventListener('alpine:init', () => {
             const { ok, data } = await this.api(`/claude-accounts/${encodeURIComponent(email)}`, { method: 'DELETE' });
             if (ok && data.success) {
                 this.showToast(data.message, 'success');
-                this.refreshClaudeAccounts();
+                this.refreshClaudeAccounts({ refreshUsage: true });
             } else {
                 this.showToast(data?.message || this.t('deleteFailed'), 'error');
             }
@@ -837,7 +1067,7 @@ document.addEventListener('alpine:init', () => {
             });
             if (ok && data.success) {
                 this.showToast(data.message, 'success');
-                this.refreshAntigravityAccounts();
+                this.refreshAntigravityAccounts({ refreshQuota: true });
             } else {
                 this.showToast(data?.message || this.t('failedToSwitch'), 'error');
             }
@@ -847,7 +1077,7 @@ document.addEventListener('alpine:init', () => {
             const { ok, data } = await this.api(`/antigravity-accounts/${encodeURIComponent(email)}/refresh`, { method: 'POST' });
             if (ok && data.success) {
                 this.showToast(data.message, 'success');
-                this.refreshAntigravityAccounts();
+                this.refreshAntigravityAccounts({ refreshQuota: true });
             } else {
                 this.showToast(data?.message || data?.error || this.t('refreshFailed'), 'error');
             }
@@ -857,7 +1087,7 @@ document.addEventListener('alpine:init', () => {
             const { ok, data } = await this.api('/antigravity-accounts/refresh/all', { method: 'POST' });
             if (ok) {
                 this.showToast(this.t('antigravityAccountsRefreshed'), 'success');
-                this.refreshAntigravityAccounts();
+                this.refreshAntigravityAccounts({ refreshQuota: true });
             } else {
                 this.showToast(data?.message || data?.error || this.t('refreshFailed'), 'error');
             }
@@ -870,7 +1100,7 @@ document.addEventListener('alpine:init', () => {
             });
             if (ok && data.success) {
                 this.showToast(data.message, 'success');
-                this.refreshAntigravityAccounts();
+                this.refreshAntigravityAccounts({ refreshQuota: true });
             } else {
                 this.showToast(data?.message || data?.error || this.t('updateFailed'), 'error');
             }
@@ -881,7 +1111,7 @@ document.addEventListener('alpine:init', () => {
             const { ok, data } = await this.api(`/antigravity-accounts/${encodeURIComponent(email)}`, { method: 'DELETE' });
             if (ok && data.success) {
                 this.showToast(data.message, 'success');
-                this.refreshAntigravityAccounts();
+                this.refreshAntigravityAccounts({ refreshQuota: true });
             } else {
                 this.showToast(data?.message || data?.error || this.t('deleteFailed'), 'error');
             }

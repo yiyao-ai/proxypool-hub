@@ -25,8 +25,9 @@ function parseDataUrl(value, defaultMediaType = 'application/octet-stream') {
     };
 }
 
-export function convertAnthropicBlockToResponsesInput(block) {
+export function convertAnthropicBlockToResponsesInput(block, options = {}) {
     if (!block || typeof block !== 'object') return null;
+    const inlineImageEncoding = options.inlineImageEncoding || 'data-field';
 
     if (block.type === 'text') {
         return { type: 'input_text', text: block.text || '' };
@@ -34,6 +35,12 @@ export function convertAnthropicBlockToResponsesInput(block) {
 
     if (block.type === 'image') {
         if (block.source?.type === 'base64' && block.source.data) {
+            if (inlineImageEncoding === 'data-url') {
+                return {
+                    type: 'input_image',
+                    image_url: buildDataUrl(block.source.media_type || 'image/jpeg', block.source.data)
+                };
+            }
             return {
                 type: 'input_image',
                 data: block.source.data,
@@ -109,14 +116,14 @@ export function convertAnthropicBlockToResponsesInput(block) {
     return null;
 }
 
-export function normalizeAnthropicToolResultOutput(block) {
+export function normalizeAnthropicToolResultOutput(block, options = {}) {
     if (typeof block?.content === 'string') {
         return block.content;
     }
 
     if (Array.isArray(block?.content)) {
         const richContent = block.content
-            .map(convertAnthropicBlockToResponsesInput)
+            .map(item => convertAnthropicBlockToResponsesInput(item, options))
             .filter(Boolean);
 
         if (richContent.length > 0) {
@@ -136,7 +143,7 @@ export function normalizeAnthropicToolResultOutput(block) {
     return '';
 }
 
-export function convertAnthropicUserContent(content) {
+export function convertAnthropicUserContent(content, options = {}) {
     const textParts = [];
     const toolResults = [];
     const imageParts = [];
@@ -158,19 +165,19 @@ export function convertAnthropicUserContent(content) {
         }
 
         if (block?.type === 'image') {
-            const imageInput = convertAnthropicBlockToResponsesInput(block);
+            const imageInput = convertAnthropicBlockToResponsesInput(block, options);
             if (imageInput) imageParts.push(imageInput);
             continue;
         }
 
         if (block?.type === 'document' || block?.type === 'file') {
-            const fileInput = convertAnthropicBlockToResponsesInput(block);
+            const fileInput = convertAnthropicBlockToResponsesInput(block, options);
             if (fileInput) fileParts.push(fileInput);
             continue;
         }
 
         if (block?.type === 'tool_result') {
-            const output = normalizeAnthropicToolResultOutput(block);
+            const output = normalizeAnthropicToolResultOutput(block, options);
             toolResults.push({
                 type: 'function_call_output',
                 call_id: toOpenAIToolId(block.tool_use_id),

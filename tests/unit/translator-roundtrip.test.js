@@ -95,7 +95,7 @@ test('round-trip preserves requestEcho reasoning config and incomplete -> max_to
   const responsesRequest = translateAnthropicToOpenAIResponsesRequest(anthropicRequest, { stream: false });
 
   assert.deepEqual(responsesRequest.reasoning, { effort: 'high' });
-  assert.equal(responsesRequest.max_output_tokens, 2048);
+  assert.equal(responsesRequest.max_completion_tokens, 2048);
   assert.deepEqual(responsesRequest.__translatorMeta?.requestEcho.reasoning, { effort: 'high' });
 
   const roundTripped = translateOpenAIResponsesToAnthropicMessage({

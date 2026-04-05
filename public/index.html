@@ -911,6 +911,7 @@
                                 <th class="py-3 pl-6 text-left text-[10px] font-bold text-gray-500 uppercase tracking-wider w-20" x-text="t('status')"></th>
                                 <th class="py-3 text-left text-[10px] font-bold text-gray-500 uppercase tracking-wider flex-1 min-w-[200px]" x-text="t('accountEmail')"></th>
                                 <th class="py-3 text-left text-[10px] font-bold text-gray-500 uppercase tracking-wider w-24" x-text="t('subscription')"></th>
+                                <th class="py-3 text-left text-[10px] font-bold text-gray-500 uppercase tracking-wider min-w-[240px]">Usage</th>
                                 <th class="py-3 text-left text-[10px] font-bold text-gray-500 uppercase tracking-wider w-32" x-text="t('token')"></th>
                                 <th class="py-3 text-left text-[10px] font-bold text-gray-500 uppercase tracking-wider w-28" x-text="t('addedAt')"></th>
                                 <th class="py-3 pr-6 text-right text-[10px] font-bold text-gray-500 uppercase tracking-wider w-40" x-text="t('operations')"></th>
@@ -919,7 +920,7 @@
                         <tbody>
                             <template x-if="filteredClaudeAccounts.length === 0 && claudeAccounts.length === 0">
                                 <tr>
-                                    <td colspan="6" class="py-16 text-center">
+                                    <td colspan="7" class="py-16 text-center">
                                         <div class="flex flex-col items-center gap-4 max-w-lg mx-auto">
                                             <svg class="w-20 h-20 text-gray-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
@@ -966,6 +967,45 @@
                                             x-text="(acc.subscriptionType || 'free').toUpperCase()"></span>
                                     </td>
                                     <td class="py-4">
+                                        <button class="w-full text-left p-3 rounded-lg border border-space-border/40 bg-space-800/40 hover:bg-space-800/70 transition-colors"
+                                            @click="openClaudeUsageModal(acc)">
+                                            <div class="flex items-center justify-between gap-2 mb-2">
+                                                <span class="text-[10px] font-mono text-gray-500 uppercase tracking-wider" x-text="claudeUsageSourceLabel(acc)"></span>
+                                                <span class="text-[10px] px-2 py-0.5 rounded font-mono" :class="claudeRuntimeStatusClass(acc)" x-text="claudeRuntimeStatusLabel(acc)"></span>
+                                            </div>
+                                            <div class="space-y-2" x-show="acc.usageSummary?.usage">
+                                                <div>
+                                                    <div class="flex items-center justify-between text-[11px] font-mono mb-1">
+                                                        <span class="text-gray-500">5h</span>
+                                                        <span :class="claudeUsageTextClass(claudeUsageWindow(acc, 'fiveHour'))" x-text="claudeUsageWindowLabel(acc, 'fiveHour')"></span>
+                                                    </div>
+                                                    <div class="w-full h-1.5 rounded-full bg-space-900 overflow-hidden">
+                                                        <div class="h-full rounded-full transition-all" :class="claudeUsageBarClass(claudeUsageWindow(acc, 'fiveHour'))"
+                                                            :style="`width: ${claudeUsagePercent(claudeUsageWindow(acc, 'fiveHour')) || 0}%`"></div>
+                                                    </div>
+                                                </div>
+                                                <div>
+                                                    <div class="flex items-center justify-between text-[11px] font-mono mb-1">
+                                                        <span class="text-gray-500">7d</span>
+                                                        <span :class="claudeUsageTextClass(claudeUsageWindow(acc, 'sevenDay'))" x-text="claudeUsageWindowLabel(acc, 'sevenDay')"></span>
+                                                    </div>
+                                                    <div class="w-full h-1.5 rounded-full bg-space-900 overflow-hidden">
+                                                        <div class="h-full rounded-full transition-all" :class="claudeUsageBarClass(claudeUsageWindow(acc, 'sevenDay'))"
+                                                            :style="`width: ${claudeUsagePercent(claudeUsageWindow(acc, 'sevenDay')) || 0}%`"></div>
+                                                    </div>
+                                                </div>
+                                                <template x-if="claudeExtraUsageLabel(acc)">
+                                                    <div class="text-[10px] font-mono text-gray-400">
+                                                        Extra: <span class="text-gray-200" x-text="claudeExtraUsageLabel(acc)"></span>
+                                                    </div>
+                                                </template>
+                                                <template x-if="claudeUsageUnavailableReason(acc)">
+                                                    <div class="text-[10px] font-mono text-yellow-400" x-text="claudeUsageUnavailableReason(acc)"></div>
+                                                </template>
+                                            </div>
+                                        </button>
+                                    </td>
+                                    <td class="py-4">
                                         <span class="text-xs font-mono"
                                             :class="acc.tokenExpired ? 'text-red-400' : 'text-neon-green'"
                                             x-text="acc.tokenExpired ? t('expired') : t('valid')"></span>
@@ -996,7 +1036,7 @@
                             </template>
                             <template x-if="claudeAccounts.length > 0 && filteredClaudeAccounts.length === 0">
                                 <tr>
-                                    <td colspan="6" class="py-12 text-center">
+                                    <td colspan="7" class="py-12 text-center">
                                         <div class="flex flex-col items-center gap-3">
                                             <svg class="w-12 h-12 text-gray-700" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
                                             <p class="text-sm text-gray-600" x-text="t('noAccountsMatch')"></p>
@@ -1017,6 +1057,7 @@
                                 <th class="py-3 text-left text-[10px] font-bold text-gray-500 uppercase tracking-wider min-w-[220px]" x-text="t('accountLabel')"></th>
                                 <th class="py-3 text-left text-[10px] font-bold text-gray-500 uppercase tracking-wider w-28" x-text="t('projectLabel')"></th>
                                 <th class="py-3 text-left text-[10px] font-bold text-gray-500 uppercase tracking-wider w-20" x-text="t('modelsLabel')"></th>
+                                <th class="py-3 text-left text-[10px] font-bold text-gray-500 uppercase tracking-wider min-w-[260px]">Quota</th>
                                 <th class="py-3 text-left text-[10px] font-bold text-gray-500 uppercase tracking-wider w-24" x-text="t('token')"></th>
                                 <th class="py-3 pr-6 text-right text-[10px] font-bold text-gray-500 uppercase tracking-wider w-40" x-text="t('operations')"></th>
                             </tr>
@@ -1024,7 +1065,7 @@
                         <tbody>
                             <template x-if="filteredAntigravityAccounts.length === 0 && antigravityAccounts.length === 0">
                                 <tr>
-                                    <td colspan="6" class="py-16 text-center">
+                                    <td colspan="7" class="py-16 text-center">
                                         <div class="flex flex-col items-center gap-4 max-w-lg mx-auto">
                                             <svg class="w-20 h-20 text-gray-700" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M12 3l2.7 5.46 6.03.88-4.36 4.25 1.03 6.01L12 16.77 6.6 19.6l1.03-6.01L3.27 9.34l6.03-.88z" /></svg>
                                             <h3 class="text-xl font-semibold text-gray-400" x-text="t('noAntigravityAccountsYet')"></h3>
@@ -1060,6 +1101,34 @@
                                     <td class="py-4"><span class="text-xs text-gray-500 font-mono" x-text="acc.projectId || '-'"></span></td>
                                     <td class="py-4"><span class="text-xs text-cyan-300 font-mono" x-text="acc.modelCount || 0"></span></td>
                                     <td class="py-4">
+                                        <button class="w-full text-left p-3 rounded-lg border border-space-border/40 bg-space-800/40 hover:bg-space-800/70 transition-colors"
+                                            @click="openAntigravityQuotaModal(acc)">
+                                            <div class="flex items-center justify-between gap-2 mb-2">
+                                                <span class="text-[10px] font-mono text-gray-500 uppercase tracking-wider" x-text="antigravityQuotaSummaryLabel(acc)"></span>
+                                                <span class="text-[10px] font-mono text-cyan-300" x-text="acc.quotaSummary?.subscriptionType || acc.subscriptionType || '-'"></span>
+                                            </div>
+                                            <template x-if="antigravityQuotaPreviewModels(acc).length > 0">
+                                                <div class="space-y-2">
+                                                    <template x-for="model in antigravityQuotaPreviewModels(acc)" :key="model.publicId">
+                                                        <div>
+                                                            <div class="flex items-center justify-between text-[11px] font-mono mb-1">
+                                                                <span class="text-gray-400 truncate mr-2" x-text="model.displayName"></span>
+                                                                <span :class="antigravityQuotaTextClass(model)" x-text="antigravityQuotaPercent(model) !== null ? antigravityQuotaPercent(model) + '%' : '-'"></span>
+                                                            </div>
+                                                            <div class="w-full h-1.5 rounded-full bg-space-900 overflow-hidden">
+                                                                <div class="h-full rounded-full transition-all" :class="antigravityQuotaBarClass(model)"
+                                                                    :style="`width: ${antigravityQuotaPercent(model) || 0}%`"></div>
+                                                            </div>
+                                                        </div>
+                                                    </template>
+                                                </div>
+                                            </template>
+                                            <template x-if="antigravityQuotaPreviewModels(acc).length === 0">
+                                                <div class="text-[10px] font-mono text-gray-500">No quota data yet</div>
+                                            </template>
+                                        </button>
+                                    </td>
+                                    <td class="py-4">
                                         <span class="text-xs font-mono"
                                             :class="acc.tokenExpired ? 'text-red-400' : 'text-neon-green'"
                                             x-text="acc.tokenExpired ? t('expired') : t('valid')"></span>
@@ -1087,7 +1156,7 @@
                             </template>
                             <template x-if="antigravityAccounts.length > 0 && filteredAntigravityAccounts.length === 0">
                                 <tr>
-                                    <td colspan="6" class="py-12 text-center">
+                                    <td colspan="7" class="py-12 text-center">
                                         <div class="flex flex-col items-center gap-3">
                                             <svg class="w-12 h-12 text-gray-700" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
                                             <p class="text-sm text-gray-600" x-text="t('noAccountsMatch')"></p>
@@ -2913,6 +2982,178 @@
 
             <div class="mt-6 flex justify-end">
                 <button class="btn btn-outline btn-sm text-gray-400" @click="showQuotaModalView = false" x-text="t('close')"></button>
+            </div>
+        </div>
+    </div>
+
+    <div x-show="showClaudeUsageModal" x-transition class="fixed inset-0 z-50 flex items-center justify-center p-4" style="display: none;">
+        <div class="absolute inset-0 bg-black/70 backdrop-blur-sm" @click="showClaudeUsageModal = false"></div>
+        <div class="relative bg-space-900 border border-space-border rounded-xl shadow-2xl max-w-3xl w-full p-6">
+            <div class="flex items-start justify-between gap-4 mb-6">
+                <div>
+                    <h3 class="font-bold text-lg text-white">Claude Usage</h3>
+                    <p class="text-sm text-gray-500 font-mono mt-1" x-text="selectedClaudeAccount?.email"></p>
+                </div>
+                <div class="flex items-center gap-2">
+                    <button class="btn btn-sm bg-space-800 hover:bg-space-700 border border-space-border text-gray-300"
+                        @click="refreshSingleClaudeQuota(selectedClaudeAccount.email)"
+                        :disabled="claudeUsageRefreshing || !selectedClaudeAccount?.email"
+                        x-text="claudeUsageRefreshing ? 'Refreshing...' : 'Refresh'"></button>
+                    <span class="text-[10px] px-2 py-1 rounded font-mono"
+                        :class="claudeRuntimeStatusClass(selectedClaudeAccount)"
+                        x-text="claudeRuntimeStatusLabel(selectedClaudeAccount)"></span>
+                    <button class="btn btn-outline btn-sm text-gray-400" @click="showClaudeUsageModal = false" x-text="t('close')"></button>
+                </div>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div class="p-4 rounded-xl border border-space-border/40 bg-space-800/40">
+                    <div class="flex items-center justify-between mb-2">
+                        <span class="text-sm font-semibold text-white">Current Session</span>
+                        <span class="text-xs font-mono" :class="claudeUsageTextClass(claudeUsageWindow(selectedClaudeAccount, 'fiveHour'))"
+                            x-text="claudeUsageWindowLabel(selectedClaudeAccount, 'fiveHour', 'Unavailable')"></span>
+                    </div>
+                    <div class="w-full h-2 rounded-full bg-space-950 overflow-hidden">
+                        <div class="h-full rounded-full transition-all" :class="claudeUsageBarClass(claudeUsageWindow(selectedClaudeAccount, 'fiveHour'))"
+                            :style="`width: ${claudeUsagePercent(claudeUsageWindow(selectedClaudeAccount, 'fiveHour')) || 0}%`"></div>
+                    </div>
+                    <div class="mt-3 text-xs text-gray-500">
+                        Resets at: <span class="text-gray-300 font-mono" x-text="claudeUsageResetLabel(claudeUsageWindow(selectedClaudeAccount, 'fiveHour'))"></span>
+                    </div>
+                </div>
+
+                <div class="p-4 rounded-xl border border-space-border/40 bg-space-800/40">
+                    <div class="flex items-center justify-between mb-2">
+                        <span class="text-sm font-semibold text-white">Current Week</span>
+                        <span class="text-xs font-mono" :class="claudeUsageTextClass(claudeUsageWindow(selectedClaudeAccount, 'sevenDay'))"
+                            x-text="claudeUsageWindowLabel(selectedClaudeAccount, 'sevenDay', 'Unavailable')"></span>
+                    </div>
+                    <div class="w-full h-2 rounded-full bg-space-950 overflow-hidden">
+                        <div class="h-full rounded-full transition-all" :class="claudeUsageBarClass(claudeUsageWindow(selectedClaudeAccount, 'sevenDay'))"
+                            :style="`width: ${claudeUsagePercent(claudeUsageWindow(selectedClaudeAccount, 'sevenDay')) || 0}%`"></div>
+                    </div>
+                    <div class="mt-3 text-xs text-gray-500">
+                        Resets at: <span class="text-gray-300 font-mono" x-text="claudeUsageResetLabel(claudeUsageWindow(selectedClaudeAccount, 'sevenDay'))"></span>
+                    </div>
+                </div>
+
+                <div class="p-4 rounded-xl border border-space-border/40 bg-space-800/40">
+                    <div class="flex items-center justify-between mb-2">
+                        <span class="text-sm font-semibold text-white">Sonnet Week</span>
+                        <span class="text-xs font-mono" :class="claudeUsageTextClass(claudeUsageWindow(selectedClaudeAccount, 'sevenDaySonnet'))"
+                            x-text="claudeUsageWindowLabel(selectedClaudeAccount, 'sevenDaySonnet', 'Unavailable')"></span>
+                    </div>
+                    <div class="w-full h-2 rounded-full bg-space-950 overflow-hidden">
+                        <div class="h-full rounded-full transition-all" :class="claudeUsageBarClass(claudeUsageWindow(selectedClaudeAccount, 'sevenDaySonnet'))"
+                            :style="`width: ${claudeUsagePercent(claudeUsageWindow(selectedClaudeAccount, 'sevenDaySonnet')) || 0}%`"></div>
+                    </div>
+                    <div class="mt-3 text-xs text-gray-500">
+                        Resets at: <span class="text-gray-300 font-mono" x-text="claudeUsageResetLabel(claudeUsageWindow(selectedClaudeAccount, 'sevenDaySonnet'))"></span>
+                    </div>
+                </div>
+
+                <div class="p-4 rounded-xl border border-space-border/40 bg-space-800/40">
+                    <div class="flex items-center justify-between mb-2">
+                        <span class="text-sm font-semibold text-white">Extra Usage</span>
+                        <span class="text-xs font-mono text-gray-300" x-text="claudeExtraUsageLabel(selectedClaudeAccount) || 'Unavailable'"></span>
+                    </div>
+                    <div class="space-y-2 text-xs text-gray-500">
+                        <div>
+                            Source: <span class="text-gray-300 font-mono" x-text="claudeUsageSourceLabel(selectedClaudeAccount)"></span>
+                        </div>
+                        <div>
+                            Tier: <span class="text-gray-300 font-mono" x-text="selectedClaudeAccount?.rateLimitTier || selectedClaudeAccount?.usageSummary?.rateLimitTier || '-'"></span>
+                        </div>
+                        <div>
+                            Last observed: <span class="text-gray-300 font-mono"
+                                x-text="selectedClaudeAccount?.usageSummary?.runtime?.lastObservedAt ? new Date(selectedClaudeAccount.usageSummary.runtime.lastObservedAt).toLocaleString() : '-'"></span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="mt-4 p-4 rounded-xl border border-space-border/40 bg-space-800/30 space-y-2 text-xs">
+                <div class="flex items-center justify-between">
+                    <span class="text-gray-500">Representative claim</span>
+                    <span class="text-gray-300 font-mono" x-text="selectedClaudeAccount?.usageSummary?.runtime?.representativeClaim || '-'"></span>
+                </div>
+                <div class="flex items-center justify-between">
+                    <span class="text-gray-500">Overage status</span>
+                    <span class="text-gray-300 font-mono" x-text="selectedClaudeAccount?.usageSummary?.runtime?.overageStatus || '-'"></span>
+                </div>
+                <div class="flex items-center justify-between">
+                    <span class="text-gray-500">Overage reset</span>
+                    <span class="text-gray-300 font-mono"
+                        x-text="selectedClaudeAccount?.usageSummary?.runtime?.overageResetAt ? new Date(selectedClaudeAccount.usageSummary.runtime.overageResetAt).toLocaleString() : '-'"></span>
+                </div>
+                <template x-if="claudeUsageUnavailableReason(selectedClaudeAccount)">
+                    <div class="text-yellow-400 font-mono">Fetch warning: <span x-text="claudeUsageUnavailableReason(selectedClaudeAccount)"></span></div>
+                </template>
+            </div>
+        </div>
+    </div>
+
+    <div x-show="showAntigravityQuotaModal" x-transition class="fixed inset-0 z-50 flex items-center justify-center p-4" style="display: none;">
+        <div class="absolute inset-0 bg-black/70 backdrop-blur-sm" @click="showAntigravityQuotaModal = false"></div>
+        <div class="relative bg-space-900 border border-space-border rounded-xl shadow-2xl max-w-4xl w-full p-6">
+            <div class="flex items-start justify-between gap-4 mb-6">
+                <div>
+                    <h3 class="font-bold text-lg text-white">Antigravity Model Quotas</h3>
+                    <p class="text-sm text-gray-500 font-mono mt-1" x-text="selectedAntigravityAccount?.email"></p>
+                </div>
+                <div class="flex items-center gap-2">
+                    <button class="btn btn-sm bg-space-800 hover:bg-space-700 border border-space-border text-gray-300"
+                        @click="refreshSingleAntigravityQuota(selectedAntigravityAccount.email)"
+                        :disabled="antigravityQuotaRefreshing || !selectedAntigravityAccount?.email"
+                        x-text="antigravityQuotaRefreshing ? 'Refreshing...' : 'Refresh'"></button>
+                    <span class="text-[10px] px-2 py-1 rounded font-mono bg-cyan-500/10 text-cyan-300 border border-cyan-400/30"
+                        x-text="selectedAntigravityAccount?.quotaSummary?.subscriptionType || selectedAntigravityAccount?.subscriptionType || '-'"></span>
+                    <button class="btn btn-outline btn-sm text-gray-400" @click="showAntigravityQuotaModal = false" x-text="t('close')"></button>
+                </div>
+            </div>
+
+            <div class="text-xs text-gray-500 mb-4">
+                Project: <span class="text-gray-300 font-mono" x-text="selectedAntigravityAccount?.projectId || selectedAntigravityAccount?.quotaSummary?.projectId || '-'"></span>
+                <span class="mx-2 text-gray-700">|</span>
+                Fetched at: <span class="text-gray-300 font-mono"
+                    x-text="selectedAntigravityAccount?.quotaSummary?.fetchedAt ? new Date(selectedAntigravityAccount.quotaSummary.fetchedAt).toLocaleString() : '-'"></span>
+            </div>
+
+            <div class="max-h-[60vh] overflow-y-auto space-y-3">
+                <template x-for="model in antigravityQuotaModels(selectedAntigravityAccount)" :key="model.publicId">
+                    <div class="p-4 rounded-xl border border-space-border/40 bg-space-800/40">
+                        <div class="flex items-start justify-between gap-4">
+                            <div class="min-w-0">
+                                <div class="text-sm font-semibold text-white truncate" x-text="model.displayName"></div>
+                                <div class="text-[10px] font-mono text-gray-500 mt-1" x-text="model.publicId"></div>
+                            </div>
+                            <div class="flex items-center gap-2 text-[10px] font-mono">
+                                <template x-if="model.supportsThinking">
+                                    <span class="px-2 py-1 rounded bg-blue-500/10 text-blue-300 border border-blue-500/30">thinking</span>
+                                </template>
+                                <template x-if="model.supportsImages">
+                                    <span class="px-2 py-1 rounded bg-purple-500/10 text-purple-300 border border-purple-500/30">image</span>
+                                </template>
+                                <template x-if="model.recommended">
+                                    <span class="px-2 py-1 rounded bg-green-500/10 text-green-300 border border-green-500/30">recommended</span>
+                                </template>
+                                <span :class="antigravityQuotaTextClass(model)" x-text="antigravityQuotaPercent(model) !== null ? antigravityQuotaPercent(model) + '%' : '-'"></span>
+                            </div>
+                        </div>
+                        <div class="w-full h-2 rounded-full bg-space-950 overflow-hidden mt-3">
+                            <div class="h-full rounded-full transition-all" :class="antigravityQuotaBarClass(model)"
+                                :style="`width: ${antigravityQuotaPercent(model) || 0}%`"></div>
+                        </div>
+                        <div class="mt-3 text-xs text-gray-500">
+                            Reset: <span class="text-gray-300 font-mono" x-text="antigravityQuotaResetLabel(model)"></span>
+                        </div>
+                    </div>
+                </template>
+                <template x-if="antigravityQuotaModels(selectedAntigravityAccount).length === 0">
+                    <div class="p-6 rounded-xl border border-space-border/40 bg-space-800/40 text-sm text-gray-500 font-mono">
+                        No quota data available for this account.
+                    </div>
+                </template>
             </div>
         </div>
     </div>

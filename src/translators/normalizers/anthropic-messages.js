@@ -82,7 +82,7 @@ export function convertAnthropicAssistantContent(content) {
     return { textParts, toolCalls };
 }
 
-export function convertAnthropicMessagesToResponsesInput(messages) {
+export function convertAnthropicMessagesToResponsesInput(messages, options = {}) {
     if (!Array.isArray(messages)) return [];
 
     const cleanedMessages = cleanCacheControl(messages);
@@ -90,7 +90,7 @@ export function convertAnthropicMessagesToResponsesInput(messages) {
 
     for (const message of cleanedMessages) {
         if (message?.role === 'user') {
-            const { textParts, toolResults, imageParts, fileParts } = convertAnthropicUserContent(message.content);
+            const { textParts, toolResults, imageParts, fileParts } = convertAnthropicUserContent(message.content, options);
 
             if (textParts.length > 0 || imageParts.length > 0 || fileParts.length > 0) {
                 let content;

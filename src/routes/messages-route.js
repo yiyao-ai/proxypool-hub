@@ -8,7 +8,8 @@ import { logger } from '../utils/logger.js';
 import { AccountRotator } from '../account-rotation/index.js';
 import { listAccounts, getActiveAccount, save } from '../account-manager.js';
 import { loadAccounts as loadClaudeAccounts, refreshAccountToken, getAccount as getClaudeAccount } from '../claude-account-manager.js';
-import { sendClaudeMessage, sendClaudeStream } from '../claude-api.js';
+import { recordClaudeRuntimeObservation } from '../claude-usage.js';
+import { sendClaudeMessageWithMeta, sendClaudeStream, extractClaudeRateLimitHeaders } from '../claude-api.js';
 import { listAccounts as listAntigravityAccounts, getAvailableAccountForModel as getAntigravityAccountForModel } from '../antigravity-account-manager.js';
 import { sendAntigravityMessage, writeAnthropicSSEFromMessage, isAntigravityModel, toPublicAntigravityModel } from '../antigravity-api.js';
 import { getServerSettings } from '../server-settings.js';
@@ -561,6 +562,9 @@ async function _handleViaAssignedClaudeAccount(req, res, body, requestedModel, i
         const claudeBody = { ...body, max_tokens: body.max_tokens || 8192 };
         if (isStreaming) {
             const upstream = await sendClaudeStream(claudeBody, account.accessToken, { clientBeta });
+            recordClaudeRuntimeObservation(account.email, extractClaudeRateLimitHeaders(upstream.headers), {
+                model: body.model || requestedModel
+            });
             res.setHeader('Content-Type', 'text/event-stream');
             res.setHeader('Cache-Control', 'no-cache');
             res.setHeader('Connection', 'keep-alive');
@@ -583,7 +587,10 @@ async function _handleViaAssignedClaudeAccount(req, res, body, requestedModel, i
                 latencyMs: durationMs
             });
         } else {
-            const result = await sendClaudeMessage(claudeBody, account.accessToken, { clientBeta });
+            const { data: result, rateLimitHeaders } = await sendClaudeMessageWithMeta(claudeBody, account.accessToken, { clientBeta });
+            recordClaudeRuntimeObservation(account.email, rateLimitHeaders, {
+                model: body.model || requestedModel
+            });
             const durationMs = Date.now() - startTime;
             const inputTokens = result.usage?.input_tokens || 0;
             const outputTokens = result.usage?.output_tokens || 0;
@@ -598,6 +605,9 @@ async function _handleViaAssignedClaudeAccount(req, res, body, requestedModel, i
         }
         return true;
     } catch (error) {
+        recordClaudeRuntimeObservation(account.email, error.rateLimitHeaders, {
+            model: body.model || requestedModel
+        });
         markCredentialError(buildCredentialId('claude-account', account.email), error, {
             model: body.model || requestedModel,
             invalid: error.message.includes('AUTH_EXPIRED')
@@ -1114,6 +1124,9 @@ async function _handleViaClaudeAccount(req, res, body, requestedModel, isStreami
 
             if (isStreaming) {
                 const upstream = await sendClaudeStream(claudeBody, account.accessToken, apiOpts);
+                recordClaudeRuntimeObservation(account.email, extractClaudeRateLimitHeaders(upstream.headers), {
+                    model
+                });
 
                 // Pipe Anthropic SSE directly — no format conversion needed
                 res.setHeader('Content-Type', 'text/event-stream');
@@ -1145,7 +1158,8 @@ async function _handleViaClaudeAccount(req, res, body, requestedModel, isStreami
                 }
                 if (!res.writableEnded) { try { res.end(); } catch { /* ignore */ } }
             } else {
-                const result = await sendClaudeMessage(claudeBody, account.accessToken, apiOpts);
+                const { data: result, rateLimitHeaders } = await sendClaudeMessageWithMeta(claudeBody, account.accessToken, apiOpts);
+                recordClaudeRuntimeObservation(account.email, rateLimitHeaders, { model });
                 res.json(result);
             }
 
@@ -1156,6 +1170,7 @@ async function _handleViaClaudeAccount(req, res, body, requestedModel, isStreami
             return true;
         } catch (error) {
             const durationMs = Date.now() - startTime;
+            recordClaudeRuntimeObservation(account.email, error.rateLimitHeaders, { model });
 
             // If headers were already sent (stream started), the response is committed — don't retry
             if (res.headersSent) {
@@ -1178,6 +1193,9 @@ async function _handleViaClaudeAccount(req, res, body, requestedModel, isStreami
                             const apiOpts = { ...apiOptsBase, signal: abortController.signal };
                             if (isStreaming) {
                                 const upstream = await sendClaudeStream(claudeBody, refreshed.accessToken, apiOpts);
+                                recordClaudeRuntimeObservation(account.email, extractClaudeRateLimitHeaders(upstream.headers), {
+                                    model
+                                });
                                 res.setHeader('Content-Type', 'text/event-stream');
                                 res.setHeader('Cache-Control', 'no-cache');
                                 res.setHeader('Connection', 'keep-alive');
@@ -1199,7 +1217,8 @@ async function _handleViaClaudeAccount(req, res, body, requestedModel, isStreami
                                 }
                                 if (!res.writableEnded) { try { res.end(); } catch { /* ignore */ } }
                             } else {
-                                const result = await sendClaudeMessage(claudeBody, refreshed.accessToken, apiOpts);
+                                const { data: result, rateLimitHeaders } = await sendClaudeMessageWithMeta(claudeBody, refreshed.accessToken, apiOpts);
+                                recordClaudeRuntimeObservation(account.email, rateLimitHeaders, { model });
                                 res.json(result);
                             }
                             const retryDurationMs = Date.now() - startTime;

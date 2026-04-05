@@ -19,8 +19,15 @@ export function translateAnthropicToOpenAIResponsesRequest(anthropicRequest, con
     const { normalized: requestOptions, requestEcho } = normalizeAnthropicResponsesRequestOptions(
         anthropicRequest,
         {
+            maxTokensField: capabilities.responsesMaxTokensField,
             parallelToolCalls: context.parallelToolCalls,
-            store: context.store
+            store: context.store,
+            supportsReasoning: capabilities.supportsResponsesReasoning,
+            supportsTemperature: capabilities.supportsResponsesTemperature,
+            supportsTopP: capabilities.supportsResponsesTopP,
+            supportsStop: capabilities.supportsResponsesStop,
+            supportsMetadata: capabilities.supportsResponsesMetadata,
+            supportsUser: capabilities.supportsResponsesUser
         }
     );
     const {
@@ -41,7 +48,9 @@ export function translateAnthropicToOpenAIResponsesRequest(anthropicRequest, con
 
     const request = {
         model: anthropicRequest.model || context.defaultModel || 'gpt-5.2-codex',
-        input: convertAnthropicMessagesToResponsesInput(anthropicRequest.messages || []),
+        input: convertAnthropicMessagesToResponsesInput(anthropicRequest.messages || [], {
+            inlineImageEncoding: capabilities.responsesInlineImageEncoding
+        }),
         tools,
         tool_choice: toolChoice,
         ...requestOptions,

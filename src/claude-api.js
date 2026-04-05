@@ -10,6 +10,18 @@ import { normalizeJsonSchema } from './json-schema-normalizer.js';
 const CLAUDE_API_URL = 'https://api.anthropic.com/v1/messages';
 const ANTHROPIC_VERSION = '2023-06-01';
 const REQUIRED_BETA_FLAGS = ['oauth-2025-04-20', 'prompt-caching-2024-07-31'];
+const CLAUDE_RATELIMIT_HEADERS = {
+    status: 'anthropic-ratelimit-unified-status',
+    resetAt: 'anthropic-ratelimit-unified-reset',
+    fiveHourUtilization: 'anthropic-ratelimit-unified-5h-utilization',
+    fiveHourResetAt: 'anthropic-ratelimit-unified-5h-reset',
+    sevenDayUtilization: 'anthropic-ratelimit-unified-7d-utilization',
+    sevenDayResetAt: 'anthropic-ratelimit-unified-7d-reset',
+    representativeClaim: 'anthropic-ratelimit-unified-representative-claim',
+    overageStatus: 'anthropic-ratelimit-unified-overage-status',
+    overageResetAt: 'anthropic-ratelimit-unified-overage-reset',
+    overageDisabledReason: 'anthropic-ratelimit-unified-overage-disabled-reason'
+};
 
 function collectErrorMessages(error) {
     const messages = [];
@@ -44,6 +56,18 @@ function buildClaudeNetworkError(operation, error) {
 function logClaudeNetworkError(operation, error) {
     const details = collectErrorMessages(error);
     logger.error(`[ClaudeAPI] ${operation} network error: ${details.join(' | ') || 'unknown network error'}`);
+}
+
+export function extractClaudeRateLimitHeaders(headers) {
+    if (!headers?.get) return null;
+
+    const extracted = {};
+    for (const [key, headerName] of Object.entries(CLAUDE_RATELIMIT_HEADERS)) {
+        const value = headers.get(headerName);
+        if (value) extracted[key] = value;
+    }
+
+    return Object.keys(extracted).length > 0 ? extracted : null;
 }
 
 /**
@@ -200,6 +224,11 @@ function _cloneContent(content) {
  * @returns {Promise<object>} Parsed Anthropic response
  */
 export async function sendClaudeMessage(body, accessToken, { clientBeta } = {}) {
+    const { data } = await sendClaudeMessageWithMeta(body, accessToken, { clientBeta });
+    return data;
+}
+
+export async function sendClaudeMessageWithMeta(body, accessToken, { clientBeta } = {}) {
     const sanitized = { ...sanitizeClaudeBody(body), stream: false };
     let response;
     try {
@@ -224,7 +253,10 @@ export async function sendClaudeMessage(body, accessToken, { clientBeta } = {}) 
         _throwApiError(response, errorText);
     }
 
-    return await response.json();
+    return {
+        data: await response.json(),
+        rateLimitHeaders: extractClaudeRateLimitHeaders(response.headers)
+    };
 }
 
 /**
@@ -266,11 +298,15 @@ export async function sendClaudeStream(body, accessToken, { clientBeta, signal }
 function _throwApiError(response, errorText) {
     if (response.status === 401 || response.status === 403) {
         logger.error(`[ClaudeAPI] Auth error ${response.status}: ${errorText.slice(0, 500)}`);
-        throw new Error(`AUTH_EXPIRED: ${response.status} - ${errorText.slice(0, 300)}`);
+        const error = new Error(`AUTH_EXPIRED: ${response.status} - ${errorText.slice(0, 300)}`);
+        _attachClaudeErrorMetadata(error, response);
+        throw error;
     }
     if (response.status === 429) {
         const resetMs = _parseResetTime(response, errorText);
-        throw new Error(`RATE_LIMITED:${resetMs}:${errorText}`);
+        const error = new Error(`RATE_LIMITED:${resetMs}:${errorText}`);
+        _attachClaudeErrorMetadata(error, response);
+        throw error;
     }
     // Detect generic 400 "Error" — Claude OAuth returns this when the account
     // has exhausted its model quota (e.g., no more Opus/Sonnet usage left).
@@ -278,14 +314,23 @@ function _throwApiError(response, errorText) {
         try {
             const parsed = JSON.parse(errorText);
             if (parsed?.error?.message === 'Error' && parsed?.error?.type === 'invalid_request_error') {
-                throw new Error(`MODEL_QUOTA_EXHAUSTED: Account usage limit likely reached for this model tier`);
+                const error = new Error(`MODEL_QUOTA_EXHAUSTED: Account usage limit likely reached for this model tier`);
+                _attachClaudeErrorMetadata(error, response);
+                throw error;
             }
         } catch (e) {
             if (e.message.startsWith('MODEL_QUOTA_EXHAUSTED')) throw e;
             // not JSON or different format — fall through to generic handler
         }
     }
-    throw new Error(`CLAUDE_API_ERROR: ${response.status} - ${errorText.slice(0, 500)}`);
+    const error = new Error(`CLAUDE_API_ERROR: ${response.status} - ${errorText.slice(0, 500)}`);
+    _attachClaudeErrorMetadata(error, response);
+    throw error;
+}
+
+function _attachClaudeErrorMetadata(error, response) {
+    error.statusCode = response.status;
+    error.rateLimitHeaders = extractClaudeRateLimitHeaders(response.headers);
 }
 
 function _parseResetTime(response, errorText) {
@@ -343,4 +388,4 @@ export const _testExports = {
     buildClaudeNetworkError
 };
 
-export default { sendClaudeMessage, sendClaudeStream, mapToClaudeModel, sanitizeClaudeBody };
+export default { sendClaudeMessage, sendClaudeMessageWithMeta, sendClaudeStream, mapToClaudeModel, sanitizeClaudeBody };

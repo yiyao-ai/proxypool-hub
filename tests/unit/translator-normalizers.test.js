@@ -158,7 +158,7 @@ test('responses request normalizer maps anthropic request options and builds req
     thinking: { type: 'enabled', budget_tokens: 6000 }
   });
 
-  assert.equal(normalized.max_output_tokens, 4096);
+  assert.equal(normalized.max_completion_tokens, 4096);
   assert.equal(normalized.temperature, 0.3);
   assert.equal(normalized.top_p, 0.9);
   assert.deepEqual(normalized.stop, ['STOP', 'END']);

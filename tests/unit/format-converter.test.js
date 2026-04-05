@@ -74,7 +74,7 @@ test('convertAnthropicToResponsesAPI: request options map to responses fields an
 
   const result = convertAnthropicToResponsesAPI(req, { stream: false });
 
-  assert.equal(result.max_output_tokens, 8192);
+  assert.equal(result.max_completion_tokens, 8192);
   assert.deepEqual(result.metadata, { source: 'phase2-test' });
   assert.equal(result.temperature, 0.2);
   assert.equal(result.top_p, 0.95);

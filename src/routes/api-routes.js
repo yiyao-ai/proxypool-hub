@@ -53,6 +53,8 @@ import {
 import {
   handleListClaudeAccounts,
   handleClaudeAccountStatus,
+  handleGetClaudeQuotas,
+  handleRefreshClaudeQuota,
   handleClaudeOAuthCleanup,
   handleAddClaudeAccount,
   handleAddClaudeAccountManual,
@@ -67,6 +69,8 @@ import {
 import {
   handleListAntigravityAccounts,
   handleAntigravityAccountStatus,
+  handleGetAntigravityQuotas,
+  handleRefreshAntigravityQuota,
   handleAntigravityOAuthCleanup,
   handleAddAntigravityAccount,
   handleAddAntigravityAccountManual,
@@ -149,6 +153,7 @@ export function registerApiRoutes(app, { port }) {
   // ─── Claude Account Management ────────────────────────────────────────────
   app.get('/claude-accounts', handleListClaudeAccounts);
   app.get('/claude-accounts/status', handleClaudeAccountStatus);
+  app.get('/claude-accounts/quota/all', handleGetClaudeQuotas);
 
   app.post('/claude-accounts/add', handleAddClaudeAccount);
   app.post('/claude-accounts/add/manual', handleAddClaudeAccountManual);
@@ -158,6 +163,7 @@ export function registerApiRoutes(app, { port }) {
   app.post('/claude-accounts/refresh/all', handleRefreshAllClaudeAccounts);
   app.post('/claude-accounts/oauth/cleanup', handleClaudeOAuthCleanup);
   app.post('/claude-accounts/:email/refresh', handleRefreshClaudeAccount);
+  app.post('/claude-accounts/:email/quota/refresh', handleRefreshClaudeQuota);
 
   app.put('/claude-accounts/:email/toggle', handleToggleClaudeAccount);
   app.delete('/claude-accounts/:email', handleRemoveClaudeAccount);
@@ -165,6 +171,7 @@ export function registerApiRoutes(app, { port }) {
   // ─── Antigravity Account Management ──────────────────────────────────────
   app.get('/antigravity-accounts', handleListAntigravityAccounts);
   app.get('/antigravity-accounts/status', handleAntigravityAccountStatus);
+  app.get('/antigravity-accounts/quota/all', handleGetAntigravityQuotas);
   app.post('/antigravity-accounts/add', handleAddAntigravityAccount);
   app.post('/antigravity-accounts/add/manual', handleAddAntigravityAccountManual);
   app.post('/antigravity-accounts/import', handleImportAntigravityAccount);
@@ -172,6 +179,7 @@ export function registerApiRoutes(app, { port }) {
   app.post('/antigravity-accounts/switch', handleSwitchAntigravityAccount);
   app.post('/antigravity-accounts/refresh/all', handleRefreshAllAntigravityAccounts);
   app.post('/antigravity-accounts/:email/refresh', handleRefreshAntigravityAccount);
+  app.post('/antigravity-accounts/:email/quota/refresh', handleRefreshAntigravityQuota);
   app.put('/antigravity-accounts/:email/toggle', handleToggleAntigravityAccount);
   app.delete('/antigravity-accounts/:email', handleRemoveAntigravityAccount);
 

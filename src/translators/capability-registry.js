@@ -11,6 +11,16 @@ function normalizeCapabilityProfile(profile = {}) {
         supportsInputFile: profile.supportsInputFile !== false,
         supportsInputImage: profile.supportsInputImage !== false,
         supportsStructuredToolResult: profile.supportsStructuredToolResult !== false,
+        responsesMaxTokensField: profile.responsesMaxTokensField === undefined
+            ? 'max_completion_tokens'
+            : profile.responsesMaxTokensField,
+        supportsResponsesReasoning: profile.supportsResponsesReasoning !== false,
+        supportsResponsesTemperature: profile.supportsResponsesTemperature !== false,
+        supportsResponsesTopP: profile.supportsResponsesTopP !== false,
+        supportsResponsesStop: profile.supportsResponsesStop !== false,
+        supportsResponsesMetadata: profile.supportsResponsesMetadata !== false,
+        supportsResponsesUser: profile.supportsResponsesUser !== false,
+        responsesInlineImageEncoding: profile.responsesInlineImageEncoding || 'data-field',
         disableThinkingBudgetAppsWithTools: Array.isArray(profile.disableThinkingBudgetAppsWithTools)
             ? [...profile.disableThinkingBudgetAppsWithTools]
             : []
@@ -37,6 +47,14 @@ export function resolveCapabilityProfile(from, to, context = {}) {
         supportsInputFile: profile.supportsInputFile,
         supportsInputImage: profile.supportsInputImage,
         supportsStructuredToolResult: profile.supportsStructuredToolResult,
+        responsesMaxTokensField: profile.responsesMaxTokensField,
+        supportsResponsesReasoning: profile.supportsResponsesReasoning,
+        supportsResponsesTemperature: profile.supportsResponsesTemperature,
+        supportsResponsesTopP: profile.supportsResponsesTopP,
+        supportsResponsesStop: profile.supportsResponsesStop,
+        supportsResponsesMetadata: profile.supportsResponsesMetadata,
+        supportsResponsesUser: profile.supportsResponsesUser,
+        responsesInlineImageEncoding: profile.responsesInlineImageEncoding,
         disableThinkingBudget: hasTools && profile.disableThinkingBudgetAppsWithTools.includes(appId),
         disableThinkingBudgetAppsWithTools: [...profile.disableThinkingBudgetAppsWithTools]
     };
@@ -71,7 +89,23 @@ registerCapabilityProfile('anthropic-messages', 'openai-responses', 'default', {
     supportsHostedTools: false,
     supportsInputFile: true,
     supportsInputImage: true,
-    supportsStructuredToolResult: true
+    supportsStructuredToolResult: true,
+    responsesMaxTokensField: 'max_completion_tokens'
+});
+
+registerCapabilityProfile('anthropic-messages', 'openai-responses', 'chatgpt-backend', {
+    supportsHostedTools: false,
+    supportsInputFile: true,
+    supportsInputImage: true,
+    supportsStructuredToolResult: true,
+    responsesMaxTokensField: null,
+    supportsResponsesReasoning: false,
+    supportsResponsesTemperature: false,
+    supportsResponsesTopP: false,
+    supportsResponsesStop: false,
+    supportsResponsesMetadata: false,
+    supportsResponsesUser: false,
+    responsesInlineImageEncoding: 'data-url'
 });
 
 export default {

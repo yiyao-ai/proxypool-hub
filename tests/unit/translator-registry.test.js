@@ -97,4 +97,19 @@ test('registry resolves default openai responses capability profile', () => {
   assert.equal(result.supportsInputFile, true);
   assert.equal(result.supportsInputImage, true);
   assert.equal(result.supportsStructuredToolResult, true);
+  assert.equal(result.responsesMaxTokensField, 'max_completion_tokens');
+});
+
+test('registry resolves chatgpt backend openai responses capability profile', () => {
+  const result = resolveAnthropicOpenAIResponsesCapabilities({
+    capabilityProfile: 'chatgpt-backend'
+  });
+
+  assert.equal(result.responsesMaxTokensField, null);
+  assert.equal(result.supportsResponsesReasoning, false);
+  assert.equal(result.supportsResponsesTemperature, false);
+  assert.equal(result.supportsResponsesTopP, false);
+  assert.equal(result.supportsResponsesStop, false);
+  assert.equal(result.supportsResponsesMetadata, false);
+  assert.equal(result.supportsResponsesUser, false);
 });

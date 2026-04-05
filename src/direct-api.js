@@ -13,6 +13,7 @@ import { executeChatGPTResponsesRequest, parseResetTime } from './executors/chat
 export async function* sendMessageStream(anthropicRequest, accessToken, accountId, accountRotator = null, currentEmail = null) {
     const modelId = anthropicRequest.model;
     const request = translateRequest('anthropic-messages', 'openai-responses', anthropicRequest, {
+        capabilityProfile: 'chatgpt-backend',
         stream: true
     });
     const response = await executeChatGPTResponsesRequest({
@@ -33,6 +34,7 @@ export async function* sendMessageStream(anthropicRequest, accessToken, accountI
 export async function openMessageStream(anthropicRequest, accessToken, accountId, accountRotator = null, currentEmail = null) {
     const modelId = anthropicRequest.model;
     const request = translateRequest('anthropic-messages', 'openai-responses', anthropicRequest, {
+        capabilityProfile: 'chatgpt-backend',
         stream: true
     });
 
@@ -51,6 +53,7 @@ export async function openMessageStream(anthropicRequest, accessToken, accountId
  */
 export async function sendMessage(anthropicRequest, accessToken, accountId) {
     const request = translateRequest('anthropic-messages', 'openai-responses', anthropicRequest, {
+        capabilityProfile: 'chatgpt-backend',
         stream: false
     });
     const response = await executeChatGPTResponsesRequest({

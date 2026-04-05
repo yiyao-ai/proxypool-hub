@@ -101,43 +101,55 @@ export function normalizeAnthropicReasoningConfig(anthropicRequest = {}) {
 export function normalizeAnthropicResponsesRequestOptions(anthropicRequest = {}, options = {}) {
     const normalized = {};
     const requestEcho = {};
+    const maxTokensField = options.maxTokensField === undefined
+        ? 'max_completion_tokens'
+        : options.maxTokensField;
+    const supportsReasoning = options.supportsReasoning !== false;
+    const supportsTemperature = options.supportsTemperature !== false;
+    const supportsTopP = options.supportsTopP !== false;
+    const supportsStop = options.supportsStop !== false;
+    const supportsMetadata = options.supportsMetadata !== false;
+    const supportsUser = options.supportsUser !== false;
 
     const reasoning = normalizeAnthropicReasoningConfig(anthropicRequest);
-    if (reasoning) {
+    if (reasoning && supportsReasoning) {
         normalized.reasoning = reasoning;
-        requestEcho.reasoning = reasoning;
+    }
+    if (reasoning) requestEcho.reasoning = reasoning;
+
+    if (Number.isFinite(anthropicRequest.max_tokens) && maxTokensField) {
+        normalized[maxTokensField] = anthropicRequest.max_tokens;
     }
 
     if (Number.isFinite(anthropicRequest.max_tokens)) {
-        normalized.max_output_tokens = anthropicRequest.max_tokens;
         requestEcho.max_output_tokens = anthropicRequest.max_tokens;
     }
 
-    if (typeof anthropicRequest.temperature === 'number') {
+    if (typeof anthropicRequest.temperature === 'number' && supportsTemperature) {
         normalized.temperature = anthropicRequest.temperature;
-        requestEcho.temperature = anthropicRequest.temperature;
     }
+    if (typeof anthropicRequest.temperature === 'number') requestEcho.temperature = anthropicRequest.temperature;
 
-    if (typeof anthropicRequest.top_p === 'number') {
+    if (typeof anthropicRequest.top_p === 'number' && supportsTopP) {
         normalized.top_p = anthropicRequest.top_p;
-        requestEcho.top_p = anthropicRequest.top_p;
     }
+    if (typeof anthropicRequest.top_p === 'number') requestEcho.top_p = anthropicRequest.top_p;
 
     const stop = normalizeStopSequences(anthropicRequest.stop_sequences);
-    if (stop !== undefined) {
+    if (stop !== undefined && supportsStop) {
         normalized.stop = stop;
-        requestEcho.stop = stop;
     }
+    if (stop !== undefined) requestEcho.stop = stop;
 
-    if (anthropicRequest.metadata && typeof anthropicRequest.metadata === 'object' && !Array.isArray(anthropicRequest.metadata)) {
+    if (anthropicRequest.metadata && typeof anthropicRequest.metadata === 'object' && !Array.isArray(anthropicRequest.metadata) && supportsMetadata) {
         normalized.metadata = anthropicRequest.metadata;
-        requestEcho.metadata = anthropicRequest.metadata;
     }
+    if (anthropicRequest.metadata && typeof anthropicRequest.metadata === 'object' && !Array.isArray(anthropicRequest.metadata)) requestEcho.metadata = anthropicRequest.metadata;
 
-    if (typeof anthropicRequest.user === 'string' && anthropicRequest.user.length > 0) {
+    if (typeof anthropicRequest.user === 'string' && anthropicRequest.user.length > 0 && supportsUser) {
         normalized.user = anthropicRequest.user;
-        requestEcho.user = anthropicRequest.user;
     }
+    if (typeof anthropicRequest.user === 'string' && anthropicRequest.user.length > 0) requestEcho.user = anthropicRequest.user;
 
     const parallelToolCalls = options.parallelToolCalls ?? true;
     normalized.parallel_tool_calls = parallelToolCalls;

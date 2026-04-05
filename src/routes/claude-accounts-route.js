@@ -40,6 +40,11 @@ import {
     fetchProfile
 } from '../claude-oauth.js';
 
+import {
+    listClaudeUsageSummaries,
+    refreshClaudeUsage
+} from '../claude-usage.js';
+
 import { logger } from '../utils/logger.js';
 
 // Tracks active OAuth callback servers keyed by port
@@ -53,6 +58,22 @@ export function handleListClaudeAccounts(req, res) {
 
 export function handleClaudeAccountStatus(req, res) {
     res.json(getStatus());
+}
+
+export async function handleGetClaudeQuotas(req, res) {
+    const refresh = req.query?.refresh === 'true';
+    const result = await listClaudeUsageSummaries({ refresh });
+    res.json(result);
+}
+
+export async function handleRefreshClaudeQuota(req, res) {
+    const email = decodeURIComponent(req.params.email);
+    try {
+        const summary = await refreshClaudeUsage(email, { force: true });
+        res.json({ success: true, account: summary });
+    } catch (error) {
+        res.status(404).json({ success: false, error: error.message });
+    }
 }
 
 export function handleClaudeOAuthCleanup(req, res) {
@@ -275,6 +296,8 @@ async function _upsertClaudeAccount(accountInfo) {
 export default {
     handleListClaudeAccounts,
     handleClaudeAccountStatus,
+    handleGetClaudeQuotas,
+    handleRefreshClaudeQuota,
     handleClaudeOAuthCleanup,
     handleAddClaudeAccount,
     handleAddClaudeAccountManual,

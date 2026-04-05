@@ -106,10 +106,12 @@ function summarizeAccount(account, activeAccount) {
         addedAt: account.addedAt,
         lastUsed: account.lastUsed,
         modelCount: Array.isArray(account.models) ? account.models.length : 0,
+        quotaFetchedAt: account.quotaFetchedAt || null,
         models: (account.models || []).map((model) => ({
             id: model.id,
             publicId: model.publicId || toPublicAntigravityModel(model.id),
-            displayName: model.displayName || model.id
+            displayName: model.displayName || model.id,
+            quota: model.quota || null
         }))
     };
 }
@@ -163,6 +165,31 @@ function upsertAccountRecord(accountInfo) {
     return nextRecord;
 }
 
+function summarizeQuotaModel(model) {
+    return {
+        id: model.id,
+        publicId: model.publicId || toPublicAntigravityModel(model.id),
+        displayName: model.displayName || model.id,
+        recommended: model.recommended === true,
+        supportsImages: model.supportsImages === true,
+        supportsThinking: model.supportsThinking === true,
+        quota: model.quota || null
+    };
+}
+
+function buildQuotaSummary(account) {
+    return {
+        email: account.email,
+        displayName: account.displayName || null,
+        subscriptionType: account.subscriptionType || 'unknown',
+        projectId: account.projectId || null,
+        source: 'fetch_available_models',
+        fetchedAt: account.quotaFetchedAt || null,
+        tokenExpired: !account.expiresAt || account.expiresAt < Date.now(),
+        models: (account.models || []).map(summarizeQuotaModel)
+    };
+}
+
 export async function refreshAccountToken(email) {
     const existing = getAccount(email);
     if (!existing?.refreshToken) {
@@ -187,6 +214,7 @@ export async function refreshAccountToken(email) {
             projectId: project.projectId,
             subscriptionType: project.subscriptionType || existing.subscriptionType || 'unknown',
             models,
+            quotaFetchedAt: new Date().toISOString(),
             lastUsed: new Date().toISOString()
         });
 
@@ -275,6 +303,7 @@ export async function addManualAccount({ refreshToken, accessToken, expiresAt, e
         projectId: project.projectId,
         subscriptionType: project.subscriptionType || 'unknown',
         models,
+        quotaFetchedAt: new Date().toISOString(),
         source: 'manual'
     });
 
@@ -305,6 +334,7 @@ export async function addOAuthAccount({ accessToken, refreshToken, expiresIn, oa
         projectId: project.projectId,
         subscriptionType: project.subscriptionType || 'unknown',
         models,
+        quotaFetchedAt: new Date().toISOString(),
         source: 'oauth'
     });
 
@@ -354,6 +384,36 @@ export function getAllModels() {
     return [...models.values()];
 }
 
+export async function listQuotaSummaries({ refresh = false } = {}) {
+    if (refresh) {
+        const accounts = loadAccounts().accounts.filter((account) => account.enabled !== false);
+        for (const account of accounts) {
+            await refreshAccountToken(account.email);
+        }
+    }
+
+    const data = loadAccounts();
+    return {
+        accounts: data.accounts.map(buildQuotaSummary),
+        activeAccount: data.activeAccount,
+        total: data.accounts.length
+    };
+}
+
+export async function refreshQuotaSummary(email) {
+    const result = await refreshAccountToken(email);
+    if (!result.success) {
+        throw new Error(result.message || `Failed to refresh antigravity account: ${email}`);
+    }
+
+    const account = getAccount(email);
+    if (!account) {
+        throw new Error(`Account not found: ${email}`);
+    }
+
+    return buildQuotaSummary(account);
+}
+
 export function getAvailableAccountForModel(modelId, preferredEmail = null) {
     const normalized = modelId?.startsWith('antigravity/') ? modelId.slice('antigravity/'.length) : modelId;
     const mapped = mapAntigravityUpstreamModel(normalized);
@@ -398,6 +458,8 @@ export default {
     addOAuthAccount,
     importAccount,
     getAllModels,
+    listQuotaSummaries,
+    refreshQuotaSummary,
     getAvailableAccountForModel,
     startAutoRefresh,
     stopAutoRefresh,

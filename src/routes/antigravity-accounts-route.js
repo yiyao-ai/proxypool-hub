@@ -6,6 +6,8 @@ import {
     importAccount,
     setActiveAccount,
     refreshAccountToken,
+    listQuotaSummaries,
+    refreshQuotaSummary,
     refreshAllAccounts,
     toggleAccount,
     removeAccount
@@ -28,6 +30,22 @@ export function handleListAntigravityAccounts(req, res) {
 
 export function handleAntigravityAccountStatus(req, res) {
     res.json(getStatus());
+}
+
+export async function handleGetAntigravityQuotas(req, res) {
+    const refresh = req.query?.refresh === 'true';
+    const result = await listQuotaSummaries({ refresh });
+    res.json(result);
+}
+
+export async function handleRefreshAntigravityQuota(req, res) {
+    const email = decodeURIComponent(req.params.email);
+    try {
+        const summary = await refreshQuotaSummary(email);
+        res.json({ success: true, account: summary });
+    } catch (error) {
+        res.status(404).json({ success: false, error: error.message });
+    }
 }
 
 export function handleAntigravityOAuthCleanup(req, res) {
@@ -157,6 +175,8 @@ export function handleRemoveAntigravityAccount(req, res) {
 export default {
     handleListAntigravityAccounts,
     handleAntigravityAccountStatus,
+    handleGetAntigravityQuotas,
+    handleRefreshAntigravityQuota,
     handleAntigravityOAuthCleanup,
     handleAddAntigravityAccount,
     handleAddAntigravityAccountManual,

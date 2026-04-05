@@ -10,7 +10,8 @@
 import { AccountRotator } from '../account-rotation/index.js';
 import { listAccounts, getActiveAccount, save } from '../account-manager.js';
 import { loadAccounts as loadClaudeAccounts, refreshAccountToken, getAccount as getClaudeAccount } from '../claude-account-manager.js';
-import { sendClaudeMessage, mapToClaudeModel } from '../claude-api.js';
+import { recordClaudeRuntimeObservation } from '../claude-usage.js';
+import { sendClaudeMessageWithMeta, mapToClaudeModel } from '../claude-api.js';
 import { listAccounts as listAntigravityAccounts, getAvailableAccountForModel as getAntigravityAccountForModel, getAllModels as getAllAntigravityModels } from '../antigravity-account-manager.js';
 import { sendAntigravityMessage, isAntigravityModel } from '../antigravity-api.js';
 import { getCredentialsForAccount } from '../middleware/credentials.js';
@@ -502,7 +503,8 @@ async function _handleCodexViaAssignedClaudeAccount(res, body, modelId, isStream
     const anthropicBody = _codexToAnthropicBody(body);
 
     try {
-        const claudeResponse = await sendClaudeMessage(anthropicBody, account.accessToken);
+        const { data: claudeResponse, rateLimitHeaders } = await sendClaudeMessageWithMeta(anthropicBody, account.accessToken);
+        recordClaudeRuntimeObservation(account.email, rateLimitHeaders, { model: anthropicBody.model });
         const durationMs = Date.now() - startTime;
         const codexFormat = _anthropicToCodexFormat(claudeResponse, modelId);
         const inputTokens = claudeResponse.usage?.input_tokens || 0;
@@ -513,6 +515,7 @@ async function _handleCodexViaAssignedClaudeAccount(res, body, modelId, isStream
         if (isStreaming) sendResponsesSSE(res, codexFormat); else res.json(codexFormat);
         return true;
     } catch (error) {
+        recordClaudeRuntimeObservation(account.email, error.rateLimitHeaders, { model: anthropicBody.model });
         logger.error(`[Codex] Assigned Claude account error: ${account.email} - ${error.message}`);
         return false;
     }
@@ -1390,7 +1393,8 @@ async function _handleCodexViaClaudeAccount(res, body, modelId, isStreaming, sta
             const mappedModel = anthropicBody.model;
             logger.info(`[Codex] >>> Claude account | ${account.email} | ${modelId}→${mappedModel}`);
 
-            const claudeResponse = await sendClaudeMessage(anthropicBody, account.accessToken);
+            const { data: claudeResponse, rateLimitHeaders } = await sendClaudeMessageWithMeta(anthropicBody, account.accessToken);
+            recordClaudeRuntimeObservation(account.email, rateLimitHeaders, { model: mappedModel });
             const durationMs = Date.now() - startTime;
 
             const codexFormat = _anthropicToCodexFormat(claudeResponse, modelId);
@@ -1410,6 +1414,7 @@ async function _handleCodexViaClaudeAccount(res, body, modelId, isStreaming, sta
             return true;
         } catch (error) {
             const durationMs = Date.now() - startTime;
+            recordClaudeRuntimeObservation(account.email, error.rateLimitHeaders, { model: anthropicBody.model });
             if (error.message.includes('AUTH_EXPIRED')) {
                 logger.warn(`[Codex] Claude account auth expired: ${account.email}, attempting token refresh...`);
                 try {
@@ -1418,7 +1423,8 @@ async function _handleCodexViaClaudeAccount(res, body, modelId, isStreaming, sta
                         const refreshed = getClaudeAccount(account.email);
                         if (refreshed && refreshed.accessToken) {
                             logger.info(`[Codex] Token refreshed for ${account.email}, retrying...`);
-                            const retryResponse = await sendClaudeMessage(anthropicBody, refreshed.accessToken);
+                            const { data: retryResponse, rateLimitHeaders } = await sendClaudeMessageWithMeta(anthropicBody, refreshed.accessToken);
+                            recordClaudeRuntimeObservation(account.email, rateLimitHeaders, { model: anthropicBody.model });
                             const retryDurationMs = Date.now() - startTime;
                             const codexFormat = _anthropicToCodexFormat(retryResponse, modelId);
                             const inputTokens = retryResponse.usage?.input_tokens || 0;

@@ -52,6 +52,23 @@ function normalizeModelId(modelId) {
         : modelId;
 }
 
+function normalizeQuotaInfo(quotaInfo) {
+    if (!quotaInfo || typeof quotaInfo !== 'object') {
+        return null;
+    }
+
+    const remainingFraction = Number(quotaInfo.remainingFraction);
+    const remainingPercent = Number.isFinite(remainingFraction)
+        ? Math.max(0, Math.min(100, Math.round(remainingFraction * 100)))
+        : null;
+
+    return {
+        remainingFraction: Number.isFinite(remainingFraction) ? remainingFraction : null,
+        remainingPercent,
+        resetTime: quotaInfo.resetTime || null
+    };
+}
+
 export function mapAntigravityUpstreamModel(modelId) {
     const normalized = normalizeModelId(modelId);
     const lower = String(normalized || '').toLowerCase();
@@ -367,7 +384,8 @@ export async function fetchAvailableModels(accessToken, projectId) {
                 maxOutputTokens: info?.maxOutputTokens || null,
                 supportsImages: info?.supportsImages === true,
                 supportsThinking: info?.supportsThinking === true,
-                recommended: info?.recommended === true
+                recommended: info?.recommended === true,
+                quota: normalizeQuotaInfo(info?.quotaInfo)
             }));
             return models.sort((a, b) => {
                 if (a.recommended !== b.recommended) return a.recommended ? -1 : 1;

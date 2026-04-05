@@ -4,9 +4,10 @@ import {
   refreshAccountToken as refreshClaudeAccountToken,
   getAccount as getClaudeAccount
 } from '../claude-account-manager.js';
+import { recordClaudeRuntimeObservation } from '../claude-usage.js';
 import { getCredentialsForAccount } from '../middleware/credentials.js';
 import { sendMessage, sendMessageStream } from '../direct-api.js';
-import { sendClaudeMessage, sendClaudeStream, mapToClaudeModel } from '../claude-api.js';
+import { sendClaudeMessageWithMeta, sendClaudeStream, mapToClaudeModel, extractClaudeRateLimitHeaders } from '../claude-api.js';
 import { listApiKeys, getProviderById, recordUsage, recordError, recordRateLimit } from '../api-key-manager.js';
 import { resolveModel } from '../model-mapping.js';
 import { logger } from '../utils/logger.js';
@@ -112,12 +113,15 @@ export async function handleChatWithSource(req, res) {
       let response;
 
       try {
-        response = await sendClaudeMessage(buildAnthropicRequest({
+        const result = await sendClaudeMessageWithMeta(buildAnthropicRequest({
           model: upstreamModel,
           messages,
           temperature
         }), account.accessToken);
+        response = result.data;
+        recordClaudeRuntimeObservation(account.email, result.rateLimitHeaders, { model: upstreamModel });
       } catch (error) {
+        recordClaudeRuntimeObservation(account.email, error.rateLimitHeaders, { model: upstreamModel });
         if (!error.message?.startsWith('AUTH_EXPIRED')) {
           throw error;
         }
@@ -128,11 +132,13 @@ export async function handleChatWithSource(req, res) {
         }
 
         account = getClaudeAccount(email) || account;
-        response = await sendClaudeMessage(buildAnthropicRequest({
+        const result = await sendClaudeMessageWithMeta(buildAnthropicRequest({
           model: upstreamModel,
           messages,
           temperature
         }), account.accessToken);
+        response = result.data;
+        recordClaudeRuntimeObservation(account.email, result.rateLimitHeaders, { model: upstreamModel });
       }
 
       return res.json({
@@ -285,8 +291,10 @@ export async function handleStreamChatWithSource(req, res) {
           temperature,
           stream: true
         }), account.accessToken);
+        recordClaudeRuntimeObservation(account.email, extractClaudeRateLimitHeaders(response.headers), { model: upstreamModel });
         return await streamAnthropicResponse(response, res, { requestedModel, mappedModel: upstreamModel });
       } catch (error) {
+        recordClaudeRuntimeObservation(account.email, error.rateLimitHeaders, { model: upstreamModel });
         if (!error.message?.startsWith('AUTH_EXPIRED')) {
           throw error;
         }
@@ -303,6 +311,7 @@ export async function handleStreamChatWithSource(req, res) {
           temperature,
           stream: true
         }), account.accessToken);
+        recordClaudeRuntimeObservation(account.email, extractClaudeRateLimitHeaders(retryResponse.headers), { model: upstreamModel });
         return await streamAnthropicResponse(retryResponse, res, { requestedModel, mappedModel: upstreamModel });
       }
     }
