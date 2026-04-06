@@ -16,7 +16,7 @@ import { getServerSettings } from '../server-settings.js';
 import { selectKey, getAllProviders, recordUsage, recordError, recordRateLimit } from '../api-key-manager.js';
 import { recordRequest } from '../usage-tracker.js';
 import { logRequest } from '../request-logger.js';
-import { detectRequestApp, resolveAssignedCredentials } from '../app-routing.js';
+import { detectRequestApp, resolveAssignedCredentials, orderAssignedCredentials } from '../app-routing.js';
 import { resolveModel, resolveModelForced } from '../model-mapping.js';
 import { resolveCredentialForRequest } from '../credential-selector.js';
 import { buildCredentialId } from '../credential-registry.js';
@@ -366,9 +366,11 @@ export async function handleMessages(req, res) {
 }
 
 async function _handleMessagesAssignment(req, res, body, requestedModel, upstreamModel, isStreaming, startTime, clientBeta, assignment) {
-    const assignments = Array.isArray(assignment.assignments)
+    const baseAssignments = Array.isArray(assignment.assignments)
         ? assignment.assignments
         : (assignment.credential ? [assignment] : []);
+    const settings = getServerSettings();
+    const assignments = orderAssignedCredentials(baseAssignments, settings.accountStrategy || 'sequential');
 
     for (const candidate of assignments) {
         if (!candidate?.credential) continue;

@@ -25,7 +25,7 @@ import { decompress as fzstdDecompress } from 'fzstd';
 import { sendResponsesSSE } from '../utils/responses-sse.js';
 import { resolveModel } from '../model-mapping.js';
 import { logRequest } from '../request-logger.js';
-import { detectRequestApp, resolveAssignedCredentials } from '../app-routing.js';
+import { detectRequestApp, resolveAssignedCredentials, orderAssignedCredentials } from '../app-routing.js';
 import { resolveCredentialForRequest } from '../credential-selector.js';
 import { buildCredentialId } from '../credential-registry.js';
 import { markCredentialError, markCredentialRateLimited, markCredentialSuccess, recordRoutingDecision } from '../runtime-state.js';
@@ -426,9 +426,11 @@ export async function handleResponses(req, res) {
 }
 
 async function _handleResponsesAssignment(req, res, assignment, rawBody, contentEncoding, parsed, modelId, isStreaming, startTime, isCompact) {
-    const assignments = Array.isArray(assignment.assignments)
+    const baseAssignments = Array.isArray(assignment.assignments)
         ? assignment.assignments
         : (assignment.credential ? [assignment] : []);
+    const settings = getServerSettings();
+    const assignments = orderAssignedCredentials(baseAssignments, settings.accountStrategy || 'sequential');
 
     for (const candidate of assignments) {
         if (!candidate?.credential) continue;

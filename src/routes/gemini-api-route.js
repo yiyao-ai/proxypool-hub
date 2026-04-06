@@ -13,7 +13,7 @@ import { logger } from '../utils/logger.js';
 import { recordRequest as recordUsageRequest } from '../usage-tracker.js';
 import { logRequest } from '../request-logger.js';
 import { getServerSettings } from '../server-settings.js';
-import { detectRequestApp, resolveAssignedCredential } from '../app-routing.js';
+import { detectRequestApp, resolveAssignedCredentials, orderAssignedCredentials } from '../app-routing.js';
 
 const DEFAULT_GEMINI_BASE = 'https://generativelanguage.googleapis.com/v1beta';
 
@@ -202,7 +202,7 @@ export async function handleGeminiApiProxy(req, res) {
     }
 
     if (settings.routingMode === 'app-assigned') {
-        const assignment = resolveAssignedCredential(settings, appId);
+        const assignment = resolveAssignedCredentials(settings, appId);
         if (assignment.matched) {
             const assigned = await _handleAssignedGeminiRequest(req, res, requestedModel, action, isStreaming, geminiBody, assignment);
             if (assigned !== false) return;
@@ -331,41 +331,50 @@ export async function handleGeminiApiProxy(req, res) {
 }
 
 async function _handleAssignedGeminiRequest(req, res, requestedModel, action, isStreaming, geminiBody, assignment) {
-    if (assignment.credentialType !== 'api-key' || !assignment.credential) return false;
-    const provider = assignment.credential;
+    const settings = getServerSettings();
+    const baseAssignments = Array.isArray(assignment.assignments)
+        ? assignment.assignments
+        : (assignment.credential ? [assignment] : []);
+    const assignments = orderAssignedCredentials(baseAssignments, settings.accountStrategy || 'sequential');
 
-    try {
-        const mappedModel = resolveModel(provider.type, requestedModel);
-        if (provider.type === 'gemini') {
-            const baseUrl = provider.baseUrl || DEFAULT_GEMINI_BASE;
-            const url = `${baseUrl}/models/${mappedModel}:${action}?key=${provider.apiKey}`;
-            const upstreamRes = await fetch(url, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(geminiBody)
-            });
-            if (!upstreamRes.ok) return false;
-            const contentType = upstreamRes.headers.get('content-type') || 'application/json';
-            res.writeHead(200, { 'Content-Type': contentType });
-            const reader = upstreamRes.body.getReader();
-            while (true) {
-                const { done, value } = await reader.read();
-                if (done) break;
-                res.write(value);
+    for (const candidate of assignments) {
+        if (candidate.credentialType !== 'api-key' || !candidate.credential) continue;
+        const provider = candidate.credential;
+
+        try {
+            const mappedModel = resolveModel(provider.type, requestedModel);
+            if (provider.type === 'gemini') {
+                const baseUrl = provider.baseUrl || DEFAULT_GEMINI_BASE;
+                const url = `${baseUrl}/models/${mappedModel}:${action}?key=${provider.apiKey}`;
+                const upstreamRes = await fetch(url, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(geminiBody)
+                });
+                if (!upstreamRes.ok) continue;
+                const contentType = upstreamRes.headers.get('content-type') || 'application/json';
+                res.writeHead(200, { 'Content-Type': contentType });
+                const reader = upstreamRes.body.getReader();
+                while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+                    res.write(value);
+                }
+                res.end();
+                return true;
             }
-            res.end();
-            return true;
-        }
 
-        const response = await _proxyViaConversion(provider, mappedModel, geminiBody);
-        if (!response.ok) return false;
-        const responseBody = await response.text();
-        const parsed = JSON.parse(responseBody);
-        if (isStreaming) _sendGeminiSSE(res, parsed); else res.json(parsed);
-        return true;
-    } catch {
-        return false;
+            const response = await _proxyViaConversion(provider, mappedModel, geminiBody);
+            if (!response.ok) continue;
+            const responseBody = await response.text();
+            const parsed = JSON.parse(responseBody);
+            if (isStreaming) _sendGeminiSSE(res, parsed); else res.json(parsed);
+            return true;
+        } catch {
+            continue;
+        }
     }
+    return false;
 }
 
 /**

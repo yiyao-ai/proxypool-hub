@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { _testExports } from '../../src/routes/responses-route.js';
+import { orderAssignedCredentials } from '../../src/app-routing.js';
 
 const { _responsesToChatBody, findToolCallSequenceError, resolveResponsesStreamingMode, _responsesToAnthropicBody } = _testExports;
 
@@ -176,4 +177,40 @@ test('_responsesToAnthropicBody normalizes top-level union tool schemas for Clau
   assert.equal(body.tools[0].input_schema.oneOf, undefined);
   assert.equal(body.tools[0].input_schema.anyOf, undefined);
   assert.equal(body.tools[0].input_schema.allOf, undefined);
+});
+
+test('orderAssignedCredentials keeps assigned bindings stable for sequential strategy', () => {
+  const assignments = [
+    { credential: { email: 'a@example.com' } },
+    { credential: { email: 'b@example.com' } },
+    { credential: { email: 'c@example.com' } }
+  ];
+
+  const ordered = orderAssignedCredentials(assignments, 'sequential', () => 0.99);
+
+  assert.deepEqual(
+    ordered.map((item) => item.credential.email),
+    ['a@example.com', 'b@example.com', 'c@example.com']
+  );
+  assert.notEqual(ordered, assignments);
+});
+
+test('orderAssignedCredentials shuffles assigned bindings for random strategy', () => {
+  const assignments = [
+    { credential: { email: 'a@example.com' } },
+    { credential: { email: 'b@example.com' } },
+    { credential: { email: 'c@example.com' } }
+  ];
+
+  const randomValues = [0.8, 0.1];
+  const ordered = orderAssignedCredentials(assignments, 'random', () => randomValues.shift() ?? 0);
+
+  assert.deepEqual(
+    ordered.map((item) => item.credential.email),
+    ['b@example.com', 'a@example.com', 'c@example.com']
+  );
+  assert.deepEqual(
+    assignments.map((item) => item.credential.email),
+    ['a@example.com', 'b@example.com', 'c@example.com']
+  );
 });

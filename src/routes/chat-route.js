@@ -16,7 +16,7 @@ import { selectKey, recordUsage, recordError, recordRateLimit, hasKeysForTypes, 
 import { recordRequest } from '../usage-tracker.js';
 import { resolveModel } from '../model-mapping.js';
 import { logRequest } from '../request-logger.js';
-import { detectRequestApp, resolveAssignedCredential } from '../app-routing.js';
+import { detectRequestApp, resolveAssignedCredentials, orderAssignedCredentials } from '../app-routing.js';
 import { resolveCredentialForRequest } from '../credential-selector.js';
 import { markCredentialError, markCredentialRateLimited, markCredentialSuccess, recordRoutingDecision } from '../runtime-state.js';
 import { buildCredentialId } from '../credential-registry.js';
@@ -83,7 +83,7 @@ export async function handleChatCompletion(req, res) {
   }
 
   if (settings.routingMode === 'app-assigned') {
-    const assignment = resolveAssignedCredential(settings, appId);
+    const assignment = resolveAssignedCredentials(settings, appId);
     if (assignment.matched) {
       const assigned = await _handleChatAssignment(req, res, body, requestedModel, upstreamModel, startTime, assignment);
       if (assigned !== false) return;
@@ -123,32 +123,40 @@ export async function handleChatCompletion(req, res) {
 }
 
 async function _handleChatAssignment(req, res, body, requestedModel, upstreamModel, startTime, assignment) {
-  if (!assignment.credential) return false;
+  const baseAssignments = Array.isArray(assignment.assignments)
+    ? assignment.assignments
+    : (assignment.credential ? [assignment] : []);
+  const settings = getServerSettings();
+  const assignments = orderAssignedCredentials(baseAssignments, settings.accountStrategy || 'sequential');
 
-  if (assignment.credentialType === 'chatgpt-account') {
-    const creds = await getCredentialsForAccount(assignment.credential.email);
-    if (!creds) return false;
-    const anthropicRequest = _buildAnthropicRequest(body, upstreamModel);
-    try {
-      const response = await sendMessage(anthropicRequest, creds.accessToken, creds.accountId);
-      markCredentialSuccess(buildCredentialId('chatgpt-account', creds.email), {
-        model: requestedModel,
-        latencyMs: Date.now() - startTime
-      });
-      res.json(_buildOpenAIResponse(response, requestedModel));
-      return true;
-    } catch (error) {
-      markCredentialError(buildCredentialId('chatgpt-account', assignment.credential.email), error, {
-        model: requestedModel
-      });
-      return false;
+  for (const candidate of assignments) {
+    if (!candidate?.credential) continue;
+
+    if (candidate.credentialType === 'chatgpt-account') {
+      const creds = await getCredentialsForAccount(candidate.credential.email);
+      if (!creds) continue;
+      const anthropicRequest = _buildAnthropicRequest(body, upstreamModel);
+      try {
+        const response = await sendMessage(anthropicRequest, creds.accessToken, creds.accountId);
+        markCredentialSuccess(buildCredentialId('chatgpt-account', creds.email), {
+          model: requestedModel,
+          latencyMs: Date.now() - startTime
+        });
+        res.json(_buildOpenAIResponse(response, requestedModel));
+        return true;
+      } catch (error) {
+        markCredentialError(buildCredentialId('chatgpt-account', candidate.credential.email), error, {
+          model: requestedModel
+        });
+        continue;
+      }
+    }
+
+    if (candidate.credentialType === 'api-key') {
+      const result = await _handleChatViaAssignedApiKey(res, body, requestedModel, startTime, candidate.credential);
+      if (result !== false) return result;
     }
   }
-
-  if (assignment.credentialType === 'api-key') {
-    return _handleChatViaAssignedApiKey(res, body, requestedModel, startTime, assignment.credential);
-  }
-
   return false;
 }
 

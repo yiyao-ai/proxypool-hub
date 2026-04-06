@@ -247,6 +247,19 @@ export function resolveAssignedCredentials(settings, appId) {
   return unavailableAssigned(appId, appBinding, attempts[0]?.reason || 'invalid_binding', attempts);
 }
 
+export function orderAssignedCredentials(assignments = [], strategy = 'sequential', randomFn = Math.random) {
+  const ordered = Array.isArray(assignments) ? [...assignments] : [];
+  if (strategy !== 'random' || ordered.length <= 1) {
+    return ordered;
+  }
+
+  for (let i = ordered.length - 1; i > 0; i--) {
+    const j = Math.floor(randomFn() * (i + 1));
+    [ordered[i], ordered[j]] = [ordered[j], ordered[i]];
+  }
+  return ordered;
+}
+
 export function validateAppRoutingConfig(appRouting) {
   const normalized = normalizeAppRoutingConfig(appRouting);
   const chatgptEmails = new Set((listChatGPTAccounts().accounts || []).map((account) => account.email));

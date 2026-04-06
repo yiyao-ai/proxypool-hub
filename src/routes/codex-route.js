@@ -24,7 +24,7 @@ import { recordRequest } from '../usage-tracker.js';
 import { sendResponsesSSE } from '../utils/responses-sse.js';
 import { resolveModel } from '../model-mapping.js';
 import { logRequest } from '../request-logger.js';
-import { detectRequestApp, resolveAssignedCredentials } from '../app-routing.js';
+import { detectRequestApp, resolveAssignedCredentials, orderAssignedCredentials } from '../app-routing.js';
 import { getDiscoveredModels } from '../model-discovery.js';
 
 const UPSTREAM_BASE = 'https://chatgpt.com/backend-api';
@@ -381,19 +381,12 @@ export async function handleCodexResponses(req, res) {
 }
 
 async function _handleCodexAssignment(req, res, body, modelId, isStreaming, startTime, assignment) {
-    const assignments = Array.isArray(assignment.assignments)
+    const baseAssignments = Array.isArray(assignment.assignments)
         ? assignment.assignments
         : (assignment.credential ? [assignment] : []);
 
-    // Respect account strategy: shuffle for random, keep order for sequential
     const settings = getServerSettings();
-    const strategy = settings.accountStrategy || 'sequential';
-    if (strategy === 'random' && assignments.length > 1) {
-        for (let i = assignments.length - 1; i > 0; i--) {
-            const j = Math.floor(Math.random() * (i + 1));
-            [assignments[i], assignments[j]] = [assignments[j], assignments[i]];
-        }
-    }
+    const assignments = orderAssignedCredentials(baseAssignments, settings.accountStrategy || 'sequential');
 
     for (const candidate of assignments) {
         if (res.headersSent || res.writableEnded || res.destroyed) {
