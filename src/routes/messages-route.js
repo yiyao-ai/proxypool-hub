@@ -23,6 +23,7 @@ import { buildCredentialId } from '../credential-registry.js';
 import { markCredentialError, markCredentialRateLimited, markCredentialSuccess, recordRoutingDecision } from '../runtime-state.js';
 import { analyzeAnthropicRequestFeatures } from '../translators/request-features.js';
 import { rankAnthropicProvidersForRequest } from '../translators/provider-capabilities.js';
+import { tryHandleLocalAnthropic } from '../local-routing.js';
 
 const MAX_RETRIES = 5;
 const MAX_WAIT_BEFORE_ERROR_MS = 120000;
@@ -293,6 +294,12 @@ export async function handleMessages(req, res) {
             }
         }
     }
+
+    const localResult = await tryHandleLocalAnthropic(req, res, body, {
+        appId,
+        requestedModel
+    });
+    if (localResult !== false) return;
 
     if (isKilo) {
         return isStreaming

@@ -59,6 +59,16 @@ document.addEventListener('alpine:init', () => {
         appRoutingForm: { enabled: true, fallbackToDefault: true, bindings: [], currentType: null, currentTargetIds: [], targetQuery: '', targetPickerOpen: false },
         enableFreeModels: true,
         freeModelsSaving: false,
+        localModelRoutingEnabled: false,
+        localModelRoutingSaving: false,
+        localRuntime: null,
+        localRuntimes: [],
+        localRuntimeHealth: null,
+        localRuntimeModels: [],
+        localRuntimeStatusLoading: false,
+        localRuntimeSaving: false,
+        localRuntimeChecking: false,
+        localRuntimeModelsLoading: false,
 
         // Proxy status
         proxyStatus: {
@@ -225,6 +235,8 @@ document.addEventListener('alpine:init', () => {
             this.loadRoutingModeSetting();
             this.loadAppRoutingSettings();
             this.loadFreeModelsSetting();
+            this.loadLocalModelRoutingSetting();
+            this.loadLocalRuntimeStatus();
             this.loadKiloModels();
             this.refreshProxyStatus();
             this.loadChatSessions();
@@ -268,6 +280,7 @@ document.addEventListener('alpine:init', () => {
             if (tab === 'pricing') this.loadPricingData();
             if (tab === 'apiExplorer' && !this.apiExplorerResponse) this.loadApiExplorerPreset(this.apiExplorerPresetIndex);
             if (tab === 'dashboard') this.refreshProxyStatus();
+            if (tab === 'localModels') this.loadLocalRuntimeStatus();
             if (tab === 'chat') {
                 this.loadChatSources();
                 this.loadChatModels();
@@ -275,6 +288,7 @@ document.addEventListener('alpine:init', () => {
             if (tab === 'settings') {
                 if (!this.modelMappingData) this.loadModelMappings();
                 this.refreshProxyStatus();
+                this.loadLocalModelRoutingSetting();
             }
         },
 
@@ -1869,6 +1883,140 @@ document.addEventListener('alpine:init', () => {
                 this.showToast(this.t('freeModelsUpdated'), 'success');
             } else {
                 this.showToast(data?.error || this.t('freeModelsUpdateFailed'), 'error');
+            }
+        },
+
+        async loadLocalModelRoutingSetting() {
+            const { ok, data } = await this.api('/settings/local-model-routing-enabled');
+            if (ok && typeof data?.localModelRoutingEnabled === 'boolean') {
+                this.localModelRoutingEnabled = data.localModelRoutingEnabled;
+            }
+        },
+
+        async toggleLocalModelRouting() {
+            if (this.localModelRoutingSaving) return;
+            this.localModelRoutingSaving = true;
+            const newValue = !this.localModelRoutingEnabled;
+            const { ok, data } = await this.api('/settings/local-model-routing-enabled', {
+                method: 'POST',
+                body: JSON.stringify({ localModelRoutingEnabled: newValue })
+            });
+            this.localModelRoutingSaving = false;
+            if (ok && typeof data?.localModelRoutingEnabled === 'boolean') {
+                this.localModelRoutingEnabled = data.localModelRoutingEnabled;
+                this.showToast(this.t('localModelRoutingUpdated'), 'success');
+            } else {
+                this.showToast(data?.error || this.t('localModelRoutingUpdateFailed'), 'error');
+            }
+        },
+
+        applyLocalRuntimePayload(data) {
+            if (!data || typeof data !== 'object') return;
+            if (typeof data.enabled === 'boolean') {
+                this.localModelRoutingEnabled = data.enabled;
+            }
+            this.localRuntime = data.runtime || null;
+            this.localRuntimes = Array.isArray(data.runtimes) ? data.runtimes : [];
+            if (Object.prototype.hasOwnProperty.call(data, 'health')) {
+                this.localRuntimeHealth = data.health || null;
+            }
+            if (Array.isArray(data.models)) {
+                this.localRuntimeModels = data.models;
+            }
+        },
+
+        localRuntimeStatusLabel() {
+            if (!this.localRuntimeHealth) return this.t('localRuntimeStatusUnknown');
+            return this.localRuntimeHealth.ok
+                ? this.t('localRuntimeStatusHealthy')
+                : this.t('localRuntimeStatusUnreachable');
+        },
+
+        localRuntimeStatusClass() {
+            if (!this.localRuntimeHealth) return 'text-gray-400';
+            return this.localRuntimeHealth.ok ? 'text-neon-green' : 'text-red-400';
+        },
+
+        localRuntimeUpdatedAtLabel() {
+            if (!this.localRuntime?.updatedAt) return this.t('notSet');
+            const date = new Date(this.localRuntime.updatedAt);
+            if (Number.isNaN(date.getTime())) return this.localRuntime.updatedAt;
+            return date.toLocaleString();
+        },
+
+        async loadLocalRuntimeStatus() {
+            this.localRuntimeStatusLoading = true;
+            const { ok, data } = await this.api('/api/local-runtimes');
+            this.localRuntimeStatusLoading = false;
+            if (ok && data) {
+                this.applyLocalRuntimePayload(data);
+            }
+        },
+
+        async saveLocalRuntimeConfig() {
+            if (this.localRuntimeSaving || !this.localRuntime) return;
+            this.localRuntimeSaving = true;
+            const payload = {
+                name: this.localRuntime.name,
+                baseUrl: this.localRuntime.baseUrl,
+                enabled: this.localRuntime.enabled !== false,
+                defaultModels: this.localRuntime.defaultModels || {}
+            };
+            const { ok, data } = await this.api('/api/local-runtimes/ollama-local', {
+                method: 'PUT',
+                body: JSON.stringify(payload)
+            });
+            this.localRuntimeSaving = false;
+            if (ok && data) {
+                this.applyLocalRuntimePayload(data);
+                this.showToast(this.t('localRuntimeSaved'), 'success');
+            } else {
+                this.showToast(data?.error || this.t('localRuntimeSaveFailed'), 'error');
+            }
+        },
+
+        updateLocalRuntimeField(field, value) {
+            if (!this.localRuntime) return;
+            this.localRuntime = {
+                ...this.localRuntime,
+                [field]: value
+            };
+        },
+
+        updateLocalRuntimeDefaultModel(appId, value) {
+            if (!this.localRuntime) return;
+            this.localRuntime = {
+                ...this.localRuntime,
+                defaultModels: {
+                    ...(this.localRuntime.defaultModels || {}),
+                    [appId]: value
+                }
+            };
+        },
+
+        async checkLocalRuntimeHealth() {
+            if (this.localRuntimeChecking) return;
+            this.localRuntimeChecking = true;
+            const { ok, data } = await this.api('/api/local-runtimes/check', { method: 'POST' });
+            this.localRuntimeChecking = false;
+            if (ok && data) {
+                this.applyLocalRuntimePayload(data);
+                this.showToast(this.t('localRuntimeCheckFinished'), data.health?.ok ? 'success' : 'error');
+            } else {
+                this.showToast(data?.error || this.t('localRuntimeCheckFailed'), 'error');
+            }
+        },
+
+        async refreshLocalRuntimeModels() {
+            if (this.localRuntimeModelsLoading) return;
+            this.localRuntimeModelsLoading = true;
+            const { ok, data } = await this.api('/api/local-runtimes/refresh-models', { method: 'POST' });
+            this.localRuntimeModelsLoading = false;
+            if (ok && data) {
+                this.applyLocalRuntimePayload(data);
+                this.showToast(this.t('localRuntimeModelsRefreshed'), 'success');
+            } else {
+                this.showToast(data?.error || this.t('localRuntimeModelsRefreshFailed'), 'error');
             }
         },
 

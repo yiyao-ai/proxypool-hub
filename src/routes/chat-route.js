@@ -20,6 +20,7 @@ import { detectRequestApp, resolveAssignedCredentials, orderAssignedCredentials 
 import { resolveCredentialForRequest } from '../credential-selector.js';
 import { markCredentialError, markCredentialRateLimited, markCredentialSuccess, recordRoutingDecision } from '../runtime-state.js';
 import { buildCredentialId } from '../credential-registry.js';
+import { tryHandleLocalChat } from '../local-routing.js';
 
 /**
  * POST /v1/chat/completions
@@ -92,6 +93,12 @@ export async function handleChatCompletion(req, res) {
       }
     }
   }
+
+  const localResult = await tryHandleLocalChat(res, body, {
+    appId,
+    requestedModel
+  });
+  if (localResult !== false) return;
 
   if (priority === 'apikey-first' && hasApiKeys) {
     const result = await _handleChatViaApiKey(res, body, requestedModel, chatKeyTypes, startTime);

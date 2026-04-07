@@ -11,6 +11,7 @@ const DEFAULT_SETTINGS = {
     accountStrategy: 'sequential',
     routingPriority: 'account-first',   // 'account-first' | 'apikey-first'
     routingMode: 'automatic',           // 'automatic' | 'app-assigned'
+    localModelRoutingEnabled: false,    // Enable local runtime routing (default off)
     strictCodexCompatibility: true,
     strictTranslatorCompatibility: false,
     appRouting: createDefaultAppRouting(),

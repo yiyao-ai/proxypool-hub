@@ -29,6 +29,7 @@ import { detectRequestApp, resolveAssignedCredentials, orderAssignedCredentials 
 import { resolveCredentialForRequest } from '../credential-selector.js';
 import { buildCredentialId } from '../credential-registry.js';
 import { markCredentialError, markCredentialRateLimited, markCredentialSuccess, recordRoutingDecision } from '../runtime-state.js';
+import { tryHandleLocalResponses } from '../local-routing.js';
 
 const UPSTREAM_URL = 'https://chatgpt.com/backend-api/codex/responses';
 const UPSTREAM_COMPACT_URL = 'https://chatgpt.com/backend-api/codex/responses/compact';
@@ -369,6 +370,15 @@ export async function handleResponses(req, res) {
                 });
             }
         }
+    }
+
+    if (parsed) {
+        const localResult = await tryHandleLocalResponses(res, parsed, {
+            appId,
+            requestedModel: modelId,
+            isStreaming
+        });
+        if (localResult !== false) return;
     }
 
     if (!strictCodexCompatibility && hasAntigravityAccounts && parsed && isAntigravityModel(modelId)) {

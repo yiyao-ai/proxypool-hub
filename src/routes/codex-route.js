@@ -26,6 +26,7 @@ import { resolveModel } from '../model-mapping.js';
 import { logRequest } from '../request-logger.js';
 import { detectRequestApp, resolveAssignedCredentials, orderAssignedCredentials } from '../app-routing.js';
 import { getDiscoveredModels } from '../model-discovery.js';
+import { tryHandleLocalResponses } from '../local-routing.js';
 
 const UPSTREAM_BASE = 'https://chatgpt.com/backend-api';
 const MAX_RETRIES = 5;
@@ -327,6 +328,13 @@ export async function handleCodexResponses(req, res) {
             }
         }
     }
+
+    const localResult = await tryHandleLocalResponses(res, body, {
+        appId,
+        requestedModel: modelId,
+        isStreaming
+    });
+    if (localResult !== false) return;
 
     if (!strictCodexCompatibility && hasAntigravityAccounts && isAntigravityModel(modelId)) {
         const result = await _handleCodexViaAntigravityAccount(res, body, modelId, isStreaming, startTime);

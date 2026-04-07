@@ -1,6 +1,7 @@
 import { listAllCredentials } from '../credential-registry.js';
 import { getRecentRoutingDecisions } from '../runtime-state.js';
 import { resolveCredentialForRequest } from '../credential-selector.js';
+import { getLocalRoutingStatus } from '../local-routing.js';
 
 export function handleGetRuntimeCredentials(req, res) {
   res.json({
@@ -50,8 +51,16 @@ export function handleGetRoutingPreview(req, res) {
   });
 }
 
+export function handleGetLocalRoutingStatus(req, res) {
+  res.json({
+    success: true,
+    localRouting: getLocalRoutingStatus()
+  });
+}
+
 export default {
   handleGetRuntimeCredentials,
   handleGetRoutingDecisions,
-  handleGetRoutingPreview
+  handleGetRoutingPreview,
+  handleGetLocalRoutingStatus
 };

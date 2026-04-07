@@ -14,7 +14,7 @@ import { getStatus, ACCOUNTS_FILE } from '../account-manager.js';
 import { handleMessages } from './messages-route.js';
 import { handleChatCompletion, handleCountTokens } from './chat-route.js';
 import { handleListModels, handleAccountModels, handleAccountUsage } from './models-route.js';
-import { handleGetHaikuModel, handleSetHaikuModel, handleGetKiloModels, handleGetAccountStrategy, handleSetAccountStrategy, handleGetRoutingPriority, handleSetRoutingPriority, handleGetRoutingMode, handleSetRoutingMode, handleGetStrictCodexCompatibility, handleSetStrictCodexCompatibility, handleGetStrictTranslatorCompatibility, handleSetStrictTranslatorCompatibility, handleGetAppRouting, handleSetAppRouting, handleGetEnableFreeModels, handleSetEnableFreeModels, handleGetDiscoveredModels, handleRefreshDiscoveredModels } from './settings-route.js';
+import { handleGetHaikuModel, handleSetHaikuModel, handleGetKiloModels, handleGetAccountStrategy, handleSetAccountStrategy, handleGetRoutingPriority, handleSetRoutingPriority, handleGetRoutingMode, handleSetRoutingMode, handleGetStrictCodexCompatibility, handleSetStrictCodexCompatibility, handleGetStrictTranslatorCompatibility, handleSetStrictTranslatorCompatibility, handleGetAppRouting, handleSetAppRouting, handleGetEnableFreeModels, handleSetEnableFreeModels, handleGetLocalModelRoutingEnabled, handleSetLocalModelRoutingEnabled, handleGetDiscoveredModels, handleRefreshDiscoveredModels } from './settings-route.js';
 import { handleGetLogs, handleStreamLogs } from './logs-route.js';
 import { handleGetClaudeConfig, handleSetProxyMode, handleSetDirectMode, handleSetClaudeApiEndpoint } from './claude-config-route.js';
 import { handleListApiKeys, handleGetApiKey, handleAddApiKey, handleRemoveApiKey, handleUpdateApiKey, handleValidateApiKey, handleGetApiKeyStats } from './api-keys-route.js';
@@ -32,7 +32,8 @@ import { handleListResources, handleGetResourceSummary, handleGetResourceById } 
 import { handleGetRequestLogs, handleGetLogDates, handleGetLogSettings, handleUpdateLogSettings } from './request-logs-route.js';
 import { handleGetToolsStatus, handleGetNodeInfo, handleInstallTool, handleInstallNode, handleLaunchTool, handleCheckUpdates, handleUpdateTool } from './tools-route.js';
 import { handleListChatSources, handleChatWithSource, handleStreamChatWithSource } from './chat-ui-route.js';
-import { handleGetRuntimeCredentials, handleGetRoutingDecisions, handleGetRoutingPreview } from './runtime-route.js';
+import { handleGetRuntimeCredentials, handleGetRoutingDecisions, handleGetRoutingPreview, handleGetLocalRoutingStatus } from './runtime-route.js';
+import { handleGetLocalRuntimeStatus, handleSetLocalRuntimeEnabled, handleUpdateLocalRuntime, handleCheckLocalRuntime, handleRefreshLocalRuntimeModels } from './local-runtimes-route.js';
 import {
   handleListAccounts,
   handleAccountStatus,
@@ -129,6 +130,8 @@ export function registerApiRoutes(app, { port }) {
   app.post('/settings/app-routing', handleSetAppRouting);
   app.get('/settings/enable-free-models', handleGetEnableFreeModels);
   app.post('/settings/enable-free-models', handleSetEnableFreeModels);
+  app.get('/settings/local-model-routing-enabled', handleGetLocalModelRoutingEnabled);
+  app.post('/settings/local-model-routing-enabled', handleSetLocalModelRoutingEnabled);
   app.get('/settings/discovered-models', handleGetDiscoveredModels);
   app.post('/settings/refresh-models', handleRefreshDiscoveredModels);
 
@@ -270,6 +273,14 @@ export function registerApiRoutes(app, { port }) {
   app.get('/api/runtime/credentials', handleGetRuntimeCredentials);
   app.get('/api/runtime/routing-decisions', handleGetRoutingDecisions);
   app.get('/api/runtime/routing-preview', handleGetRoutingPreview);
+  app.get('/api/runtime/local-routing', handleGetLocalRoutingStatus);
+
+  // ─── Local Runtime Management ────────────────────────────────────────────
+  app.get('/api/local-runtimes', handleGetLocalRuntimeStatus);
+  app.put('/api/local-runtimes/ollama-local', handleUpdateLocalRuntime);
+  app.post('/api/local-runtimes/enabled', handleSetLocalRuntimeEnabled);
+  app.post('/api/local-runtimes/check', handleCheckLocalRuntime);
+  app.post('/api/local-runtimes/refresh-models', handleRefreshLocalRuntimeModels);
 
   // ─── Tool Installer ────────────────────────────────────────────────────
   app.get('/api/tools/status', handleGetToolsStatus);

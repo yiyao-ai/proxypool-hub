@@ -251,6 +251,31 @@ export function handleGetEnableFreeModels(req, res) {
   res.json({ success: true, enableFreeModels: settings.enableFreeModels !== false });
 }
 
+export function handleGetLocalModelRoutingEnabled(req, res) {
+  const settings = getServerSettings();
+  res.json({
+    success: true,
+    localModelRoutingEnabled: settings.localModelRoutingEnabled === true
+  });
+}
+
+export function handleSetLocalModelRoutingEnabled(req, res) {
+  const { localModelRoutingEnabled } = req.body || {};
+
+  if (typeof localModelRoutingEnabled !== 'boolean') {
+    return res.status(400).json({
+      success: false,
+      error: 'localModelRoutingEnabled is required and must be a boolean'
+    });
+  }
+
+  const settings = setServerSettings({ localModelRoutingEnabled });
+  res.json({
+    success: true,
+    localModelRoutingEnabled: settings.localModelRoutingEnabled === true
+  });
+}
+
 /**
  * POST /settings/enable-free-models
  * Enables or disables free model routing (Kilo).
@@ -327,6 +352,8 @@ export default {
   handleSetStrictTranslatorCompatibility,
   handleGetEnableFreeModels,
   handleSetEnableFreeModels,
+  handleGetLocalModelRoutingEnabled,
+  handleSetLocalModelRoutingEnabled,
   handleGetDiscoveredModels,
   handleRefreshDiscoveredModels
 };

@@ -20,6 +20,8 @@ import { fetchModels } from './model-api.js';
 import { getAllProviders } from './api-key-manager.js';
 import { recognizeTier, refreshProviderModels, autoUpdateMappings } from './model-mapping.js';
 import { logger } from './utils/logger.js';
+import { getPrimaryLocalRuntime } from './local-runtime-manager.js';
+import { listOllamaModels } from './runtimes/ollama.js';
 
 const CACHE_TTL_MS = 30 * 60 * 1000; // 30 minutes
 const REFRESH_INTERVAL_MS = 30 * 60 * 1000;
@@ -145,6 +147,29 @@ async function discoverFromApiKeys() {
     return results;
 }
 
+async function discoverFromLocalRuntime() {
+    const runtime = getPrimaryLocalRuntime();
+    if (!runtime || runtime.enabled === false || runtime.type !== 'ollama') {
+        return {};
+    }
+
+    try {
+        const models = await listOllamaModels(runtime.baseUrl);
+        if (!Array.isArray(models) || models.length === 0) return {};
+        logger.info(`[ModelDiscovery] Local runtime ${runtime.name}: found ${models.length} models`);
+        return {
+            ollama: models.map(m => ({
+                id: m.id || m,
+                name: m.name || m.id || m,
+                source: 'local-ollama'
+            }))
+        };
+    } catch (err) {
+        logger.warn(`[ModelDiscovery] Local runtime discovery failed: ${err.message}`);
+        return {};
+    }
+}
+
 // ─── Main discovery flow ─────────────────────────────────────────────────────
 
 /**
@@ -184,6 +209,11 @@ export async function discoverModels() {
             } else {
                 providerResults[type] = classifyAndPick(models);
             }
+        }
+
+        const localRuntimeModels = await discoverFromLocalRuntime();
+        for (const [type, models] of Object.entries(localRuntimeModels)) {
+            providerResults[type] = classifyAndPick(models);
         }
 
         // 3. Update caches

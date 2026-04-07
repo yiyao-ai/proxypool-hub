@@ -216,6 +216,13 @@
                         <span x-text="t('toolInstaller')"></span>
                     </button>
                     <button class="nav-item flex items-center gap-3 px-6 py-3 text-sm font-medium text-gray-400 hover:text-white hover:bg-white/5"
+                        :class="{'active': activeTab === 'localModels'}" @click="setActiveTab('localModels')">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.75 17L6 20.75V6a2 2 0 012-2h8a2 2 0 012 2v5.25M15 15h6m-3-3v6"></path>
+                        </svg>
+                        <span x-text="t('localModels')"></span>
+                    </button>
+                    <button class="nav-item flex items-center gap-3 px-6 py-3 text-sm font-medium text-gray-400 hover:text-white hover:bg-white/5"
                         :class="{'active': activeTab === 'logs'}" @click="setActiveTab('logs')">
                         <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
@@ -1345,6 +1352,31 @@
 
                 <div class="view-card mt-6">
                     <div class="flex items-center gap-2.5 mb-4">
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" class="w-4 h-4 text-emerald-400">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2v10z"></path>
+                        </svg>
+                        <h3 class="text-xs font-mono text-gray-400 uppercase tracking-widest" x-text="t('localModelRoutingTitle')"></h3>
+                    </div>
+                    <div class="flex flex-wrap items-center justify-between gap-4">
+                        <div>
+                            <div class="text-sm text-gray-300" x-text="t('localModelRoutingLabel')"></div>
+                            <div class="text-xs text-gray-500 font-mono" x-text="t('localModelRoutingDesc')"></div>
+                        </div>
+                        <div class="inline-flex items-center gap-3">
+                            <span class="text-xs font-mono" :class="localModelRoutingEnabled ? 'text-neon-green' : 'text-red-400'" x-text="localModelRoutingEnabled ? t('enabled') : t('disabled')"></span>
+                            <button class="relative inline-flex h-6 w-11 items-center rounded-full transition-colors duration-200 focus:outline-none"
+                                :class="localModelRoutingEnabled ? 'bg-neon-green' : 'bg-space-700'"
+                                :disabled="localModelRoutingSaving"
+                                @click="toggleLocalModelRouting()">
+                                <span class="inline-block h-4 w-4 transform rounded-full bg-white transition-transform duration-200"
+                                    :class="localModelRoutingEnabled ? 'translate-x-6' : 'translate-x-1'"></span>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="view-card mt-6">
+                    <div class="flex items-center gap-2.5 mb-4">
                         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" class="w-4 h-4 text-neon-purple">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4"></path>
                         </svg>
@@ -1754,6 +1786,144 @@
                     </template>
                     <template x-if="!modelMappingData">
                         <div class="text-center text-gray-500 text-sm py-4" x-text="t('loading')"></div>
+                    </template>
+                </div>
+            </div>
+
+            <div x-show="activeTab === 'localModels'" x-transition class="view-container">
+                <div class="flex items-center justify-between gap-4 mb-6">
+                    <div class="flex flex-wrap items-center gap-4">
+                        <h1 class="text-2xl font-bold text-white tracking-tight" x-text="t('localModels')"></h1>
+                        <div class="flex items-center h-6 px-3 rounded-full bg-space-800/80 border border-space-border/50 shadow-sm backdrop-blur-sm">
+                            <span class="text-[10px] font-mono text-gray-400 uppercase tracking-wider" x-text="t('localRuntimeConfigTitle')"></span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="view-card">
+                    <div class="flex items-center justify-between gap-4 mb-4">
+                        <div class="flex items-center gap-2.5">
+                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" class="w-4 h-4 text-emerald-400">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.75 17L6 20.75V6a2 2 0 012-2h8a2 2 0 012 2v5.25M15 15h6m-3-3v6"></path>
+                            </svg>
+                            <div>
+                                <h3 class="text-xs font-mono text-gray-400 uppercase tracking-widest" x-text="t('localRuntimeConfigTitle')"></h3>
+                                <p class="text-xs text-gray-500 mt-1" x-text="t('localRuntimeConfigDesc')"></p>
+                            </div>
+                        </div>
+                        <div class="inline-flex items-center rounded-full border border-space-border/40 bg-white/[0.04] px-3 py-1 text-[11px] font-mono"
+                            :class="localRuntimeStatusClass()"
+                            x-text="localRuntimeStatusLabel()"></div>
+                    </div>
+
+                    <template x-if="localRuntime">
+                        <div>
+                            <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                                <div>
+                                    <label class="text-xs text-gray-500 mb-1 block" x-text="t('localRuntimeName')"></label>
+                                    <input type="text"
+                                        class="input input-sm w-full bg-space-900/80 border-space-border text-white"
+                                        :value="localRuntime?.name || ''"
+                                        @input="updateLocalRuntimeField('name', $event.target.value)">
+                                </div>
+                                <div>
+                                    <label class="text-xs text-gray-500 mb-1 block" x-text="t('localRuntimeBaseUrl')"></label>
+                                    <input type="text"
+                                        class="input input-sm w-full bg-space-900/80 border-space-border text-white"
+                                        :value="localRuntime?.baseUrl || ''"
+                                        @input="updateLocalRuntimeField('baseUrl', $event.target.value)"
+                                        placeholder="http://127.0.0.1:11434">
+                                </div>
+                            </div>
+
+                            <div class="mt-4 flex flex-wrap items-center gap-4">
+                                <label class="inline-flex items-center gap-2 text-xs text-gray-300">
+                                    <input type="checkbox" class="checkbox checkbox-xs"
+                                        :checked="localRuntime?.enabled !== false"
+                                        @change="updateLocalRuntimeField('enabled', $event.target.checked)">
+                                    <span x-text="t('localRuntimeEnabledFlag')"></span>
+                                </label>
+                                <span class="text-xs font-mono text-gray-500">
+                                    <span x-text="t('lastUpdated')"></span>
+                                    <span>: </span>
+                                    <span x-text="localRuntimeUpdatedAtLabel()"></span>
+                                </span>
+                            </div>
+
+                            <div class="mt-4 flex flex-wrap gap-2">
+                                <button class="btn btn-sm bg-neon-cyan/90 hover:bg-neon-cyan text-space-950 border-none"
+                                    :disabled="localRuntimeSaving"
+                                    @click="saveLocalRuntimeConfig()"
+                                    x-text="localRuntimeSaving ? t('saving') : t('saveRuntimeConfig')"></button>
+                                <button class="btn btn-sm bg-space-800 hover:bg-space-700 border border-space-border text-gray-200"
+                                    :disabled="localRuntimeChecking"
+                                    @click="checkLocalRuntimeHealth()"
+                                    x-text="localRuntimeChecking ? t('checking') : t('checkConnection')"></button>
+                                <button class="btn btn-sm bg-space-800 hover:bg-space-700 border border-space-border text-gray-200"
+                                    :disabled="localRuntimeModelsLoading"
+                                    @click="refreshLocalRuntimeModels()"
+                                    x-text="localRuntimeModelsLoading ? t('loadingModels') : t('refreshLocalModels')"></button>
+                            </div>
+
+                            <div class="mt-5 grid grid-cols-1 xl:grid-cols-3 gap-3">
+                                <div class="rounded-xl border border-space-border/25 bg-space-900/35 p-3">
+                                    <div class="text-[10px] uppercase tracking-[0.24em] text-gray-500" x-text="t('localRuntimeHealth')"></div>
+                                    <div class="mt-2 text-sm font-semibold" :class="localRuntimeStatusClass()" x-text="localRuntimeStatusLabel()"></div>
+                                    <div class="mt-1 text-xs text-gray-500 font-mono" x-show="localRuntimeHealth?.version">
+                                        Ollama v<span x-text="localRuntimeHealth?.version"></span>
+                                    </div>
+                                    <div class="mt-1 text-xs text-red-400 font-mono" x-show="localRuntimeHealth?.error" x-text="localRuntimeHealth?.error"></div>
+                                </div>
+                                <div class="rounded-xl border border-space-border/25 bg-space-900/35 p-3">
+                                    <div class="text-[10px] uppercase tracking-[0.24em] text-gray-500" x-text="t('localRuntimeDiscoveredModels')"></div>
+                                    <div class="mt-2 text-sm font-semibold text-white" x-text="localRuntimeModels.length"></div>
+                                    <div class="mt-1 text-xs text-gray-500 font-mono" x-text="t('localRuntimeDiscoveredModelsDesc')"></div>
+                                </div>
+                                <div class="rounded-xl border border-space-border/25 bg-space-900/35 p-3">
+                                    <div class="text-[10px] uppercase tracking-[0.24em] text-gray-500" x-text="t('localRuntimeRegistered')"></div>
+                                    <div class="mt-2 text-sm font-semibold text-white" x-text="localRuntimes.length"></div>
+                                    <div class="mt-1 text-xs text-gray-500 font-mono" x-text="t('localRuntimeRegisteredDesc')"></div>
+                                </div>
+                            </div>
+
+                            <div class="mt-5">
+                                <div class="text-xs font-mono text-gray-400 uppercase tracking-widest mb-3" x-text="t('localRuntimeDefaultModels')"></div>
+                                <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+                                    <template x-for="appId in ['codex', 'claude-code', 'openclaw']" :key="'local-default-' + appId">
+                                        <div class="rounded-xl border border-space-border/25 bg-space-900/35 p-3">
+                                            <label class="text-xs text-gray-500 mb-2 block" x-text="t('appLabel_' + appId)"></label>
+                                            <select class="select select-sm w-full bg-space-800 border-space-border text-white"
+                                                :value="localRuntime?.defaultModels?.[appId] || ''"
+                                                @change="updateLocalRuntimeDefaultModel(appId, $event.target.value)">
+                                                <option value="" x-text="t('followRequestedModel')"></option>
+                                                <template x-for="model in localRuntimeModels" :key="appId + '-' + model.id">
+                                                    <option :value="model.id" x-text="model.id"></option>
+                                                </template>
+                                            </select>
+                                        </div>
+                                    </template>
+                                </div>
+                            </div>
+
+                            <div class="mt-5">
+                                <div class="text-xs font-mono text-gray-400 uppercase tracking-widest mb-3" x-text="t('localRuntimeModelList')"></div>
+                                <div class="rounded-xl border border-space-border/25 bg-space-900/35 p-3 max-h-56 overflow-y-auto">
+                                    <template x-if="localRuntimeModels.length === 0">
+                                        <div class="text-xs text-gray-500 text-center py-6" x-text="t('noLocalModelsYet')"></div>
+                                    </template>
+                                    <div class="flex flex-wrap gap-2" x-show="localRuntimeModels.length > 0">
+                                        <template x-for="model in localRuntimeModels" :key="'local-model-' + model.id">
+                                            <span class="inline-flex items-center rounded-full border border-emerald-500/20 bg-emerald-500/10 px-3 py-1 text-[11px] font-mono text-emerald-300"
+                                                x-text="model.id"></span>
+                                        </template>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </template>
+
+                    <template x-if="!localRuntime">
+                        <div class="text-xs text-gray-500 text-center py-6" x-text="t('localRuntimeMissing')"></div>
                     </template>
                 </div>
             </div>
