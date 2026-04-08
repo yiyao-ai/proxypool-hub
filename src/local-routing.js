@@ -7,6 +7,7 @@ import {
 } from './runtimes/ollama.js';
 import { sendResponsesSSE } from './utils/responses-sse.js';
 import { resolveModel } from './model-mapping.js';
+import { logger } from './utils/logger.js';
 
 function getRuntimeIfEnabled({ forceLocal = false } = {}) {
   const settings = getServerSettings();
@@ -153,25 +154,29 @@ export async function tryHandleLocalAnthropic(req, res, body, { appId, requested
     model: localModel,
     stream: body.stream !== false
   };
+  try {
+    const response = await sendOllamaAnthropicRequest(runtime.baseUrl, mappedBody, {
+      headers: {
+        'anthropic-version': req.headers['anthropic-version'] || '2023-06-01',
+        ...(req.headers['anthropic-beta'] ? { 'anthropic-beta': req.headers['anthropic-beta'] } : {})
+      }
+    });
 
-  const response = await sendOllamaAnthropicRequest(runtime.baseUrl, mappedBody, {
-    headers: {
-      'anthropic-version': req.headers['anthropic-version'] || '2023-06-01',
-      ...(req.headers['anthropic-beta'] ? { 'anthropic-beta': req.headers['anthropic-beta'] } : {})
+    if (!response.ok) return false;
+
+    const contentType = response.headers.get('content-type') || '';
+    if (contentType.includes('text/event-stream') || mappedBody.stream) {
+      await pipeSSE(res, response);
+      return true;
     }
-  });
 
-  if (!response.ok) return false;
-
-  const contentType = response.headers.get('content-type') || '';
-  if (contentType.includes('text/event-stream') || mappedBody.stream) {
-    await pipeSSE(res, response);
+    const payload = await response.text();
+    res.status(200).type('json').send(payload);
     return true;
+  } catch (error) {
+    logger.warn(`[LocalRouting] Anthropic local fallback failed | runtime=${runtime.name} | model=${localModel} | ${error.message}`);
+    return false;
   }
-
-  const payload = await response.text();
-  res.status(200).type('json').send(payload);
-  return true;
 }
 
 export async function tryHandleLocalChat(res, body, { appId, requestedModel, assignedModel = '', forceLocal = false }) {
@@ -181,15 +186,20 @@ export async function tryHandleLocalChat(res, body, { appId, requestedModel, ass
 
   const localModel = resolveAssignedModel(runtime, appId, requestedModel, assignedModel);
   const mappedModel = resolveModel('openai', localModel);
-  const response = await sendOllamaChatRequest(runtime.baseUrl, {
-    ...body,
-    model: mappedModel
-  });
+  try {
+    const response = await sendOllamaChatRequest(runtime.baseUrl, {
+      ...body,
+      model: mappedModel
+    });
 
-  if (!response.ok) return false;
-  const payload = await response.text();
-  res.status(200).type('json').send(payload);
-  return true;
+    if (!response.ok) return false;
+    const payload = await response.text();
+    res.status(200).type('json').send(payload);
+    return true;
+  } catch (error) {
+    logger.warn(`[LocalRouting] Chat local fallback failed | runtime=${runtime.name} | model=${mappedModel} | ${error.message}`);
+    return false;
+  }
 }
 
 export async function tryHandleLocalResponses(res, body, { appId, requestedModel, isStreaming, assignedModel = '', forceLocal = false }) {
@@ -198,34 +208,39 @@ export async function tryHandleLocalResponses(res, body, { appId, requestedModel
   if (runtime.type !== 'ollama') return false;
 
   const localModel = resolveAssignedModel(runtime, appId, requestedModel, assignedModel);
-  let response = await sendOllamaResponsesRequest(runtime.baseUrl, {
-    ...body,
-    model: localModel,
-    stream: false
-  });
+  try {
+    let response = await sendOllamaResponsesRequest(runtime.baseUrl, {
+      ...body,
+      model: localModel,
+      stream: false
+    });
 
-  if (response.ok) {
+    if (response.ok) {
+      const payload = await response.text();
+      try {
+        const parsed = JSON.parse(payload);
+        if (isStreaming) sendResponsesSSE(res, parsed); else res.json(parsed);
+        return true;
+      } catch {
+        return false;
+      }
+    }
+
+    const chatBody = codexToChatBody(body, localModel);
+    response = await sendOllamaChatRequest(runtime.baseUrl, chatBody);
+    if (!response.ok) return false;
+
     const payload = await response.text();
     try {
       const parsed = JSON.parse(payload);
-      if (isStreaming) sendResponsesSSE(res, parsed); else res.json(parsed);
+      const normalized = chatToResponsesFormat(parsed, localModel);
+      if (isStreaming) sendResponsesSSE(res, normalized); else res.json(normalized);
       return true;
     } catch {
       return false;
     }
-  }
-
-  const chatBody = codexToChatBody(body, localModel);
-  response = await sendOllamaChatRequest(runtime.baseUrl, chatBody);
-  if (!response.ok) return false;
-
-  const payload = await response.text();
-  try {
-    const parsed = JSON.parse(payload);
-    const normalized = chatToResponsesFormat(parsed, localModel);
-    if (isStreaming) sendResponsesSSE(res, normalized); else res.json(normalized);
-    return true;
-  } catch {
+  } catch (error) {
+    logger.warn(`[LocalRouting] Responses local fallback failed | runtime=${runtime.name} | model=${localModel} | ${error.message}`);
     return false;
   }
 }

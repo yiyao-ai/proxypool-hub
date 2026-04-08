@@ -20,6 +20,11 @@ function buildHeaders(extra = {}) {
   };
 }
 
+function buildOllamaNetworkError(operation, baseUrl, error) {
+  const detail = error?.cause?.message || error?.message || 'unknown network error';
+  return new Error(`OLLAMA_${operation.toUpperCase()}_ERROR: ${baseUrl} - ${detail}`, { cause: error });
+}
+
 export async function checkOllamaHealth(baseUrl) {
   const url = `${trimSlash(baseUrl)}/api/version`;
   try {
@@ -59,27 +64,39 @@ export async function listOllamaModels(baseUrl) {
 }
 
 export async function sendOllamaAnthropicRequest(baseUrl, body, { headers = {} } = {}) {
-  return fetch(`${trimSlash(baseUrl)}/v1/messages`, {
-    method: 'POST',
-    headers: buildHeaders(headers),
-    body: JSON.stringify(body)
-  });
+  try {
+    return await fetch(`${trimSlash(baseUrl)}/v1/messages`, {
+      method: 'POST',
+      headers: buildHeaders(headers),
+      body: JSON.stringify(body)
+    });
+  } catch (error) {
+    throw buildOllamaNetworkError('anthropic', baseUrl, error);
+  }
 }
 
 export async function sendOllamaChatRequest(baseUrl, body) {
-  return fetch(`${trimSlash(baseUrl)}/v1/chat/completions`, {
-    method: 'POST',
-    headers: buildHeaders(),
-    body: JSON.stringify(body)
-  });
+  try {
+    return await fetch(`${trimSlash(baseUrl)}/v1/chat/completions`, {
+      method: 'POST',
+      headers: buildHeaders(),
+      body: JSON.stringify(body)
+    });
+  } catch (error) {
+    throw buildOllamaNetworkError('chat', baseUrl, error);
+  }
 }
 
 export async function sendOllamaResponsesRequest(baseUrl, body) {
-  return fetch(`${trimSlash(baseUrl)}/v1/responses`, {
-    method: 'POST',
-    headers: buildHeaders(),
-    body: JSON.stringify(body)
-  });
+  try {
+    return await fetch(`${trimSlash(baseUrl)}/v1/responses`, {
+      method: 'POST',
+      headers: buildHeaders(),
+      body: JSON.stringify(body)
+    });
+  } catch (error) {
+    throw buildOllamaNetworkError('responses', baseUrl, error);
+  }
 }
 
 export default {
