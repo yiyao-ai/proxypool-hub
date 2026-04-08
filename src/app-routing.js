@@ -6,6 +6,8 @@ import { getPrimaryLocalRuntime } from './local-runtime-manager.js';
 import { getDiscoveredModels } from './model-discovery.js';
 
 export const ROUTING_MODES = ['automatic', 'app-assigned'];
+const CLAUDE_CODE_PROXY_TOKENS = new Set(['sk-ant-claude-code-proxy']);
+const OPENCLAW_PROXY_TOKENS = new Set(['sk-ant-openclaw-proxy']);
 export const APP_IDS = [
   'codex',
   'claude-code',
@@ -101,7 +103,13 @@ export function detectRequestApp(req) {
   const path = req.path || req.originalUrl || '';
   const userAgent = String(req.headers['user-agent'] || '').toLowerCase();
   const xClient = String(req.headers['x-proxypool-client'] || '').toLowerCase();
-  const anthropicVersion = String(req.headers['anthropic-version'] || '').toLowerCase();
+  const xApiKey = String(req.headers['x-api-key'] || '').trim().toLowerCase();
+  const authorization = String(req.headers.authorization || '').trim();
+  const bearerToken = authorization.toLowerCase().startsWith('bearer ')
+    ? authorization.slice(7).trim().toLowerCase()
+    : '';
+
+  const hasProxyToken = (tokens) => tokens.has(xApiKey) || tokens.has(bearerToken);
 
   if (path.startsWith('/backend-api/codex/') || path === '/responses' || path === '/responses/compact' || path === '/v1/responses' || path === '/v1/responses/compact') {
     return 'codex';
@@ -112,8 +120,8 @@ export function detectRequestApp(req) {
   }
 
   if (path === '/v1/messages') {
-    if (xClient.includes('openclaw') || userAgent.includes('openclaw')) return 'openclaw';
-    if (xClient.includes('claude') || userAgent.includes('claude') || anthropicVersion) return 'claude-code';
+    if (xClient.includes('openclaw') || hasProxyToken(OPENCLAW_PROXY_TOKENS) || userAgent.includes('openclaw')) return 'openclaw';
+    if (xClient.includes('claude') || hasProxyToken(CLAUDE_CODE_PROXY_TOKENS) || userAgent.includes('claude')) return 'claude-code';
     return 'unknown-anthropic-client';
   }
 

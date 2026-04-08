@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { resolveAssignedCredential, resolveAssignedCredentials, normalizeAppRoutingConfig, orderAssignedCredentials } from '../../src/app-routing.js';
+import { detectRequestApp, resolveAssignedCredential, resolveAssignedCredentials, normalizeAppRoutingConfig, orderAssignedCredentials } from '../../src/app-routing.js';
 
 test('normalizeAppRoutingConfig preserves enabled and fallback flags for configured apps', () => {
   const normalized = normalizeAppRoutingConfig({
@@ -147,4 +147,36 @@ test('orderAssignedCredentials shuffles order for random strategy', () => {
     assignments.map((item) => item.credential.email),
     ['a@example.com', 'b@example.com', 'c@example.com']
   );
+});
+
+test('detectRequestApp classifies anthropic clients using explicit proxy tokens before generic protocol signals', () => {
+  const appId = detectRequestApp({
+    path: '/v1/messages',
+    headers: {
+      'x-api-key': 'sk-ant-openclaw-proxy',
+      'user-agent': 'node'
+    }
+  });
+
+  assert.equal(appId, 'openclaw');
+
+  const claudeAppId = detectRequestApp({
+    path: '/v1/messages',
+    headers: {
+      authorization: 'Bearer sk-ant-claude-code-proxy',
+      'user-agent': 'node'
+    }
+  });
+
+  assert.equal(claudeAppId, 'claude-code');
+
+  const unknownAppId = detectRequestApp({
+    path: '/v1/messages',
+    headers: {
+      'anthropic-version': '2023-06-01',
+      'user-agent': 'node'
+    }
+  });
+
+  assert.equal(unknownAppId, 'unknown-anthropic-client');
 });

@@ -79,7 +79,7 @@ export async function setProxyMode(proxyUrl, models = {}) {
     const updates = {
         env: {
             ANTHROPIC_BASE_URL: proxyUrl,
-            ANTHROPIC_API_KEY: 'sk-ant-proxy',
+            ANTHROPIC_API_KEY: 'sk-ant-claude-code-proxy',
             ANTHROPIC_AUTH_TOKEN: undefined, // Explicitly unset to avoid conflict
             ANTHROPIC_MODEL: models.default || 'claude-sonnet-4-6',
             ANTHROPIC_DEFAULT_OPUS_MODEL: models.opus || 'claude-opus-4-6',

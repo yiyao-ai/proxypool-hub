@@ -201,7 +201,7 @@ export function setProxyMode(port) {
     // (the proxy handles format conversion for all backends)
     config.models.providers[PROVIDER_ID] = {
         baseUrl,
-        apiKey: 'sk-ant-proxy',
+        apiKey: 'sk-ant-openclaw-proxy',
         api: 'anthropic-messages',
         models
     };
