@@ -93,6 +93,26 @@ test('resolveAssignedCredential remains backward compatible and reports unavaila
   assert.equal(result.fallbackToDefault, false);
 });
 
+test('resolveAssignedCredentials supports local-model bindings', () => {
+  const result = resolveAssignedCredentials({
+    appRouting: {
+      codex: {
+        enabled: true,
+        fallbackToDefault: false,
+        bindings: [
+          { type: 'local-model', targetId: 'qwen2.5-coder:7b' }
+        ]
+      }
+    }
+  }, 'codex');
+
+  assert.equal(result.matched, true);
+  assert.equal(result.assignments.length, 1);
+  assert.equal(result.assignments[0].credentialType, 'local-model');
+  assert.equal(result.assignments[0].credential.id, 'qwen2.5-coder:7b');
+  assert.equal(result.assignments[0].credential.model, 'qwen2.5-coder:7b');
+});
+
 test('orderAssignedCredentials preserves original order for sequential strategy', () => {
   const assignments = [
     { credential: { email: 'a@example.com' } },

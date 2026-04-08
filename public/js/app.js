@@ -53,7 +53,7 @@ document.addEventListener('alpine:init', () => {
         routingModeSaving: false,
         appRouting: {},
         appRoutingDraft: {},
-        appRoutingTargets: { appIds: [], bindingTypes: [], chatgptAccounts: [], claudeAccounts: [], antigravityAccounts: [], apiKeys: [] },
+        appRoutingTargets: { appIds: [], bindingTypes: [], chatgptAccounts: [], claudeAccounts: [], antigravityAccounts: [], apiKeys: [], localModels: [] },
         appRoutingSaving: {},
         selectedAppRoutingId: '',
         appRoutingForm: { enabled: true, fallbackToDefault: true, bindings: [], currentType: null, currentTargetIds: [], targetQuery: '', targetPickerOpen: false },
@@ -1618,12 +1618,14 @@ document.addEventListener('alpine:init', () => {
             if (bindingType === 'claude-account') return this.appRoutingTargets.claudeAccounts || [];
             if (bindingType === 'antigravity-account') return this.appRoutingTargets.antigravityAccounts || [];
             if (bindingType === 'api-key') return this.appRoutingTargets.apiKeys || [];
+            if (bindingType === 'local-model') return this.appRoutingTargets.localModels || [];
             return [];
         },
 
         bindingOptionLabel(bindingType, option) {
             if (!option) return '';
             if (bindingType === 'api-key') return `${option.name} (${option.type})`;
+            if (bindingType === 'local-model') return option.name || option.id;
             return option.displayName ? `${option.displayName} (${option.email})` : option.email;
         },
 
@@ -1923,6 +1925,12 @@ document.addEventListener('alpine:init', () => {
             if (Array.isArray(data.models)) {
                 this.localRuntimeModels = data.models;
             }
+            if (data.targets && typeof data.targets === 'object') {
+                this.appRoutingTargets = {
+                    ...this.appRoutingTargets,
+                    ...data.targets
+                };
+            }
         },
 
         localRuntimeStatusLabel() {
@@ -2014,6 +2022,7 @@ document.addEventListener('alpine:init', () => {
             this.localRuntimeModelsLoading = false;
             if (ok && data) {
                 this.applyLocalRuntimePayload(data);
+                await this.loadAppRoutingSettings();
                 this.showToast(this.t('localRuntimeModelsRefreshed'), 'success');
             } else {
                 this.showToast(data?.error || this.t('localRuntimeModelsRefreshFailed'), 'error');

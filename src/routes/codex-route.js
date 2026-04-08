@@ -423,6 +423,18 @@ async function _handleCodexAssignment(req, res, body, modelId, isStreaming, star
             if (res.headersSent || res.writableEnded || res.destroyed) return true;
             continue;
         }
+        if (candidate.credentialType === 'local-model') {
+            const result = await tryHandleLocalResponses(res, body, {
+                appId: assignment.appId,
+                requestedModel: modelId,
+                isStreaming,
+                assignedModel: candidate.credential.model || candidate.credential.id,
+                forceLocal: true
+            });
+            if (result !== false) return result;
+            if (res.headersSent || res.writableEnded || res.destroyed) return true;
+            continue;
+        }
         const result = await _handleCodexViaAssignedApiKey(res, body, modelId, isStreaming, startTime, candidate.credential);
         if (result !== false) return result;
         if (res.headersSent || res.writableEnded || res.destroyed) return true;

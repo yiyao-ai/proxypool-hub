@@ -2,6 +2,8 @@ import { listAccounts as listChatGPTAccounts, getAccount as getChatGPTAccount } 
 import { listAccounts as listClaudeAccounts, getAccount as getClaudeAccount } from './claude-account-manager.js';
 import { listAccounts as listAntigravityAccounts, getAccount as getAntigravityAccount } from './antigravity-account-manager.js';
 import { getProviderById, listApiKeys } from './api-key-manager.js';
+import { getPrimaryLocalRuntime } from './local-runtime-manager.js';
+import { getDiscoveredModels } from './model-discovery.js';
 
 export const ROUTING_MODES = ['automatic', 'app-assigned'];
 export const APP_IDS = [
@@ -12,7 +14,7 @@ export const APP_IDS = [
   'unknown-openai-client',
   'unknown-anthropic-client'
 ];
-export const BINDING_TYPES = ['chatgpt-account', 'claude-account', 'antigravity-account', 'api-key'];
+export const BINDING_TYPES = ['chatgpt-account', 'claude-account', 'antigravity-account', 'api-key', 'local-model'];
 
 function createEmptyBinding() {
   return {
@@ -197,6 +199,22 @@ function resolveSingleBindingTarget(binding, targetId) {
     return { ok: true, credential: account, binding: boundBinding };
   }
 
+  if (binding.type === 'local-model') {
+    const runtime = getPrimaryLocalRuntime();
+    if (!runtime) return { ok: false, reason: 'local_runtime_not_found', binding: boundBinding };
+    return {
+      ok: true,
+      credential: {
+        id: targetId,
+        model: targetId,
+        name: targetId,
+        runtimeId: runtime.id,
+        runtimeName: runtime.name
+      },
+      binding: boundBinding
+    };
+  }
+
   const provider = getProviderById(targetId);
   if (!provider) return { ok: false, reason: 'api_key_not_found', binding: boundBinding };
   if (!provider.enabled) return { ok: false, reason: 'api_key_disabled', binding: boundBinding };
@@ -313,6 +331,38 @@ export function validateAppRoutingConfig(appRouting) {
   return { normalized, errors };
 }
 
+function buildAssignableLocalModels() {
+  const discovered = getDiscoveredModels();
+  const runtime = getPrimaryLocalRuntime();
+  const seen = new Set();
+  const models = [];
+
+  for (const model of discovered?.providers?.ollama?.models || []) {
+    const id = model?.id || '';
+    if (!id || seen.has(id)) continue;
+    seen.add(id);
+    models.push({
+      id,
+      name: model.name || id,
+      runtimeId: runtime?.id || 'ollama-local',
+      runtimeName: runtime?.name || 'Local Ollama'
+    });
+  }
+
+  for (const id of Object.values(runtime?.defaultModels || {})) {
+    if (!id || seen.has(id)) continue;
+    seen.add(id);
+    models.push({
+      id,
+      name: id,
+      runtimeId: runtime?.id || 'ollama-local',
+      runtimeName: runtime?.name || 'Local Ollama'
+    });
+  }
+
+  return models.sort((a, b) => a.id.localeCompare(b.id));
+}
+
 export function buildAssignableTargets() {
   return {
     appIds: APP_IDS,
@@ -320,6 +370,7 @@ export function buildAssignableTargets() {
     chatgptAccounts: listChatGPTAccounts().accounts || [],
     claudeAccounts: listClaudeAccounts().accounts || [],
     antigravityAccounts: listAntigravityAccounts().accounts || [],
-    apiKeys: listApiKeys() || []
+    apiKeys: listApiKeys() || [],
+    localModels: buildAssignableLocalModels()
   };
 }

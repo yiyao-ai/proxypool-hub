@@ -399,6 +399,16 @@ async function _handleMessagesAssignment(req, res, body, requestedModel, upstrea
             if (result !== false) return result;
             continue;
         }
+        if (candidate.credentialType === 'local-model') {
+            const result = await tryHandleLocalAnthropic(req, res, body, {
+                appId: assignment.appId,
+                requestedModel,
+                assignedModel: candidate.credential.model || candidate.credential.id,
+                forceLocal: true
+            });
+            if (result !== false) return result;
+            continue;
+        }
         const result = await _handleViaAssignedApiKey(req, res, body, requestedModel, isStreaming, startTime, candidate.credential);
         if (result !== false) return result;
     }

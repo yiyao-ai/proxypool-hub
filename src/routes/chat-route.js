@@ -162,6 +162,17 @@ async function _handleChatAssignment(req, res, body, requestedModel, upstreamMod
     if (candidate.credentialType === 'api-key') {
       const result = await _handleChatViaAssignedApiKey(res, body, requestedModel, startTime, candidate.credential);
       if (result !== false) return result;
+      continue;
+    }
+
+    if (candidate.credentialType === 'local-model') {
+      const result = await tryHandleLocalChat(res, body, {
+        appId: assignment.appId,
+        requestedModel,
+        assignedModel: candidate.credential.model || candidate.credential.id,
+        forceLocal: true
+      });
+      if (result !== false) return result;
     }
   }
   return false;

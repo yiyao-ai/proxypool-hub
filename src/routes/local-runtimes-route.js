@@ -5,15 +5,18 @@ import {
   updateLocalRuntime
 } from '../local-runtime-manager.js';
 import { checkOllamaHealth, listOllamaModels } from '../runtimes/ollama.js';
+import { discoverModels } from '../model-discovery.js';
+import { buildAssignableTargets } from '../app-routing.js';
 
-function buildPayload(runtime, health = null, models = null) {
+function buildPayload(runtime, health = null, models = null, extra = {}) {
   return {
     success: true,
     enabled: getServerSettings().localModelRoutingEnabled === true,
     runtime,
     runtimes: listLocalRuntimes(),
     health,
-    models
+    models,
+    ...extra
   };
 }
 
@@ -56,7 +59,10 @@ export async function handleRefreshLocalRuntimeModels(req, res) {
 
   try {
     const models = await listOllamaModels(runtime.baseUrl);
-    res.json(buildPayload(runtime, null, models));
+    await discoverModels();
+    res.json(buildPayload(runtime, null, models, {
+      targets: buildAssignableTargets()
+    }));
   } catch (error) {
     res.status(502).json({ success: false, error: error.message });
   }

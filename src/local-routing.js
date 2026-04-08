@@ -8,13 +8,14 @@ import {
 import { sendResponsesSSE } from './utils/responses-sse.js';
 import { resolveModel } from './model-mapping.js';
 
-function getRuntimeIfEnabled() {
+function getRuntimeIfEnabled({ forceLocal = false } = {}) {
   const settings = getServerSettings();
-  if (settings.localModelRoutingEnabled !== true) return null;
+  if (!forceLocal && settings.localModelRoutingEnabled !== true) return null;
   return getPrimaryLocalRuntime();
 }
 
-function resolveAssignedModel(runtime, appId, requestedModel) {
+function resolveAssignedModel(runtime, appId, requestedModel, assignedModel = '') {
+  if (assignedModel) return assignedModel;
   const configured = runtime?.defaultModels?.[appId] || getDefaultLocalModel(appId);
   return configured || requestedModel;
 }
@@ -141,12 +142,12 @@ export function getLocalRoutingStatus() {
   };
 }
 
-export async function tryHandleLocalAnthropic(req, res, body, { appId, requestedModel }) {
-  const runtime = getRuntimeIfEnabled();
+export async function tryHandleLocalAnthropic(req, res, body, { appId, requestedModel, assignedModel = '', forceLocal = false }) {
+  const runtime = getRuntimeIfEnabled({ forceLocal });
   if (!runtime) return false;
   if (runtime.type !== 'ollama') return false;
 
-  const localModel = resolveAssignedModel(runtime, appId, requestedModel);
+  const localModel = resolveAssignedModel(runtime, appId, requestedModel, assignedModel);
   const mappedBody = {
     ...body,
     model: localModel,
@@ -173,12 +174,12 @@ export async function tryHandleLocalAnthropic(req, res, body, { appId, requested
   return true;
 }
 
-export async function tryHandleLocalChat(res, body, { appId, requestedModel }) {
-  const runtime = getRuntimeIfEnabled();
+export async function tryHandleLocalChat(res, body, { appId, requestedModel, assignedModel = '', forceLocal = false }) {
+  const runtime = getRuntimeIfEnabled({ forceLocal });
   if (!runtime) return false;
   if (runtime.type !== 'ollama') return false;
 
-  const localModel = resolveAssignedModel(runtime, appId, requestedModel);
+  const localModel = resolveAssignedModel(runtime, appId, requestedModel, assignedModel);
   const mappedModel = resolveModel('openai', localModel);
   const response = await sendOllamaChatRequest(runtime.baseUrl, {
     ...body,
@@ -191,12 +192,12 @@ export async function tryHandleLocalChat(res, body, { appId, requestedModel }) {
   return true;
 }
 
-export async function tryHandleLocalResponses(res, body, { appId, requestedModel, isStreaming }) {
-  const runtime = getRuntimeIfEnabled();
+export async function tryHandleLocalResponses(res, body, { appId, requestedModel, isStreaming, assignedModel = '', forceLocal = false }) {
+  const runtime = getRuntimeIfEnabled({ forceLocal });
   if (!runtime) return false;
   if (runtime.type !== 'ollama') return false;
 
-  const localModel = resolveAssignedModel(runtime, appId, requestedModel);
+  const localModel = resolveAssignedModel(runtime, appId, requestedModel, assignedModel);
   let response = await sendOllamaResponsesRequest(runtime.baseUrl, {
     ...body,
     model: localModel,

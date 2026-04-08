@@ -465,6 +465,18 @@ async function _handleResponsesAssignment(req, res, assignment, rawBody, content
             if (result !== false) return result;
             continue;
         }
+        if (candidate.credentialType === 'local-model') {
+            if (!parsed) continue;
+            const result = await tryHandleLocalResponses(res, parsed, {
+                appId: assignment.appId,
+                requestedModel: modelId,
+                isStreaming,
+                assignedModel: candidate.credential.model || candidate.credential.id,
+                forceLocal: true
+            });
+            if (result !== false) return result;
+            continue;
+        }
 
         if (!parsed) continue;
         const result = await _handleResponsesViaAssignedApiKey(res, parsed, modelId, isStreaming, startTime, candidate.credential);
