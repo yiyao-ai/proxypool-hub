@@ -24,10 +24,12 @@ import { markCredentialError, markCredentialRateLimited, markCredentialSuccess, 
 import { analyzeAnthropicRequestFeatures } from '../translators/request-features.js';
 import { rankAnthropicProvidersForRequest } from '../translators/provider-capabilities.js';
 import { tryHandleLocalAnthropic } from '../local-routing.js';
+import { cleanCacheControl, processAssistantContent } from '../thinking-utils.js';
 
 const MAX_RETRIES = 5;
 const MAX_WAIT_BEFORE_ERROR_MS = 120000;
 const SHORT_RATE_LIMIT_THRESHOLD_MS = 5000;
+const DEFAULT_CLAUDE_CODE_MAX_OUTPUT_TOKENS = 64000;
 
 let accountRotator = null;
 let currentStrategy = null;
@@ -192,6 +194,41 @@ function _resolveMessagesProviderModel(providerType, requestedModel) {
 
 function _resolveActualProviderModel(response, fallbackModel) {
     return response?.headers?.get?.('x-proxypool-upstream-model') || fallbackModel;
+}
+
+function _resolveClaudeCodeMaxOutputTokens() {
+    const envValue = Number.parseInt(process.env.CLAUDE_CODE_MAX_OUTPUT_TOKENS || '', 10);
+    return Number.isFinite(envValue) && envValue > 0
+        ? envValue
+        : DEFAULT_CLAUDE_CODE_MAX_OUTPUT_TOKENS;
+}
+
+function _applyAnthropicBridgeTokenCap(body, { appId, providerType }) {
+    if (appId !== 'claude-code') {
+        return body;
+    }
+
+    if (providerType === 'anthropic' || providerType === 'claude-account') {
+        return body;
+    }
+
+    if (!Number.isFinite(body?.max_tokens)) {
+        return body;
+    }
+
+    const cap = _resolveClaudeCodeMaxOutputTokens();
+    if (body.max_tokens <= cap) {
+        return body;
+    }
+
+    logger.warn(
+        `[Messages] Capped max_tokens for Claude Code bridge | provider=${providerType} | requested=${body.max_tokens} | capped=${cap}`
+    );
+
+    return {
+        ...body,
+        max_tokens: cap
+    };
 }
 
 function _readTranslatorDowngradeHeaders(response) {
@@ -477,11 +514,15 @@ async function _handleViaAssignedApiKey(req, res, body, requestedModel, isStream
         }
 
         if (typeof provider.sendAnthropicRequest === 'function') {
+            const appId = detectRequestApp(req);
             const mappedModel = _resolveMessagesProviderModel(provider.type, requestedModel);
-            const mappedBody = { ...body, model: mappedModel };
+            const mappedBody = _applyAnthropicBridgeTokenCap({ ...body, model: mappedModel }, {
+                appId,
+                providerType: provider.type
+            });
             const response = await provider.sendAnthropicRequest({
                 ...mappedBody,
-                _proxypoolAppId: detectRequestApp(req)
+                _proxypoolAppId: appId
             });
             const durationMs = Date.now() - startTime;
             if (!response.ok) {
@@ -578,13 +619,18 @@ async function _handleViaAssignedAccount(req, res, body, requestedModel, upstrea
 async function _handleViaAssignedClaudeAccount(req, res, body, requestedModel, isStreaming, startTime, clientBeta, email) {
     const account = getClaudeAccount(email);
     if (!account?.accessToken || account.enabled === false) return false;
+    const model = body.model || requestedModel;
+    if (_isModelCooledDown(account.email, model)) {
+        logger.info(`[Messages] Assigned Claude account on cooldown, skipping: ${account.email} | model=${model}`);
+        return false;
+    }
 
     try {
-        const claudeBody = { ...body, max_tokens: body.max_tokens || 8192 };
+        const claudeBody = _prepareClaudeMessagesBody(body);
         if (isStreaming) {
             const upstream = await sendClaudeStream(claudeBody, account.accessToken, { clientBeta });
             recordClaudeRuntimeObservation(account.email, extractClaudeRateLimitHeaders(upstream.headers), {
-                model: body.model || requestedModel
+                model
             });
             res.setHeader('Content-Type', 'text/event-stream');
             res.setHeader('Cache-Control', 'no-cache');
@@ -604,13 +650,13 @@ async function _handleViaAssignedClaudeAccount(req, res, body, requestedModel, i
             logRequest({ route: '/v1/messages', method: 'POST', provider: 'claude-pool', keyId: account.email, model: requestedModel, mappedModel: body.model, requestBody: body, durationMs, status: 200, success: true });
             logger.success(`[Messages] <<< OK via assigned Claude account (stream) | ${account.email} | model=${body.model} | ${durationMs}ms`);
             markCredentialSuccess(buildCredentialId('claude-account', account.email), {
-                model: body.model || requestedModel,
+                model,
                 latencyMs: durationMs
             });
         } else {
             const { data: result, rateLimitHeaders } = await sendClaudeMessageWithMeta(claudeBody, account.accessToken, { clientBeta });
             recordClaudeRuntimeObservation(account.email, rateLimitHeaders, {
-                model: body.model || requestedModel
+                model
             });
             const durationMs = Date.now() - startTime;
             const inputTokens = result.usage?.input_tokens || 0;
@@ -619,7 +665,7 @@ async function _handleViaAssignedClaudeAccount(req, res, body, requestedModel, i
             logRequest({ route: '/v1/messages', method: 'POST', provider: 'claude-pool', keyId: account.email, model: requestedModel, mappedModel: body.model, requestBody: body, inputTokens, outputTokens, durationMs, status: 200, success: true });
             logger.success(`[Messages] <<< OK via assigned Claude account | ${account.email} | model=${body.model} | ${inputTokens}+${outputTokens} tokens | ${durationMs}ms`);
             markCredentialSuccess(buildCredentialId('claude-account', account.email), {
-                model: body.model || requestedModel,
+                model,
                 latencyMs: durationMs
             });
             res.json(result);
@@ -627,12 +673,12 @@ async function _handleViaAssignedClaudeAccount(req, res, body, requestedModel, i
         return true;
     } catch (error) {
         recordClaudeRuntimeObservation(account.email, error.rateLimitHeaders, {
-            model: body.model || requestedModel
+            model
         });
         if (res.headersSent || res.writableEnded || res.destroyed) {
             const durationMs = Date.now() - startTime;
             markCredentialError(buildCredentialId('claude-account', account.email), error, {
-                model: body.model || requestedModel,
+                model,
                 invalid: error.message.includes('AUTH_EXPIRED')
             });
             recordRequest({ provider: 'claude-pool', keyId: account.email, model: body.model, durationMs, success: false, error: error.message });
@@ -643,8 +689,15 @@ async function _handleViaAssignedClaudeAccount(req, res, body, requestedModel, i
             }
             return RESPONSE_COMMITTED;
         }
+        if (error.message.startsWith('RATE_LIMITED:')) {
+            const waitMs = _extractClaudeRateLimitCooldownMs(error);
+            _setModelCooldown(account.email, model, waitMs);
+            markCredentialRateLimited(buildCredentialId('claude-account', account.email), waitMs, {
+                model
+            });
+        }
         markCredentialError(buildCredentialId('claude-account', account.email), error, {
-            model: body.model || requestedModel,
+            model,
             invalid: error.message.includes('AUTH_EXPIRED')
         });
         recordRequest({ provider: 'claude-pool', keyId: account.email, model: body.model, durationMs: Date.now() - startTime, success: false, error: error.message });
@@ -979,7 +1032,10 @@ async function _handleViaCompatibleKeys(res, body, requestedModel, isStreaming, 
 
         try {
             const mappedModel = _resolveMessagesProviderModel(provider.type, requestedModel);
-            const mappedBody = { ...body, model: mappedModel };
+            const mappedBody = _applyAnthropicBridgeTokenCap({ ...body, model: mappedModel }, {
+                appId,
+                providerType: provider.type
+            });
             logger.info(`[Messages] Model mapping: ${requestedModel} → ${mappedModel} (${provider.type})`);
             const response = await provider.sendAnthropicRequest({
                 ...mappedBody,
@@ -1110,6 +1166,8 @@ function _getUsableClaudeAccounts() {
 // Key: "email:model" → timestamp when cooldown expires
 const _modelCooldowns = new Map();
 const MODEL_COOLDOWN_MS = 30 * 1000; // 30 seconds
+const RATE_LIMIT_COOLDOWN_FLOOR_MS = 30 * 1000;
+const RATE_LIMIT_COOLDOWN_CEILING_MS = 10 * 60 * 1000;
 
 function _isModelCooledDown(email, model) {
     const key = `${email}:${model}`;
@@ -1122,8 +1180,46 @@ function _isModelCooledDown(email, model) {
     return true;
 }
 
-function _setModelCooldown(email, model) {
-    _modelCooldowns.set(`${email}:${model}`, Date.now() + MODEL_COOLDOWN_MS);
+function _setModelCooldown(email, model, durationMs = MODEL_COOLDOWN_MS) {
+    _modelCooldowns.set(`${email}:${model}`, Date.now() + durationMs);
+}
+
+function _clampClaudeRateLimitCooldown(waitMs) {
+    if (!Number.isFinite(waitMs) || waitMs <= 0) return RATE_LIMIT_COOLDOWN_FLOOR_MS;
+    return Math.max(
+        RATE_LIMIT_COOLDOWN_FLOOR_MS,
+        Math.min(waitMs, RATE_LIMIT_COOLDOWN_CEILING_MS)
+    );
+}
+
+function _extractClaudeRateLimitCooldownMs(error) {
+    const resetMs = Number.parseInt(String(error?.message || '').split(':')[1], 10);
+    return _clampClaudeRateLimitCooldown(resetMs);
+}
+
+function _prepareClaudeMessagesBody(body) {
+    const cleanedMessages = Array.isArray(body?.messages)
+        ? cleanCacheControl(body.messages).map(message => {
+            if (!message || typeof message !== 'object' || !Array.isArray(message.content)) {
+                return message;
+            }
+
+            if (message.role === 'assistant') {
+                return {
+                    ...message,
+                    content: processAssistantContent(message.content)
+                };
+            }
+
+            return message;
+        })
+        : body?.messages;
+
+    return {
+        ...body,
+        messages: cleanedMessages,
+        max_tokens: body.max_tokens || 8192
+    };
 }
 
 async function _handleViaClaudeAccount(req, res, body, requestedModel, isStreaming, startTime, clientBeta) {
@@ -1149,7 +1245,7 @@ async function _handleViaClaudeAccount(req, res, body, requestedModel, isStreami
         req.on('close', onClientClose);
 
         try {
-            const claudeBody = { ...body, max_tokens: body.max_tokens || 8192 };
+            const claudeBody = _prepareClaudeMessagesBody(body);
             const apiOpts = { ...apiOptsBase, signal: abortController.signal };
             logger.info(`[Messages] >>> Claude account | ${account.email} | model=${claudeBody.model}`);
 
@@ -1220,7 +1316,7 @@ async function _handleViaClaudeAccount(req, res, body, requestedModel, isStreami
                         const refreshed = getClaudeAccount(account.email);
                         if (refreshed && refreshed.accessToken) {
                             logger.info(`[Messages] Token refreshed for ${account.email}, retrying...`);
-                            const claudeBody = { ...body, max_tokens: body.max_tokens || 8192 };
+                            const claudeBody = _prepareClaudeMessagesBody(body);
                             const apiOpts = { ...apiOptsBase, signal: abortController.signal };
                             if (isStreaming) {
                                 const upstream = await sendClaudeStream(claudeBody, refreshed.accessToken, apiOpts);
@@ -1266,7 +1362,12 @@ async function _handleViaClaudeAccount(req, res, body, requestedModel, isStreami
                 continue;
             }
             if (error.message.startsWith('RATE_LIMITED:')) {
-                logger.warn(`[Messages] Claude account rate limited: ${account.email}`);
+                const waitMs = _extractClaudeRateLimitCooldownMs(error);
+                _setModelCooldown(account.email, model, waitMs);
+                markCredentialRateLimited(buildCredentialId('claude-account', account.email), waitMs, {
+                    model
+                });
+                logger.warn(`[Messages] Claude account rate limited: ${account.email} | model=${model} | cooldown ${Math.round(waitMs / 1000)}s`);
                 continue;
             }
             if (error.message.startsWith('MODEL_QUOTA_EXHAUSTED')) {
@@ -1353,9 +1454,14 @@ export default { handleMessages };
 
 export const _testExports = {
     _buildTranslatorDowngradeError,
+    _applyAnthropicBridgeTokenCap,
+    _resolveClaudeCodeMaxOutputTokens,
     _readTranslatorDowngradeHeaders,
     RESPONSE_COMMITTED,
     _summarizeCompatibleProviderRanking,
     _shouldRejectTranslatorDowngrade,
-    _streamDirectWithRotation
+    _streamDirectWithRotation,
+    _clampClaudeRateLimitCooldown,
+    _extractClaudeRateLimitCooldownMs,
+    _prepareClaudeMessagesBody
 };

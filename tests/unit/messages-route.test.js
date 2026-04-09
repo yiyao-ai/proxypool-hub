@@ -6,8 +6,13 @@ import { analyzeAnthropicRequestFeatures } from '../../src/translators/request-f
 import { rankAnthropicProvidersForRequest, resolveAnthropicProviderCapabilities } from '../../src/translators/provider-capabilities.js';
 
 const {
+  _applyAnthropicBridgeTokenCap,
   _buildTranslatorDowngradeError,
+  _clampClaudeRateLimitCooldown,
+  _extractClaudeRateLimitCooldownMs,
+  _prepareClaudeMessagesBody,
   _readTranslatorDowngradeHeaders,
+  _resolveClaudeCodeMaxOutputTokens,
   RESPONSE_COMMITTED,
   _summarizeCompatibleProviderRanking,
   _shouldRejectTranslatorDowngrade,
@@ -219,4 +224,76 @@ test('_summarizeCompatibleProviderRanking prints capability summary for logs', (
 
 test('RESPONSE_COMMITTED sentinel is exported for committed stream handling', () => {
   assert.equal(typeof RESPONSE_COMMITTED, 'symbol');
+});
+
+test('_clampClaudeRateLimitCooldown enforces sane cooldown bounds', () => {
+  assert.equal(_clampClaudeRateLimitCooldown(0), 30000);
+  assert.equal(_clampClaudeRateLimitCooldown(5000), 30000);
+  assert.equal(_clampClaudeRateLimitCooldown(120000), 120000);
+  assert.equal(_clampClaudeRateLimitCooldown(60 * 60 * 1000), 10 * 60 * 1000);
+});
+
+test('_extractClaudeRateLimitCooldownMs reads retry delay from Claude RATE_LIMITED error shape', () => {
+  const error = new Error('RATE_LIMITED:5717000:{"type":"error"}');
+  assert.equal(_extractClaudeRateLimitCooldownMs(error), 10 * 60 * 1000);
+});
+
+test('_prepareClaudeMessagesBody strips invalid assistant thinking blocks before Claude passthrough', () => {
+  const prepared = _prepareClaudeMessagesBody({
+    model: 'claude-opus-4-6',
+    messages: [
+      {
+        role: 'assistant',
+        content: [
+          { type: 'text', text: 'step 1' },
+          { type: 'thinking', thinking: '' },
+          { type: 'text', text: '' }
+        ]
+      },
+      {
+        role: 'user',
+        content: [
+          { type: 'text', text: 'continue', cache_control: { type: 'ephemeral' } }
+        ]
+      }
+    ]
+  });
+
+  assert.equal(prepared.max_tokens, 8192);
+  assert.deepEqual(prepared.messages[0].content, [{ type: 'text', text: 'step 1' }]);
+  assert.deepEqual(prepared.messages[1].content, [{ type: 'text', text: 'continue' }]);
+});
+
+test('_resolveClaudeCodeMaxOutputTokens falls back to 64000 by default', () => {
+  const original = process.env.CLAUDE_CODE_MAX_OUTPUT_TOKENS;
+  delete process.env.CLAUDE_CODE_MAX_OUTPUT_TOKENS;
+
+  try {
+    assert.equal(_resolveClaudeCodeMaxOutputTokens(), 64000);
+  } finally {
+    if (original === undefined) {
+      delete process.env.CLAUDE_CODE_MAX_OUTPUT_TOKENS;
+    } else {
+      process.env.CLAUDE_CODE_MAX_OUTPUT_TOKENS = original;
+    }
+  }
+});
+
+test('_applyAnthropicBridgeTokenCap caps Claude Code bridge requests for Azure/OpenAI-style providers only', () => {
+  const capped = _applyAnthropicBridgeTokenCap(
+    { model: 'gpt-5.4-pro-2026-03-05', max_tokens: 120000 },
+    { appId: 'claude-code', providerType: 'azure-openai' }
+  );
+  const untouchedClaude = _applyAnthropicBridgeTokenCap(
+    { model: 'claude-opus-4-6', max_tokens: 120000 },
+    { appId: 'claude-code', providerType: 'claude-account' }
+  );
+  const untouchedOtherApp = _applyAnthropicBridgeTokenCap(
+    { model: 'gpt-5.4-pro-2026-03-05', max_tokens: 120000 },
+    { appId: 'codex', providerType: 'azure-openai' }
+  );
+
+  assert.equal(capped.max_tokens, 64000);
+  assert.equal(untouchedClaude.max_tokens, 120000);
+  assert.equal(untouchedOtherApp.max_tokens, 120000);
 });

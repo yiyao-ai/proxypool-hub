@@ -3,7 +3,9 @@ document.addEventListener('alpine:init', () => {
         version: '1.0.6',
         connectionStatus: 'connecting',
         activeTab: 'dashboard',
-        sidebarOpen: window.innerWidth >= 1024,
+        isSmallScreen: window.innerWidth < 1024,
+        sidebarOpen: false,
+        sidebarCollapsed: localStorage.getItem('proxy-sidebar-collapsed') === 'true' && window.innerWidth >= 1024,
         loading: false,
         toast: null,
         currentTime: '',
@@ -221,6 +223,7 @@ document.addEventListener('alpine:init', () => {
         init() {
             document.documentElement.classList.toggle('light', !this.darkMode);
             document.documentElement.classList.toggle('dark', this.darkMode);
+            this.syncResponsiveLayout();
             this.updateTime();
             setInterval(() => this.updateTime(), 1000);
             this.refreshAccounts();
@@ -245,7 +248,7 @@ document.addEventListener('alpine:init', () => {
             this.initConfigViewerFromUrl();
 
             window.addEventListener('resize', () => {
-                this.sidebarOpen = window.innerWidth >= 1024;
+                this.syncResponsiveLayout();
             });
 
             window.addEventListener('message', (event) => {
@@ -269,9 +272,28 @@ document.addEventListener('alpine:init', () => {
             this.currentTime = new Date().toLocaleTimeString([], {hour: '2-digit', minute: '2-digit', second: '2-digit'});
         },
 
+        syncResponsiveLayout() {
+            this.isSmallScreen = window.innerWidth < 1024;
+            if (this.isSmallScreen) {
+                this.sidebarOpen = false;
+                return;
+            }
+            this.sidebarOpen = false;
+            this.sidebarCollapsed = localStorage.getItem('proxy-sidebar-collapsed') === 'true';
+        },
+
+        toggleSidebar() {
+            if (this.isSmallScreen) {
+                this.sidebarOpen = !this.sidebarOpen;
+                return;
+            }
+            this.sidebarCollapsed = !this.sidebarCollapsed;
+            localStorage.setItem('proxy-sidebar-collapsed', this.sidebarCollapsed);
+        },
+
         setActiveTab(tab) {
             this.activeTab = tab;
-            if (window.innerWidth < 1024) {
+            if (this.isSmallScreen) {
                 this.sidebarOpen = false;
             }
             if (tab === 'accounts') { this.refreshAccounts(); this.refreshClaudeAccounts(); this.refreshAntigravityAccounts(); }

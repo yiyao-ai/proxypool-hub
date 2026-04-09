@@ -27,6 +27,72 @@ let tray = null;
 let serverInstance = null;
 let actualPort = DEFAULT_PORT;
 
+// ─── Version helpers ────────────────────────────────────────────────────────
+
+/**
+ * Returns true if `latest` is strictly newer than `current` (semver).
+ */
+function isNewerVersion(current, latest) {
+    const parse = (v) => v.replace(/^v/, '').split('.').map(Number);
+    const [cMaj, cMin, cPat] = parse(current);
+    const [lMaj, lMin, lPat] = parse(latest);
+    if (lMaj !== cMaj) return lMaj > cMaj;
+    if (lMin !== cMin) return lMin > cMin;
+    return lPat > cPat;
+}
+
+/**
+ * Check GitHub Releases for a newer version.
+ * Shows a blocking dialog if an update is required.
+ * Silently returns on network errors (offline-friendly).
+ */
+async function checkForUpdate() {
+    const currentVersion = app.getVersion();
+
+    let data;
+    try {
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 10000);
+        const res = await _nativeFetch(
+            'https://api.github.com/repos/codeking-ai/cligate/releases/latest',
+            {
+                headers: { 'Accept': 'application/vnd.github.v3+json', 'User-Agent': 'CliGate' },
+                signal: controller.signal,
+            }
+        );
+        clearTimeout(timeout);
+        if (!res.ok) return;
+        data = await res.json();
+    } catch {
+        return; // network error, timeout, offline → skip
+    }
+
+    const latestVersion = data.tag_name;
+    if (!latestVersion) return;
+
+    if (!isNewerVersion(currentVersion, latestVersion)) return;
+
+    const releaseUrl = data.html_url
+        || 'https://github.com/codeking-ai/cligate/releases/latest';
+
+    const { response } = await dialog.showMessageBox({
+        type: 'warning',
+        title: 'Update Required',
+        message: `A new version of CliGate is available (${latestVersion}).`,
+        detail: `You are running v${currentVersion}. Please download the latest version to continue.`,
+        buttons: ['Download Update', 'Quit'],
+        defaultId: 0,
+        cancelId: 1,
+        noLink: true,
+    });
+
+    if (response === 0) {
+        shell.openExternal(releaseUrl);
+    }
+    app.quit();
+    throw new Error('UPDATE_REQUIRED');
+}
+
 // ─── Port helpers ───────────────────────────────────────────────────────────
 
 function isPortAvailable(port) {
@@ -132,6 +198,9 @@ app.whenReady().then(async () => {
         const preferred = Number(process.env.PORT) || DEFAULT_PORT;
         actualPort = await findAvailablePort(preferred);
 
+        // Check for mandatory updates before proceeding
+        await checkForUpdate();
+
         // Restore Node.js native fetch — Electron's net.fetch can break
         // ReadableStream/getReader() used by our streaming proxy code.
         if (_nativeFetch) {
@@ -153,6 +222,7 @@ app.whenReady().then(async () => {
         createWindow();
         createTray();
     } catch (err) {
+        if (err.message === 'UPDATE_REQUIRED') return;
         dialog.showErrorBox('Startup Error', `Failed to start CliGate:\n\n${err.message}`);
         app.quit();
     }
