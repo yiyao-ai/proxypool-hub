@@ -316,8 +316,17 @@ export class AzureOpenAIProvider extends BaseProvider {
         return `${base}/openai/deployments/${this.deploymentName}/chat/completions?api-version=${this.apiVersion}`;
     }
 
+    _isCognitiveServicesEndpoint() {
+        return this.baseUrl.includes('cognitiveservices.azure.com');
+    }
+
     _buildResponsesUrl() {
         const base = this.baseUrl.replace(/\/+$/, '');
+        if (this._isCognitiveServicesEndpoint()) {
+            // cognitiveservices.azure.com 端点不支持 /v1/ 路径，需要显式传递 api-version
+            return `${base}/openai/responses?api-version=${this.apiVersion}`;
+        }
+        // openai.azure.com 使用 /v1/ 统一端点，无需 api-version
         return `${base}/openai/v1/responses`;
     }
 
