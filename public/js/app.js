@@ -1,6 +1,6 @@
 document.addEventListener('alpine:init', () => {
     Alpine.data('app', () => ({
-        version: '1.0.6',
+        version: '1.0.9',
         connectionStatus: 'connecting',
         activeTab: 'dashboard',
         isSmallScreen: window.innerWidth < 1024,
@@ -84,6 +84,9 @@ document.addEventListener('alpine:init', () => {
         selectedChannelConversation: null,
         channelConversationMessages: [],
         channelConversationLoading: false,
+        channelConversationQuery: '',
+        channelConversationChannelFilter: 'all',
+        channelConversationStateFilter: 'all',
 
         // Proxy status
         proxyStatus: {
@@ -239,6 +242,42 @@ document.addEventListener('alpine:init', () => {
 
         get dashboardProxyReadyCount() {
             return Object.values(this.proxyStatus).filter(Boolean).length;
+        },
+
+        get filteredChannelConversations() {
+            const query = String(this.channelConversationQuery || '').trim().toLowerCase();
+            const channelFilter = String(this.channelConversationChannelFilter || 'all');
+            const stateFilter = String(this.channelConversationStateFilter || 'all');
+
+            return this.channelConversations.filter((conversation) => {
+                if (channelFilter !== 'all' && conversation.channel !== channelFilter) {
+                    return false;
+                }
+
+                const state = this.channelConversationStateValue(conversation);
+                if (stateFilter !== 'all' && state !== stateFilter) {
+                    return false;
+                }
+
+                if (!query) {
+                    return true;
+                }
+
+                const haystack = [
+                    conversation.title,
+                    conversation.provider,
+                    conversation.model,
+                    conversation.summary,
+                    conversation.channel,
+                    conversation.externalConversationId,
+                    conversation.externalUserId,
+                    conversation.lastMessagePreview
+                ]
+                    .map((item) => String(item || '').toLowerCase())
+                    .join(' ');
+
+                return haystack.includes(query);
+            });
         },
 
         init() {
@@ -2863,9 +2902,9 @@ document.addEventListener('alpine:init', () => {
             if (!options.silent) {
                 this.channelConversationsLoading = true;
             }
-            const { ok, data } = await this.api('/api/agent-channels/conversations?limit=80');
-            if (ok && Array.isArray(data?.conversations)) {
-                this.channelConversations = data.conversations;
+            const { ok, data } = await this.api('/api/agent-channels/session-records?limit=80');
+            if (ok && Array.isArray(data?.records)) {
+                this.channelConversations = data.records;
                 if (!this.selectedChannelConversationId && this.channelConversations.length > 0) {
                     this.selectedChannelConversationId = this.channelConversations[0].id;
                 }
@@ -2876,6 +2915,13 @@ document.addEventListener('alpine:init', () => {
                             ...(this.selectedChannelConversation || {}),
                             ...selected
                         };
+                    } else if (this.channelConversations.length > 0) {
+                        this.selectedChannelConversationId = this.channelConversations[0].id;
+                        this.selectedChannelConversation = this.channelConversations[0];
+                    } else {
+                        this.selectedChannelConversationId = '';
+                        this.selectedChannelConversation = null;
+                        this.channelConversationMessages = [];
                     }
                 }
             }
@@ -2895,11 +2941,15 @@ document.addEventListener('alpine:init', () => {
             if (!options.silent) {
                 this.channelConversationLoading = true;
             }
-            const { ok, data } = await this.api(`/api/agent-channels/conversations/${encodeURIComponent(conversationId)}`);
-            if (ok && data?.conversation) {
-                this.selectedChannelConversation = data.conversation;
-                this.channelConversationMessages = Array.isArray(data.conversation.deliveries)
-                    ? data.conversation.deliveries
+            const { ok, data } = await this.api(`/api/agent-channels/session-records/${encodeURIComponent(conversationId)}`);
+            if (ok && data?.session) {
+                this.selectedChannelConversation = {
+                    ...(data.conversation || {}),
+                    ...(data.session || {}),
+                    conversationId: data.conversation?.id || data.session?.conversationId || ''
+                };
+                this.channelConversationMessages = Array.isArray(data.deliveries)
+                    ? data.deliveries
                     : [];
             }
             if (!options.silent) {
@@ -2912,6 +2962,44 @@ document.addEventListener('alpine:init', () => {
             return isSelected
                 ? 'border-neon-cyan/40 bg-neon-cyan/10'
                 : 'border-space-border/30 bg-space-900/40 hover:bg-space-800/50';
+        },
+
+        channelConversationStateValue(conversation) {
+            return conversation?.state || 'idle';
+        },
+
+        channelConversationStateLabel(conversation) {
+            const state = this.channelConversationStateValue(conversation);
+            if (state === 'pending') return this.t('channelConversationPending');
+            if (state === 'waiting_approval') return this.t('agentRuntimeStatusWaitingApproval');
+            if (state === 'waiting_user') return this.t('agentRuntimeStatusWaitingUser');
+            if (state === 'active') return this.t('activeStatus');
+            if (state === 'failed') return this.t('failedLabel');
+            if (state === 'completed') return this.t('agentRuntimeStatusReady');
+            return this.t('idleStatus');
+        },
+
+        channelConversationStatePillClass(conversation) {
+            const state = this.channelConversationStateValue(conversation);
+            if (state === 'pending') {
+                return 'border-amber-500/30 bg-amber-500/10 text-amber-300';
+            }
+            if (state === 'waiting_approval') {
+                return 'border-yellow-500/30 bg-yellow-500/10 text-yellow-400';
+            }
+            if (state === 'waiting_user') {
+                return 'border-blue-500/30 bg-blue-500/10 text-blue-400';
+            }
+            if (state === 'active') {
+                return 'border-neon-green/30 bg-neon-green/10 text-neon-green';
+            }
+            if (state === 'failed') {
+                return 'border-red-500/30 bg-red-500/10 text-red-300';
+            }
+            if (state === 'completed') {
+                return 'border-neon-cyan/30 bg-neon-cyan/10 text-neon-cyan';
+            }
+            return 'border-space-border/40 bg-space-900/70 text-gray-400';
         },
 
         channelMessageRoleLabel(record) {
@@ -2956,6 +3044,10 @@ document.addEventListener('alpine:init', () => {
             return `${prefix}${conversation.lastMessagePreview}`;
         },
 
+        resolveChannelConversationActionId(conversation) {
+            return conversation?.conversationId || conversation?.id || '';
+        },
+
         async refreshChannels() {
             this.channelProvidersLoading = true;
             const { ok, data } = await this.api('/api/agent-channels/refresh', {
@@ -2993,8 +3085,9 @@ document.addEventListener('alpine:init', () => {
         },
 
         async approveChannelPairing(conversation) {
-            if (!conversation?.id) return;
-            const { ok, data } = await this.api(`/api/agent-channels/pairing/${encodeURIComponent(conversation.channel)}/${encodeURIComponent(conversation.id)}/approve`, {
+            const targetId = this.resolveChannelConversationActionId(conversation);
+            if (!targetId || !conversation?.channel) return;
+            const { ok, data } = await this.api(`/api/agent-channels/pairing/${encodeURIComponent(conversation.channel)}/${encodeURIComponent(targetId)}/approve`, {
                 method: 'POST',
                 body: JSON.stringify({ approvedBy: 'dashboard' })
             });
@@ -3010,8 +3103,9 @@ document.addEventListener('alpine:init', () => {
         },
 
         async denyChannelPairing(conversation) {
-            if (!conversation?.id) return;
-            const { ok, data } = await this.api(`/api/agent-channels/pairing/${encodeURIComponent(conversation.channel)}/${encodeURIComponent(conversation.id)}/deny`, {
+            const targetId = this.resolveChannelConversationActionId(conversation);
+            if (!targetId || !conversation?.channel) return;
+            const { ok, data } = await this.api(`/api/agent-channels/pairing/${encodeURIComponent(conversation.channel)}/${encodeURIComponent(targetId)}/deny`, {
                 method: 'POST',
                 body: JSON.stringify({ approvedBy: 'dashboard' })
             });
@@ -3027,8 +3121,9 @@ document.addEventListener('alpine:init', () => {
         },
 
         async resetChannelConversation(conversation) {
-            if (!conversation?.id) return;
-            const { ok, data } = await this.api(`/api/agent-channels/conversations/${encodeURIComponent(conversation.id)}/reset`, {
+            const targetId = this.resolveChannelConversationActionId(conversation);
+            if (!targetId) return;
+            const { ok, data } = await this.api(`/api/agent-channels/conversations/${encodeURIComponent(targetId)}/reset`, {
                 method: 'POST'
             });
             if (ok && data?.success) {

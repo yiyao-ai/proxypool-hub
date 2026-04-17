@@ -226,6 +226,52 @@ html.light .alert {
     box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04), 0 14px 36px rgba(0, 0, 0, 0.36);
 }
 
+.conversation-records-layout {
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+    align-items: stretch;
+}
+
+.conversation-thread-panel,
+.conversation-detail-panel {
+    width: 100%;
+    min-width: 0;
+}
+
+.conversation-thread-list {
+    min-height: 360px;
+    max-height: 680px;
+}
+
+.conversation-detail-body {
+    min-height: 520px;
+    max-height: 680px;
+}
+
+.conversation-thread-preview {
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    overflow: hidden;
+}
+
+@media (min-width: 1024px) {
+    .conversation-records-layout {
+        flex-direction: row;
+        align-items: flex-start;
+    }
+
+    .conversation-thread-panel {
+        width: 360px;
+        flex: 0 0 360px;
+    }
+
+    .conversation-detail-panel {
+        flex: 1 1 auto;
+    }
+}
+
 .stat {
     position: relative;
 }

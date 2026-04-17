@@ -20,6 +20,10 @@ import { AgentChannelOutboundDispatcher } from '../../src/agent-channels/outboun
 import FeishuChannelProvider from '../../src/agent-channels/providers/feishu-provider.js';
 import TelegramChannelProvider from '../../src/agent-channels/providers/telegram-provider.js';
 import { formatAgentRuntimeEventForChannel } from '../../src/agent-channels/formatter.js';
+import {
+  buildAgentChannelSessionRecords,
+  buildAgentChannelSessionRecordDetail
+} from '../../src/routes/agent-channels-route.js';
 
 function createTempDir(prefix) {
   return mkdtempSync(join(tmpdir(), prefix));
@@ -272,6 +276,7 @@ test('AgentChannelRouter binds runtime sessions to conversations', async () => {
   const deliveries = deliveryStore.listByConversation(result.conversation.id);
   assert.equal(deliveries[0].direction, 'inbound');
   assert.equal(deliveries[0].payload.text, '/agent codex inspect repo');
+  assert.equal(deliveries[0].sessionId, result.session.id);
 });
 
 test('AgentChannelRouter clears conversation binding on explicit reset command', async () => {
@@ -394,6 +399,53 @@ test('completed runtime events keep channel conversations attached to the same s
 
   assert.equal(followUp.type, 'runtime_continued');
   assert.equal(followUp.session.id, started.session.id);
+});
+
+test('AgentChannelRouter stores fresh-session inbound messages under the new runtime session', async () => {
+  const runtimeSessionManager = createRuntimeManager();
+  const conversationStore = new AgentChannelConversationStore({
+    configDir: createTempDir('cligate-agent-channels-router-fresh-conv-')
+  });
+  const deliveryStore = new AgentChannelDeliveryStore({
+    configDir: createTempDir('cligate-agent-channels-router-fresh-delivery-')
+  });
+  const router = new AgentChannelRouter({
+    conversationStore,
+    deliveryStore,
+    pairingStore: new AgentChannelPairingStore({
+      configDir: createTempDir('cligate-agent-channels-router-fresh-pairing-')
+    }),
+    messageService: new AgentOrchestratorMessageService({ runtimeSessionManager }),
+    requirePairing: false
+  });
+
+  const started = await router.routeInboundMessage({
+    channel: 'telegram',
+    accountId: 'default',
+    externalMessageId: 'm_1',
+    externalConversationId: 'chat_1',
+    externalUserId: 'user_1',
+    text: '/agent codex inspect repo',
+    messageType: 'text'
+  });
+
+  const fresh = await router.routeInboundMessage({
+    channel: 'telegram',
+    accountId: 'default',
+    externalMessageId: 'm_2',
+    externalConversationId: 'chat_1',
+    externalUserId: 'user_1',
+    text: '/new codex write a page',
+    messageType: 'text'
+  });
+
+  assert.notEqual(fresh.session.id, started.session.id);
+  const oldSessionDeliveries = deliveryStore.listBySession(started.session.id);
+  const newSessionDeliveries = deliveryStore.listBySession(fresh.session.id);
+
+  assert.equal(oldSessionDeliveries.length, 1);
+  assert.equal(newSessionDeliveries.length, 1);
+  assert.equal(newSessionDeliveries[0].payload.text, '/new codex write a page');
 });
 
 test('AgentOrchestratorMessageService resolves approvals and answers pending questions', async () => {
@@ -740,4 +792,67 @@ test('channel formatter summarizes oversized completed results for mobile channe
   assert.match(formatted.text, /D:\\cligatespace\\register\.html/i);
   assert.match(formatted.text, /Full output is available in CliGate session session_long_1\./);
   assert.ok(formatted.text.length < longResult.length);
+});
+
+test('session records are grouped by runtime session instead of channel conversation', async () => {
+  const runtimeSessionManager = createRuntimeManager();
+  const conversationStore = new AgentChannelConversationStore({
+    configDir: createTempDir('cligate-agent-channels-session-records-conv-')
+  });
+  const deliveryStore = new AgentChannelDeliveryStore({
+    configDir: createTempDir('cligate-agent-channels-session-records-delivery-')
+  });
+  const pairingStore = new AgentChannelPairingStore({
+    configDir: createTempDir('cligate-agent-channels-session-records-pairing-')
+  });
+  const router = new AgentChannelRouter({
+    conversationStore,
+    deliveryStore,
+    pairingStore,
+    messageService: new AgentOrchestratorMessageService({ runtimeSessionManager }),
+    requirePairing: false
+  });
+
+  await router.routeInboundMessage({
+    channel: 'telegram',
+    accountId: 'default',
+    externalMessageId: 'm_1',
+    externalConversationId: 'chat_1',
+    externalUserId: 'user_1',
+    externalUserName: 'alice',
+    text: '/agent codex inspect repo',
+    messageType: 'text'
+  });
+
+  const second = await router.routeInboundMessage({
+    channel: 'telegram',
+    accountId: 'default',
+    externalMessageId: 'm_2',
+    externalConversationId: 'chat_1',
+    externalUserId: 'user_1',
+    externalUserName: 'alice',
+    text: '/new codex create index.html',
+    messageType: 'text'
+  });
+
+  const records = buildAgentChannelSessionRecords({
+    limit: 20,
+    runtimeSessionManager,
+    deliveryStore,
+    conversationStore,
+    pairingStore
+  });
+  const filtered = records.filter((record) => record.externalConversationId === 'chat_1');
+
+  assert.ok(filtered.length >= 2);
+  assert.ok(filtered.some((record) => record.id === second.session.id));
+
+  const detail = buildAgentChannelSessionRecordDetail(second.session.id, {
+    runtimeSessionManager,
+    deliveryStore,
+    conversationStore,
+    pairingStore
+  });
+  assert.equal(detail.session.id, second.session.id);
+  assert.ok(detail.deliveries.every((entry) => entry.sessionId === second.session.id));
 });

@@ -73,7 +73,7 @@ export class AgentChannelDeliveryStore {
     return normalized;
   }
 
-  listByConversation(conversationId, { limit = 100 } = {}) {
+  listAll({ limit = 1000 } = {}) {
     if (!existsSync(this.outboundFile)) return [];
     try {
       const rows = readFileSync(this.outboundFile, 'utf8')
@@ -86,12 +86,23 @@ export class AgentChannelDeliveryStore {
             return null;
           }
         })
-        .filter(Boolean)
-        .filter((entry) => entry.conversationId === conversationId);
+        .filter(Boolean);
       return rows.slice(-Math.max(1, limit));
     } catch {
       return [];
     }
+  }
+
+  listByConversation(conversationId, { limit = 100 } = {}) {
+    return this.listAll({ limit: Number.MAX_SAFE_INTEGER })
+      .filter((entry) => entry.conversationId === conversationId)
+      .slice(-Math.max(1, limit));
+  }
+
+  listBySession(sessionId, { limit = 100 } = {}) {
+    return this.listAll({ limit: Number.MAX_SAFE_INTEGER })
+      .filter((entry) => entry.sessionId === sessionId)
+      .slice(-Math.max(1, limit));
   }
 }
 

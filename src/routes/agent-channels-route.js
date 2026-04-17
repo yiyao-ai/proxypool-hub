@@ -3,6 +3,7 @@ import agentChannelDeliveryStore from '../agent-channels/delivery-store.js';
 import agentChannelManager from '../agent-channels/manager.js';
 import agentChannelPairingStore from '../agent-channels/pairing-store.js';
 import agentChannelRegistry from '../agent-channels/registry.js';
+import agentRuntimeSessionManager from '../agent-runtime/session-manager.js';
 import { getServerSettings } from '../server-settings.js';
 
 function parseLimit(value, fallback = 50) {
@@ -28,6 +29,28 @@ function summarizeDelivery(delivery) {
   };
 }
 
+function summarizeSessionState(session, conversation) {
+  if (conversation?.pairingStatus === 'pending') {
+    return 'pending';
+  }
+  if (!session) {
+    return 'idle';
+  }
+  if (session.status === 'waiting_approval') {
+    return 'waiting_approval';
+  }
+  if (session.status === 'waiting_user') {
+    return 'waiting_user';
+  }
+  if (session.status === 'running' || session.status === 'starting') {
+    return 'active';
+  }
+  if (session.status === 'failed' || session.status === 'cancelled') {
+    return 'failed';
+  }
+  return 'completed';
+}
+
 function decorateConversation(conversation, { includeDeliveries = false } = {}) {
   if (!conversation) return null;
   const pairing = agentChannelPairingStore.get(
@@ -46,6 +69,124 @@ function decorateConversation(conversation, { includeDeliveries = false } = {}) 
     pairingApprovedAt: pairing?.approvedAt || null,
     ...summarizeDelivery(deliveries[deliveries.length - 1] || null),
     deliveries: includeDeliveries ? deliveries : undefined
+  };
+}
+
+export function buildAgentChannelSessionRecords({
+  limit = 80,
+  runtimeSessionManager = agentRuntimeSessionManager,
+  deliveryStore = agentChannelDeliveryStore,
+  conversationStore = agentChannelConversationStore,
+  pairingStore = agentChannelPairingStore
+} = {}) {
+  const sessions = runtimeSessionManager.listSessions({ limit: Math.max(limit * 4, 200) });
+  const deliveries = deliveryStore.listAll({ limit: 5000 });
+  const conversationById = new Map(
+    conversationStore.list({ limit: 5000 }).map((conversation) => [conversation.id, conversation])
+  );
+  const deliveriesBySessionId = new Map();
+
+  for (const delivery of deliveries) {
+    if (!delivery?.sessionId) continue;
+    const bucket = deliveriesBySessionId.get(delivery.sessionId) || [];
+    bucket.push(delivery);
+    deliveriesBySessionId.set(delivery.sessionId, bucket);
+  }
+
+  const records = sessions
+    .filter((session) => session?.metadata?.source?.kind === 'channel')
+    .map((session) => {
+      const sessionDeliveries = deliveriesBySessionId.get(session.id) || [];
+      const lastDelivery = sessionDeliveries[sessionDeliveries.length - 1] || null;
+      const conversation = sessionDeliveries.length > 0
+        ? conversationById.get(sessionDeliveries[0].conversationId) || null
+        : null;
+      const pairing = conversation
+        ? pairingStore.get(
+          conversation.channel,
+          conversation.accountId,
+          conversation.externalUserId,
+          conversation.externalConversationId
+        )
+        : null;
+      const decoratedConversation = conversation
+        ? {
+          ...conversation,
+          pairingStatus: pairing?.status || null,
+          pairingCode: pairing?.code || '',
+          pairingApprovedAt: pairing?.approvedAt || null
+        }
+        : null;
+
+      return {
+        id: session.id,
+        title: session.title || decoratedConversation?.title || session.input || `Session ${session.id.slice(0, 8)}`,
+        provider: session.provider,
+        model: session.model || '',
+        cwd: session.cwd || '',
+        status: session.status,
+        state: summarizeSessionState(session, decoratedConversation),
+        turnCount: Number(session.turnCount || 0),
+        summary: String(session.summary || ''),
+        createdAt: session.createdAt || null,
+        updatedAt: session.updatedAt || null,
+        channel: decoratedConversation?.channel || session?.metadata?.source?.channel || '',
+        conversationId: decoratedConversation?.id || '',
+        externalConversationId: decoratedConversation?.externalConversationId || '',
+        externalUserId: decoratedConversation?.externalUserId || '',
+        externalThreadId: decoratedConversation?.externalThreadId || '',
+        pairingStatus: decoratedConversation?.pairingStatus || null,
+        ...summarizeDelivery(lastDelivery),
+        conversationTitle: decoratedConversation?.title || '',
+        deliveriesCount: sessionDeliveries.length
+      };
+    })
+    .sort((left, right) => String(right.updatedAt || '').localeCompare(String(left.updatedAt || '')))
+    .slice(0, Math.max(1, limit));
+
+  return records;
+}
+
+export function buildAgentChannelSessionRecordDetail(sessionId, {
+  runtimeSessionManager = agentRuntimeSessionManager,
+  deliveryStore = agentChannelDeliveryStore,
+  conversationStore = agentChannelConversationStore,
+  pairingStore = agentChannelPairingStore
+} = {}) {
+  const session = runtimeSessionManager.getSession(String(sessionId || ''));
+  if (!session) {
+    return null;
+  }
+
+  const deliveries = deliveryStore.listBySession(session.id, { limit: 500 });
+  const conversation = deliveries.length > 0
+    ? conversationStore.get(deliveries[0].conversationId)
+    : null;
+  const pairing = conversation
+    ? pairingStore.get(
+      conversation.channel,
+      conversation.accountId,
+      conversation.externalUserId,
+      conversation.externalConversationId
+    )
+    : null;
+
+  return {
+    session: {
+      ...session,
+      state: summarizeSessionState(session, {
+        pairingStatus: pairing?.status || null
+      })
+    },
+    conversation: conversation
+      ? {
+        ...conversation,
+        pairingStatus: pairing?.status || null,
+        pairingCode: pairing?.code || '',
+        pairingApprovedAt: pairing?.approvedAt || null
+      }
+      : null,
+    deliveries
   };
 }
 
@@ -119,6 +260,27 @@ export function handleListAgentChannelConversations(req, res) {
     conversations: agentChannelConversationStore.list({
       limit: parseLimit(req.query.limit, 50)
     }).map((conversation) => decorateConversation(conversation))
+  });
+}
+
+export function handleListAgentChannelSessionRecords(req, res) {
+  res.json({
+    success: true,
+    records: buildAgentChannelSessionRecords({
+      limit: parseLimit(req.query.limit, 80)
+    })
+  });
+}
+
+export function handleGetAgentChannelSessionRecord(req, res) {
+  const record = buildAgentChannelSessionRecordDetail(String(req.params.id || ''));
+  if (!record) {
+    return res.status(404).json({ success: false, error: 'session record not found' });
+  }
+
+  return res.json({
+    success: true,
+    ...record
   });
 }
 
@@ -202,6 +364,8 @@ export default {
   handleFeishuChannelWebhook,
   handleListAgentChannelConversations,
   handleGetAgentChannelConversation,
+  handleListAgentChannelSessionRecords,
+  handleGetAgentChannelSessionRecord,
   handleResetAgentChannelConversation,
   handleApproveAgentChannelPairing,
   handleDenyAgentChannelPairing

@@ -53,6 +53,8 @@ import {
   handleFeishuChannelWebhook,
   handleListAgentChannelConversations,
   handleGetAgentChannelConversation,
+  handleListAgentChannelSessionRecords,
+  handleGetAgentChannelSessionRecord,
   handleResetAgentChannelConversation,
   handleApproveAgentChannelPairing,
   handleDenyAgentChannelPairing
@@ -322,6 +324,8 @@ export function registerApiRoutes(app, { port }) {
   app.put('/api/agent-channels/settings/:channel', handleUpdateAgentChannelSettings);
   app.post('/api/agent-channels/refresh', handleRefreshAgentChannels);
   app.post('/api/agent-channels/feishu/webhook', handleFeishuChannelWebhook);
+  app.get('/api/agent-channels/session-records', handleListAgentChannelSessionRecords);
+  app.get('/api/agent-channels/session-records/:id', handleGetAgentChannelSessionRecord);
   app.get('/api/agent-channels/conversations', handleListAgentChannelConversations);
   app.get('/api/agent-channels/conversations/:id', handleGetAgentChannelConversation);
   app.post('/api/agent-channels/conversations/:id/reset', handleResetAgentChannelConversation);

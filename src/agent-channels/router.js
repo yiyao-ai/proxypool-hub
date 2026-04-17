@@ -53,21 +53,6 @@ export class AgentChannelRouter {
       }
     });
 
-    this.deliveryStore.saveInbound({
-      channel: message.channel,
-      conversationId: conversation.id,
-      externalMessageId: message.externalMessageId || '',
-      status: 'sent',
-      payload: {
-        text: message.text || '',
-        messageType: message.messageType || 'text',
-        externalUserId: message.externalUserId || '',
-        externalUserName: message.externalUserName || '',
-        action: message.action || null,
-        ts: message.ts || null
-      }
-    });
-
     if (this.requirePairing && !this.pairingStore.isApproved(
       message.channel,
       message.accountId,
@@ -88,6 +73,7 @@ export class AgentChannelRouter {
       };
     }
 
+    const previousSessionId = conversation.activeRuntimeSessionId || null;
     const result = await this.messageService.routeUserMessage({
       message,
       conversation,
@@ -100,6 +86,23 @@ export class AgentChannelRouter {
           channel: message.channel,
           accountId: message.accountId
         }
+      }
+    });
+
+    const inboundSessionId = result?.session?.id || previousSessionId || null;
+    this.deliveryStore.saveInbound({
+      channel: message.channel,
+      conversationId: conversation.id,
+      sessionId: inboundSessionId,
+      externalMessageId: message.externalMessageId || '',
+      status: 'sent',
+      payload: {
+        text: message.text || '',
+        messageType: message.messageType || 'text',
+        externalUserId: message.externalUserId || '',
+        externalUserName: message.externalUserName || '',
+        action: message.action || null,
+        ts: message.ts || null
       }
     });
 

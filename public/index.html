@@ -8,7 +8,7 @@
     <title>CliGate</title>
     <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🚀</text></svg>">
     <script src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js" defer></script>
-    <link rel="stylesheet" href="/css/style.css">
+    <link rel="stylesheet" href="/css/style.css?v=20260417-session-records-4">
 </head>
 
 <body class="bg-space-950 text-gray-300 font-sans antialiased min-h-screen selection:bg-neon-purple selection:text-white"
@@ -2131,63 +2131,87 @@
                     </button>
                 </div>
 
-                <div class="grid grid-cols-1 xl:grid-cols-[360px_minmax(0,1fr)] gap-6">
-                    <div class="view-card">
-                        <div class="flex items-center gap-2.5 mb-4">
-                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" class="w-4 h-4 text-neon-green">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
-                            </svg>
-                            <h3 class="text-xs font-mono text-gray-400 uppercase tracking-widest" x-text="t('channelConversationTitle')"></h3>
+                <div class="conversation-records-layout">
+                    <div class="view-card conversation-thread-panel">
+                        <div class="flex items-center justify-between gap-3 mb-4">
+                            <div class="flex items-center gap-2.5">
+                                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" class="w-4 h-4 text-neon-green">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+                                </svg>
+                                <h3 class="text-xs font-mono text-gray-400 uppercase tracking-widest" x-text="t('channelConversationListTitle')"></h3>
+                            </div>
+                            <div class="text-[11px] font-mono text-gray-500" x-text="filteredChannelConversations.length + ' ' + t('channelConversationThreadCount')"></div>
                         </div>
-                        <div class="space-y-3 max-h-[680px] overflow-y-auto custom-scrollbar pr-1">
-                            <template x-for="conversation in channelConversations" :key="conversation.id">
-                                <div class="rounded-2xl border p-4 cursor-pointer transition-all"
+                        <div class="grid grid-cols-1 gap-3 mb-4">
+                            <input type="text" class="input input-sm w-full bg-space-800 border-space-border text-white"
+                                x-model="channelConversationQuery" :placeholder="t('channelConversationSearch')">
+                            <div class="grid grid-cols-2 gap-3">
+                                <label class="block">
+                                    <span class="text-[11px] font-mono text-gray-500 uppercase tracking-wider block mb-1" x-text="t('channelConversationFilterChannel')"></span>
+                                    <select class="select select-sm w-full bg-space-800 border-space-border text-white" x-model="channelConversationChannelFilter">
+                                        <option value="all" x-text="t('allChannels')"></option>
+                                        <option value="telegram">Telegram</option>
+                                        <option value="feishu">Feishu</option>
+                                    </select>
+                                </label>
+                                <label class="block">
+                                    <span class="text-[11px] font-mono text-gray-500 uppercase tracking-wider block mb-1" x-text="t('channelConversationFilterState')"></span>
+                                    <select class="select select-sm w-full bg-space-800 border-space-border text-white" x-model="channelConversationStateFilter">
+                                        <option value="all" x-text="t('allStates')"></option>
+                                        <option value="active" x-text="t('activeStatus')"></option>
+                                        <option value="idle" x-text="t('idleStatus')"></option>
+                                        <option value="pending" x-text="t('channelConversationPending')"></option>
+                                    </select>
+                                </label>
+                            </div>
+                        </div>
+                        <div class="space-y-3 conversation-thread-list overflow-y-auto custom-scrollbar pr-1">
+                            <div class="text-xs text-gray-500 font-mono" x-show="channelConversationsLoading" x-text="t('loading')"></div>
+                            <template x-for="conversation in filteredChannelConversations" :key="conversation.id">
+                                <button type="button" class="w-full text-left rounded-2xl border p-4 transition-all"
                                     :class="channelConversationCardClass(conversation)"
                                     @click="selectChannelConversation(conversation.id)">
                                     <div class="flex items-start justify-between gap-3">
                                         <div class="min-w-0">
                                             <div class="text-sm text-white truncate" x-text="conversation.title || conversation.externalConversationId"></div>
                                             <div class="text-[11px] text-gray-500 font-mono truncate mt-1">
+                                                <span x-text="conversation.provider"></span>
+                                                <span class="mx-1">•</span>
                                                 <span x-text="conversation.channel"></span>
                                                 <span class="mx-1">•</span>
                                                 <span x-text="conversation.externalConversationId"></span>
                                             </div>
                                         </div>
                                         <span class="inline-flex items-center rounded-full border px-2.5 py-1 text-[11px] font-mono"
-                                            :class="channelConversationStatusClass(conversation)"
-                                            x-text="conversation.pairingStatus === 'pending' ? t('channelStatusError') : (conversation.activeRuntimeSessionId ? t('channelConversationActive') : t('channelConversationIdle'))"></span>
+                                            :class="channelConversationStatePillClass(conversation)"
+                                            x-text="channelConversationStateLabel(conversation)"></span>
                                     </div>
-                                    <div class="mt-2 text-xs text-gray-400 line-clamp-2" x-show="conversation.lastMessagePreview"
+                                    <div class="mt-2 text-xs text-gray-400 conversation-thread-preview" x-show="conversation.lastMessagePreview"
                                         x-text="channelConversationPreview(conversation)"></div>
+                                    <div class="mt-2 text-xs text-gray-500 conversation-thread-preview" x-show="conversation.summary"
+                                        x-text="conversation.summary"></div>
                                     <div class="mt-2 text-[11px] text-gray-500 font-mono" x-show="conversation.lastMessageAt"
                                         x-text="formatRelativeTime(conversation.lastMessageAt)"></div>
-                                    <div class="mt-3 flex flex-wrap gap-2">
-                                        <button class="btn btn-xs bg-neon-green/90 hover:bg-neon-green text-space-950 border-none"
-                                            x-show="conversation.pairingStatus === 'pending'"
-                                            @click.stop="approveChannelPairing(conversation)"
-                                            x-text="t('approve')"></button>
-                                        <button class="btn btn-xs btn-outline text-red-300 border-red-500/30"
-                                            x-show="conversation.pairingStatus === 'pending'"
-                                            @click.stop="denyChannelPairing(conversation)"
-                                            x-text="t('deny')"></button>
-                                        <button class="btn btn-xs btn-outline text-gray-300"
-                                            @click.stop="resetChannelConversation(conversation)"
-                                            x-text="t('resetConversation')"></button>
+                                    <div class="mt-3 flex items-center gap-2 text-[11px] font-mono text-gray-500">
+                                        <span x-show="conversation.id" x-text="conversation.id ? ('session ' + conversation.id.slice(0, 8)) : ''"></span>
+                                        <span x-show="conversation.turnCount" x-text="conversation.turnCount ? ('turns ' + conversation.turnCount) : ''"></span>
                                     </div>
-                                </div>
+                                </button>
                             </template>
-                            <div class="text-xs text-gray-500 font-mono" x-show="channelConversations.length === 0" x-text="t('channelConversationsEmpty')"></div>
+                            <div class="text-xs text-gray-500 font-mono" x-show="!channelConversationsLoading && filteredChannelConversations.length === 0" x-text="t('channelConversationsEmpty')"></div>
                         </div>
                     </div>
 
-                    <div class="view-card">
+                    <div class="view-card conversation-detail-panel">
                         <div class="flex items-center justify-between gap-4 mb-4">
                             <div>
                                 <div class="text-xs font-mono text-gray-400 uppercase tracking-widest" x-text="t('channelConversationDetailTitle')"></div>
                                 <div class="text-sm text-white mt-2" x-text="selectedChannelConversation?.title || t('channelConversationDetailEmpty')"></div>
-                                <div class="text-[11px] text-gray-500 font-mono mt-1" x-show="selectedChannelConversation?.externalConversationId">
-                                    <span x-text="selectedChannelConversation?.channel || ''"></span>
+                                <div class="text-[11px] text-gray-500 font-mono mt-1" x-show="selectedChannelConversation?.id">
+                                    <span x-text="selectedChannelConversation?.provider || ''"></span>
                                     <span class="mx-1">•</span>
+                                    <span x-text="selectedChannelConversation?.channel || ''"></span>
+                                    <span class="mx-1" x-show="selectedChannelConversation?.externalConversationId">•</span>
                                     <span x-text="selectedChannelConversation?.externalConversationId || ''"></span>
                                 </div>
                             </div>
@@ -2196,8 +2220,36 @@
                                 @click="loadChannelConversationDetail(selectedChannelConversationId)"
                                 x-text="channelConversationLoading ? t('loading') : t('refresh')"></button>
                         </div>
+                        <div class="flex flex-wrap items-center gap-2 mb-4" x-show="selectedChannelConversationId">
+                            <span class="inline-flex items-center rounded-full border px-2.5 py-1 text-[11px] font-mono"
+                                :class="channelConversationStatePillClass(selectedChannelConversation)"
+                                x-text="channelConversationStateLabel(selectedChannelConversation)"></span>
+                            <span class="inline-flex items-center rounded-full border border-space-border/30 px-2.5 py-1 text-[11px] font-mono text-gray-400"
+                                x-show="selectedChannelConversation?.id"
+                                x-text="selectedChannelConversation?.id ? ('session ' + selectedChannelConversation.id.slice(0, 8)) : ''"></span>
+                            <span class="inline-flex items-center rounded-full border border-space-border/30 px-2.5 py-1 text-[11px] font-mono text-gray-400"
+                                x-show="selectedChannelConversation?.model"
+                                x-text="selectedChannelConversation?.model || ''"></span>
+                            <span class="inline-flex items-center rounded-full border border-space-border/30 px-2.5 py-1 text-[11px] font-mono text-gray-400"
+                                x-show="selectedChannelConversation?.turnCount"
+                                x-text="selectedChannelConversation?.turnCount ? ('turns ' + selectedChannelConversation.turnCount) : ''"></span>
+                            <div class="flex flex-wrap gap-2 ml-auto">
+                                <button class="btn btn-xs bg-neon-green/90 hover:bg-neon-green text-space-950 border-none"
+                                    x-show="selectedChannelConversation?.pairingStatus === 'pending'"
+                                    @click="approveChannelPairing(selectedChannelConversation)"
+                                    x-text="t('approve')"></button>
+                                <button class="btn btn-xs btn-outline text-red-300 border-red-500/30"
+                                    x-show="selectedChannelConversation?.pairingStatus === 'pending'"
+                                    @click="denyChannelPairing(selectedChannelConversation)"
+                                    x-text="t('deny')"></button>
+                                <button class="btn btn-xs btn-outline text-gray-300"
+                                    x-show="selectedChannelConversationId"
+                                    @click="resetChannelConversation(selectedChannelConversation)"
+                                    x-text="t('resetConversation')"></button>
+                            </div>
+                        </div>
 
-                        <div class="rounded-2xl border border-space-border/30 bg-space-950/40 p-4 min-h-[520px] max-h-[680px] overflow-y-auto custom-scrollbar">
+                        <div class="rounded-2xl border border-space-border/30 bg-space-950/40 p-4 conversation-detail-body overflow-y-auto custom-scrollbar">
                             <template x-if="!selectedChannelConversationId">
                                 <div class="h-full flex items-center justify-center text-sm text-gray-500" x-text="t('channelConversationDetailEmpty')"></div>
                             </template>
@@ -3813,7 +3865,7 @@
         </div>
     </div>
 
-    <script src="/js/i18n.js"></script>
-    <script src="/js/app.js"></script>
+    <script src="/js/i18n.js?v=20260417-session-records-4"></script>
+    <script src="/js/app.js?v=20260417-session-records-4"></script>
 </body>
 </html>
