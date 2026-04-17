@@ -72,29 +72,56 @@
 
 ## 界面预览
 
-| 仪表盘 | Chat 聊天 |
-|:-:|:-:|
-| ![Dashboard](./images/dashboard.png) | ![Chat](./images/chat.png) |
-
-| 账户管理 | API Key 管理 |
-|:-:|:-:|
-| ![Accounts](./images/accounts.png) | ![API Keys](./images/apikeys.png) |
-
-| 渠道管理 | 本地模型 |
-|:-:|:-:|
-| ![Channels](./images/channel.png) | ![Local Models](./images/localmodel.png) |
-
-| 请求日志 | 设置与应用路由 |
-|:-:|:-:|
-| ![Request Logs](./images/request_logs.png) | ![Settings](./images/settings.png) |
-
-| 用量与成本 | 定价管理 |
-|:-:|:-:|
-| ![Usage](./images/usage_costs.png) | ![Pricing](./images/pricing.png) |
-
-| 工具安装器 | 资源目录 |
-|:-:|:-:|
-| ![Tool Installer](./images/tools_install.png) | ![Resources](./images/resources.png) |
+<table>
+  <tr>
+    <td align="center"><strong>仪表盘</strong></td>
+    <td align="center"><strong>Chat 聊天</strong></td>
+  </tr>
+  <tr>
+    <td align="center"><img src="./images/dashboard.png" alt="Dashboard" width="420"></td>
+    <td align="center"><img src="./images/chat.png" alt="Chat" width="420"></td>
+  </tr>
+  <tr>
+    <td align="center"><strong>账户管理</strong></td>
+    <td align="center"><strong>API Key 管理</strong></td>
+  </tr>
+  <tr>
+    <td align="center"><img src="./images/accounts.png" alt="Accounts" width="420"></td>
+    <td align="center"><img src="./images/apikeys.png" alt="API Keys" width="420"></td>
+  </tr>
+  <tr>
+    <td align="center"><strong>渠道管理</strong></td>
+    <td align="center"><strong>本地模型</strong></td>
+  </tr>
+  <tr>
+    <td align="center"><img src="./images/channel.png" alt="Channels" width="420"></td>
+    <td align="center"><img src="./images/localmodel.png" alt="Local Models" width="420"></td>
+  </tr>
+  <tr>
+    <td align="center"><strong>请求日志</strong></td>
+    <td align="center"><strong>设置与应用路由</strong></td>
+  </tr>
+  <tr>
+    <td align="center"><img src="./images/request_logs.png" alt="Request Logs" width="420"></td>
+    <td align="center"><img src="./images/settings.png" alt="Settings" width="420"></td>
+  </tr>
+  <tr>
+    <td align="center"><strong>用量与成本</strong></td>
+    <td align="center"><strong>定价管理</strong></td>
+  </tr>
+  <tr>
+    <td align="center"><img src="./images/usage_costs.png" alt="Usage" width="420"></td>
+    <td align="center"><img src="./images/pricing.png" alt="Pricing" width="420"></td>
+  </tr>
+  <tr>
+    <td align="center"><strong>工具安装器</strong></td>
+    <td align="center"><strong>资源目录</strong></td>
+  </tr>
+  <tr>
+    <td align="center"><img src="./images/tools_install.png" alt="Tool Installer" width="420"></td>
+    <td align="center"><img src="./images/resources.png" alt="Resources" width="420"></td>
+  </tr>
+</table>
 
 ### 操作演示
 

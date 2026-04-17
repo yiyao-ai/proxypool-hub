@@ -72,29 +72,56 @@
 
 ## Screenshots
 
-| Dashboard | Chat UI |
-|:-:|:-:|
-| ![Dashboard](./images/dashboard.png) | ![Chat](./images/chat.png) |
-
-| Account Management | API Key Management |
-|:-:|:-:|
-| ![Accounts](./images/accounts.png) | ![API Keys](./images/apikeys.png) |
-
-| Channels | Local Models |
-|:-:|:-:|
-| ![Channels](./images/channel.png) | ![Local Models](./images/localmodel.png) |
-
-| Request Logs | Settings & App Routing |
-|:-:|:-:|
-| ![Request Logs](./images/request_logs.png) | ![Settings](./images/settings.png) |
-
-| Usage & Costs | Pricing Registry |
-|:-:|:-:|
-| ![Usage](./images/usage_costs.png) | ![Pricing](./images/pricing.png) |
-
-| Tool Installer | Resources Catalog |
-|:-:|:-:|
-| ![Tool Installer](./images/tools_install.png) | ![Resources](./images/resources.png) |
+<table>
+  <tr>
+    <td align="center"><strong>Dashboard</strong></td>
+    <td align="center"><strong>Chat UI</strong></td>
+  </tr>
+  <tr>
+    <td align="center"><img src="./images/dashboard.png" alt="Dashboard" width="420"></td>
+    <td align="center"><img src="./images/chat.png" alt="Chat" width="420"></td>
+  </tr>
+  <tr>
+    <td align="center"><strong>Account Management</strong></td>
+    <td align="center"><strong>API Key Management</strong></td>
+  </tr>
+  <tr>
+    <td align="center"><img src="./images/accounts.png" alt="Accounts" width="420"></td>
+    <td align="center"><img src="./images/apikeys.png" alt="API Keys" width="420"></td>
+  </tr>
+  <tr>
+    <td align="center"><strong>Channels</strong></td>
+    <td align="center"><strong>Local Models</strong></td>
+  </tr>
+  <tr>
+    <td align="center"><img src="./images/channel.png" alt="Channels" width="420"></td>
+    <td align="center"><img src="./images/localmodel.png" alt="Local Models" width="420"></td>
+  </tr>
+  <tr>
+    <td align="center"><strong>Request Logs</strong></td>
+    <td align="center"><strong>Settings &amp; App Routing</strong></td>
+  </tr>
+  <tr>
+    <td align="center"><img src="./images/request_logs.png" alt="Request Logs" width="420"></td>
+    <td align="center"><img src="./images/settings.png" alt="Settings" width="420"></td>
+  </tr>
+  <tr>
+    <td align="center"><strong>Usage &amp; Costs</strong></td>
+    <td align="center"><strong>Pricing Registry</strong></td>
+  </tr>
+  <tr>
+    <td align="center"><img src="./images/usage_costs.png" alt="Usage" width="420"></td>
+    <td align="center"><img src="./images/pricing.png" alt="Pricing" width="420"></td>
+  </tr>
+  <tr>
+    <td align="center"><strong>Tool Installer</strong></td>
+    <td align="center"><strong>Resources Catalog</strong></td>
+  </tr>
+  <tr>
+    <td align="center"><img src="./images/tools_install.png" alt="Tool Installer" width="420"></td>
+    <td align="center"><img src="./images/resources.png" alt="Resources" width="420"></td>
+  </tr>
+</table>
 
 ### Demo
 
