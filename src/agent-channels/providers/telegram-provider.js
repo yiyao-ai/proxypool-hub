@@ -1,5 +1,7 @@
 import { createNormalizedChannelMessage } from '../models.js';
 
+const TELEGRAM_SAFE_MESSAGE_LIMIT = 3500;
+
 function buildDisplayName(from = {}) {
   return from.username || [from.first_name, from.last_name].filter(Boolean).join(' ') || String(from.id || '');
 }
@@ -36,6 +38,48 @@ function buildRouterResultText(result) {
     default:
       return '';
   }
+}
+
+function splitTelegramText(text, maxLength = TELEGRAM_SAFE_MESSAGE_LIMIT) {
+  const source = String(text || '').replace(/\r\n/g, '\n').trim();
+  if (!source) {
+    return [''];
+  }
+
+  if (source.length <= maxLength) {
+    return [source];
+  }
+
+  const chunks = [];
+  let remaining = source;
+  while (remaining.length > maxLength) {
+    let splitAt = remaining.lastIndexOf('\n', maxLength);
+    if (splitAt <= 0) {
+      splitAt = remaining.lastIndexOf(' ', maxLength);
+    }
+    if (splitAt <= 0) {
+      splitAt = maxLength;
+    }
+
+    const chunk = remaining.slice(0, splitAt).trim();
+    if (chunk) {
+      chunks.push(chunk);
+    }
+    remaining = remaining.slice(splitAt).trim();
+  }
+
+  if (remaining) {
+    chunks.push(remaining);
+  }
+
+  if (chunks.length <= 1) {
+    return chunks;
+  }
+
+  return chunks.map((chunk, index) => {
+    const prefix = `[${index + 1}/${chunks.length}] `;
+    return `${prefix}${chunk}`;
+  });
 }
 
 export class TelegramChannelProvider {
@@ -238,36 +282,43 @@ export class TelegramChannelProvider {
   }
 
   async sendMessage({ conversation, text, buttons = [] } = {}) {
-    const payload = {
-      chat_id: conversation?.externalConversationId,
-      text: String(text || '')
-    };
+    const textChunks = splitTelegramText(text);
+    let result = null;
 
-    if (buttons.length > 0) {
-      payload.reply_markup = {
-        inline_keyboard: [
-          buttons.map((button) => ({
-            text: button.text,
-            callback_data: `cligate:${button.action || button.id || 'action'}:${button.approvalId || ''}`
-          }))
-        ]
+    for (let index = 0; index < textChunks.length; index += 1) {
+      const payload = {
+        chat_id: conversation?.externalConversationId,
+        text: textChunks[index]
       };
+
+      if (buttons.length > 0 && index === textChunks.length - 1) {
+        payload.reply_markup = {
+          inline_keyboard: [
+            buttons.map((button) => ({
+              text: button.text,
+              callback_data: `cligate:${button.action || button.id || 'action'}:${button.approvalId || ''}`
+            }))
+          ]
+        };
+      }
+
+      result = await this.callApi('sendMessage', payload);
     }
 
-    const result = await this.callApi('sendMessage', payload);
     return {
       messageId: String(result?.message_id || '')
     };
   }
 
   async editMessage({ conversation, messageId, text, buttons = [] } = {}) {
+    const textChunks = splitTelegramText(text);
     const payload = {
       chat_id: conversation?.externalConversationId,
       message_id: Number(messageId),
-      text: String(text || '')
+      text: textChunks[0]
     };
 
-    if (buttons.length > 0) {
+    if (buttons.length > 0 && textChunks.length === 1) {
       payload.reply_markup = {
         inline_keyboard: [
           buttons.map((button) => ({
@@ -279,6 +330,15 @@ export class TelegramChannelProvider {
     }
 
     await this.callApi('editMessageText', payload);
+
+    for (let index = 1; index < textChunks.length; index += 1) {
+      await this.sendMessage({
+        conversation,
+        text: textChunks[index],
+        buttons: index === textChunks.length - 1 ? buttons : []
+      });
+    }
+
     return { messageId: String(messageId || '') };
   }
 

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -13,7 +13,9 @@ import {
   buildUserMessage,
   createClaudeCodeMessageProcessor
 } from '../../src/agent-runtime/providers/claude-code-provider.js';
+import { buildCodexExecArgs, buildCodexSpawnEnv, resolveCodexRuntimeOptions } from '../../src/agent-runtime/providers/codex-provider.js';
 import { buildCliNotFoundError, buildSpawnCommand, resolveCliExecutable } from '../../src/agent-runtime/cli-resolver.js';
+import { applyCodexRuntimeCompatibility, ensureCodexRuntimeCompatibility } from '../../src/codex-runtime-config.js';
 import { AgentRuntimeRegistry } from '../../src/agent-runtime/registry.js';
 import { AgentRuntimeSessionManager } from '../../src/agent-runtime/session-manager.js';
 import AgentRuntimeSessionStore from '../../src/agent-runtime/session-store.js';
@@ -410,4 +412,144 @@ test('buildSpawnCommand preserves embedded quotes in config-style arguments', ()
     '/c',
     'C:\\Users\\liuting\\AppData\\Roaming\\npm\\codex.cmd --config approval_policy="never"'
   ]);
+});
+
+test('resolveCodexRuntimeOptions defaults to workspace-write and never approval', () => {
+  const options = resolveCodexRuntimeOptions({
+    metadata: {}
+  }, {
+    env: {}
+  });
+
+  assert.deepEqual(options, {
+    sandboxMode: 'workspace-write',
+    approvalPolicy: 'never',
+    dangerouslyBypass: false
+  });
+});
+
+test('resolveCodexRuntimeOptions prefers metadata overrides over environment defaults', () => {
+  const options = resolveCodexRuntimeOptions({
+    metadata: {
+      runtimeOptions: {
+        codex: {
+          sandboxMode: 'danger-full-access',
+          approvalPolicy: 'on-request',
+          dangerouslyBypass: false
+        }
+      }
+    }
+  }, {
+    env: {
+      CLIGATE_CODEX_SANDBOX_MODE: 'read-only',
+      CLIGATE_CODEX_APPROVAL_POLICY: 'never'
+    }
+  });
+
+  assert.deepEqual(options, {
+    sandboxMode: 'danger-full-access',
+    approvalPolicy: 'on-request',
+    dangerouslyBypass: false
+  });
+});
+
+test('buildCodexExecArgs emits writable defaults and supports dangerous bypass', () => {
+  const defaultArgs = buildCodexExecArgs({
+    cwd: 'D:\\cligatespace',
+    model: 'gpt-5.4',
+    metadata: {}
+  }, {
+    env: {}
+  });
+
+  assert.deepEqual(defaultArgs.slice(0, 7), [
+    '--sandbox',
+    'workspace-write',
+    '--ask-for-approval',
+    'never',
+    'exec',
+    '--experimental-json',
+    '--model'
+  ]);
+  assert.ok(defaultArgs.includes('--cd'));
+  assert.ok(defaultArgs.includes('D:\\cligatespace'));
+
+  const bypassArgs = buildCodexExecArgs({
+    metadata: {
+      runtimeOptions: {
+        codex: {
+          dangerouslyBypass: true
+        }
+      }
+    }
+  }, {
+    env: {}
+  });
+
+  assert.deepEqual(bypassArgs.slice(0, 3), [
+    '--dangerously-bypass-approvals-and-sandbox',
+    'exec',
+    '--experimental-json'
+  ]);
+  assert.ok(!bypassArgs.includes('--sandbox'));
+  assert.ok(!bypassArgs.includes('--ask-for-approval'));
+});
+
+test('buildCodexSpawnEnv filters PowerShell 7 from PATH on windows sandbox runs', () => {
+  const env = buildCodexSpawnEnv({
+    Path: [
+      'D:\\soft\\windowspowershell\\7',
+      'C:\\Windows\\System32\\WindowsPowerShell\\v1.0',
+      'C:\\Windows\\System32'
+    ].join(';'),
+    PATH: 'D:\\soft\\windowspowershell\\7;C:\\Windows\\System32',
+    CLIGATE_CODEX_FORCE_WINDOWS_POWERSHELL: '1'
+  }, {
+    dangerouslyBypass: false
+  }, {
+    platform: 'win32'
+  });
+
+  assert.equal('PATH' in env, true);
+  assert.equal(env.PATH.includes('windowspowershell\\7'), false);
+  assert.equal(env.PATH.includes('WindowsPowerShell\\v1.0'), true);
+});
+
+test('applyCodexRuntimeCompatibility injects recommended windows-safe settings', () => {
+  const next = applyCodexRuntimeCompatibility([
+    'model = "gpt-5.4"',
+    '',
+    '[projects.\'D:\\tmp\']',
+    'trust_level = "trusted"'
+  ].join('\n'), {
+    cwd: 'D:\\cligatespace'
+  });
+
+  assert.match(next, /^allow_login_shell = false/m);
+  assert.match(next, /^sandbox_mode = "workspace-write"$/m);
+  assert.match(next, /\[features\][\s\S]*powershell_utf8 = false/);
+  if (process.platform === 'win32') {
+    assert.match(next, /\[windows\][\s\S]*sandbox = "unelevated"/);
+  }
+  assert.match(next, /projects\.'D:\\cligatespace'/);
+  if (process.platform === 'win32') {
+    assert.match(next, /projects\.'\\\\\?\\D:\\cligatespace'/);
+  }
+});
+
+test('ensureCodexRuntimeCompatibility writes config file and reports trusted projects', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'cligate-codex-config-'));
+  const filePath = join(dir, 'config.toml');
+  const result = ensureCodexRuntimeCompatibility({
+    cwd: 'D:\\cligatespace',
+    filePath
+  });
+
+  assert.equal(existsSync(filePath), true);
+  const written = readFileSync(filePath, 'utf8');
+  assert.match(written, /^allow_login_shell = false/m);
+  assert.match(written, /^sandbox_mode = "workspace-write"$/m);
+  assert.ok(Array.isArray(result.trustedProjects));
+  assert.ok(result.trustedProjects.length >= 1);
+  assert.equal(result.compatibility.sandboxMode, '"workspace-write"');
 });

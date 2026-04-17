@@ -7,12 +7,16 @@
 
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'fs';
 import { join } from 'path';
-import { homedir } from 'os';
-import { loadAccounts, getActiveAccount } from '../account-manager.js';
+import { getActiveAccount } from '../account-manager.js';
 import { logger } from '../utils/logger.js';
+import {
+    CODEX_CONFIG_FILE,
+    CODEX_DIR,
+    ensureCodexRuntimeCompatibility,
+    getCodexRuntimeCompatibilityStatus,
+    readCodexConfig
+} from '../codex-runtime-config.js';
 
-const CODEX_DIR = join(homedir(), '.codex');
-const CODEX_CONFIG_FILE = join(CODEX_DIR, 'config.toml');
 const CODEX_AUTH_FILE = join(CODEX_DIR, 'auth.json');
 
 function ensureCodexDir() {
@@ -76,6 +80,8 @@ export async function handleSetCodexProxy(req, res, { port }) {
         writeFileSync(CODEX_CONFIG_FILE, configContent);
         logger.info(`[CodexConfig] Updated config.toml: chatgpt_base_url = "${chatgptBaseUrl}"`);
 
+        const runtimeConfig = ensureCodexRuntimeCompatibility();
+
         // --- Write auth.json from pool account ---
         const account = getActiveAccount();
         if (!account) {
@@ -83,7 +89,9 @@ export async function handleSetCodexProxy(req, res, { port }) {
                 success: true,
                 warning: 'Config updated but no accounts in pool. Add accounts first, then run this again.',
                 config_updated: true,
-                auth_updated: false
+                auth_updated: false,
+                runtime_compatibility_updated: runtimeConfig.updated,
+                compatibility: runtimeConfig.compatibility
             });
         }
 
@@ -107,6 +115,8 @@ export async function handleSetCodexProxy(req, res, { port }) {
             message: `Codex CLI configured to use proxy at ${openaiBaseUrl}`,
             config_updated: true,
             auth_updated: true,
+            runtime_compatibility_updated: runtimeConfig.updated,
+            compatibility: runtimeConfig.compatibility,
             account: account.email,
             config_path: CODEX_CONFIG_FILE,
             auth_path: CODEX_AUTH_FILE
@@ -132,9 +142,10 @@ export function handleGetCodexConfig(req, res) {
 
     if (result.config_exists) {
         try {
-            const content = readFileSync(CODEX_CONFIG_FILE, 'utf8');
+            const content = readCodexConfig(CODEX_CONFIG_FILE);
             const match = content.match(/^chatgpt_base_url\s*=\s*"([^"]*)"/m);
             result.chatgpt_base_url = match ? match[1] : null;
+            result.compatibility = getCodexRuntimeCompatibilityStatus(content);
         } catch { /* ignore */ }
     }
 

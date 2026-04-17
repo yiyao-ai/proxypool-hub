@@ -18,6 +18,7 @@ import { AgentChannelRouter } from '../../src/agent-channels/router.js';
 import { AgentChannelManager } from '../../src/agent-channels/manager.js';
 import FeishuChannelProvider from '../../src/agent-channels/providers/feishu-provider.js';
 import TelegramChannelProvider from '../../src/agent-channels/providers/telegram-provider.js';
+import { formatAgentRuntimeEventForChannel } from '../../src/agent-channels/formatter.js';
 
 function createTempDir(prefix) {
   return mkdtempSync(join(tmpdir(), prefix));
@@ -359,6 +360,45 @@ test('TelegramChannelProvider polls updates and replies through router results',
   assert.match(String(calls[1].text || ''), /session_1/i);
 });
 
+test('TelegramChannelProvider splits oversized outbound messages into multiple requests', async () => {
+  const calls = [];
+  const fetchImpl = async (_url, options = {}) => {
+    const body = JSON.parse(options.body || '{}');
+    calls.push(body);
+    return {
+      ok: true,
+      json: async () => ({
+        ok: true,
+        result: {
+          message_id: calls.length
+        }
+      })
+    };
+  };
+
+  const provider = new TelegramChannelProvider({ fetchImpl });
+  provider.settings = {
+    botToken: 'token',
+    mode: 'polling'
+  };
+
+  const longText = `Result:\n${'x'.repeat(8000)}`;
+  const result = await provider.sendMessage({
+    conversation: {
+      externalConversationId: '1001'
+    },
+    text: longText
+  });
+
+  assert.ok(calls.length >= 3);
+  assert.equal(result.messageId, String(calls.length));
+  for (const call of calls) {
+    assert.equal(call.chat_id, '1001');
+    assert.ok(String(call.text || '').length <= 3508);
+  }
+  assert.match(String(calls[0].text || ''), /^\[1\/\d+\] /);
+});
+
 test('AgentChannelManager starts enabled telegram provider from settings', async () => {
   let started = 0;
   let stopped = 0;
@@ -489,4 +529,53 @@ test('FeishuChannelProvider handles webhook challenge and replies to router resu
   assert.equal(calls.length, 2);
   assert.match(calls[1].url, /im\/v1\/messages/);
   assert.equal(calls[1].body.receive_id, 'oc_1');
+});
+
+test('channel formatter prefers completed result text over generic completion label', () => {
+  const formatted = formatAgentRuntimeEventForChannel({
+    event: {
+      type: AGENT_EVENT_TYPE.COMPLETED,
+      payload: {
+        result: 'Today in New York it is 18C and cloudy.',
+        summary: 'Codex task completed.'
+      }
+    },
+    session: {
+      provider: 'codex',
+      summary: 'fallback'
+    }
+  });
+
+  assert.equal(formatted.text, 'Today in New York it is 18C and cloudy.');
+});
+
+test('channel formatter summarizes oversized completed results for mobile channels', () => {
+  const longResult = [
+    'I could not write the requested file because the environment is read-only.',
+    'The intended path was D:\\cligatespace\\register.html.',
+    'Below is the full HTML content:',
+    '<html>',
+    'x'.repeat(2000),
+    '</html>'
+  ].join('\n');
+
+  const formatted = formatAgentRuntimeEventForChannel({
+    event: {
+      type: AGENT_EVENT_TYPE.COMPLETED,
+      payload: {
+        result: longResult
+      }
+    },
+    session: {
+      id: 'session_long_1',
+      provider: 'codex',
+      cwd: 'D:\\cligatespace'
+    }
+  });
+
+  assert.match(formatted.text, /codex task completed\./i);
+  assert.match(formatted.text, /read-only/i);
+  assert.match(formatted.text, /D:\\cligatespace\\register\.html/i);
+  assert.match(formatted.text, /Full output is available in CliGate session session_long_1\./);
+  assert.ok(formatted.text.length < longResult.length);
 });
