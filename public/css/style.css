@@ -648,7 +648,12 @@ table .btn-outline:hover {
 
 .sidebar.collapsed .sidebar-label,
 .sidebar.collapsed .sidebar-section-title,
-.sidebar.collapsed .sidebar-footer {
+.sidebar.collapsed .sidebar-footer,
+.sidebar.collapsed .sidebar-section-chevron {
+    display: none;
+}
+
+.sidebar.collapsed .sidebar-section-toggle {
     display: none;
 }
 
@@ -663,6 +668,38 @@ table .btn-outline:hover {
 .sidebar.collapsed .sidebar-inner {
     width: 3.5rem;
     align-items: center;
+}
+
+.sidebar-scroll {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(148, 163, 184, 0.35) transparent;
+}
+
+.sidebar-group + .sidebar-group {
+    margin-top: 1rem;
+}
+
+.sidebar-section-toggle {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    width: 100%;
+    padding: 0 0.75rem;
+    margin-bottom: 0.5rem;
+    color: #6b7280;
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    transition: color 0.15s ease;
+}
+
+.sidebar-section-toggle:hover {
+    color: #cbd5e1;
+}
+
+.sidebar-section-chevron {
+    flex-shrink: 0;
+    transition: transform 0.2s ease;
 }
 
 .sidebar.collapsed .nav-item svg {
@@ -738,6 +775,10 @@ table .btn-outline:hover {
 
     .sidebar .sidebar-inner {
         width: 16rem !important;
+    }
+
+    .sidebar .sidebar-section-toggle {
+        display: flex;
     }
 
     .sidebar .sidebar-footer {

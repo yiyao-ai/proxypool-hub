@@ -134,8 +134,7 @@
         <div class="sidebar bg-space-900 border-r border-space-border/30"
             :class="{ 'collapsed': !isSmallScreen && sidebarCollapsed, 'sidebar-open': isSmallScreen && sidebarOpen }">
             <div class="sidebar-inner flex flex-col h-full pt-6 pb-4 flex-shrink-0" :style="{ width: isSmallScreen ? '16rem' : (sidebarCollapsed ? '3.5rem' : '16rem') }">
-                <div class="flex items-center justify-between px-4 mb-2">
-                    <div class="sidebar-label text-xs font-bold text-gray-600 uppercase tracking-widest" x-text="t('main')"></div>
+                <div class="flex items-center justify-end px-4 mb-2 flex-shrink-0">
                     <button class="sidebar-collapse-btn" @click="toggleSidebar()" :title="isSmallScreen ? t('close') : (sidebarCollapsed ? 'Expand' : 'Collapse')">
                         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 19l-7-7 7-7m8 14l-7-7 7-7" />
@@ -143,124 +142,151 @@
                     </button>
                 </div>
 
-                <nav class="flex flex-col gap-1">
-                    <button class="nav-item flex items-center gap-3 px-6 py-3 text-sm font-medium text-gray-400 hover:text-white hover:bg-white/5"
-                        :class="{'active': activeTab === 'dashboard'}" @click="setActiveTab('dashboard')" :title="sidebarCollapsed ? t('dashboard') : ''">
-                        <svg class="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" />
-                        </svg>
-                        <span class="sidebar-label" x-text="t('dashboard')"></span>
-                    </button>
-                    <button class="nav-item flex items-center gap-3 px-6 py-3 text-sm font-medium text-gray-400 hover:text-white hover:bg-white/5"
-                        :class="{'active': activeTab === 'chat'}" @click="setActiveTab('chat')" :title="sidebarCollapsed ? t('chat') : ''">
-                        <svg class="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 10h.01M12 10h.01M16 10h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
-                        </svg>
-                        <span class="sidebar-label" x-text="t('chat')"></span>
-                    </button>
-                    <button class="nav-item flex items-center gap-3 px-6 py-3 text-sm font-medium text-gray-400 hover:text-white hover:bg-white/5"
-                        :class="{'active': activeTab === 'channels'}" @click="setActiveTab('channels')" :title="sidebarCollapsed ? t('channels') : ''">
-                        <svg class="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 9h8m-8 4h5m-9 8h16a2 2 0 002-2V7a2 2 0 00-2-2h-3l-2-2H9L7 5H4a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                        </svg>
-                        <span class="sidebar-label" x-text="t('channels')"></span>
-                    </button>
-                    <button class="nav-item flex items-center gap-3 px-6 py-3 text-sm font-medium text-gray-400 hover:text-white hover:bg-white/5"
-                        :class="{'active': activeTab === 'conversationRecords'}" @click="setActiveTab('conversationRecords')" :title="sidebarCollapsed ? t('conversationRecords') : ''">
-                        <svg class="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6M7 4h10a2 2 0 012 2v12a2 2 0 01-2 2H7a2 2 0 01-2-2V6a2 2 0 012-2z" />
-                        </svg>
-                        <span class="sidebar-label" x-text="t('conversationRecords')"></span>
-                    </button>
-                    <button class="nav-item flex items-center gap-3 px-6 py-3 text-sm font-medium text-gray-400 hover:text-white hover:bg-white/5"
-                        :class="{'active': activeTab === 'accounts'}" @click="setActiveTab('accounts')" :title="sidebarCollapsed ? t('accounts') : ''">
-                        <svg class="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
-                        </svg>
-                        <span class="sidebar-label" x-text="t('accounts')"></span>
-                    </button>
-                </nav>
+                <div class="sidebar-scroll flex-1 min-h-0 overflow-y-auto px-2">
+                    <div class="sidebar-group">
+                        <button class="sidebar-section-toggle" @click="toggleNavSection('main')" :aria-expanded="isSectionExpanded('main')">
+                            <span class="sidebar-section-title text-xs font-bold text-gray-600 uppercase tracking-widest" x-text="t('main')"></span>
+                            <svg class="sidebar-section-chevron w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"
+                                :class="{ 'rotate-180': isSectionExpanded('main') }">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+                            </svg>
+                        </button>
+                        <nav class="flex flex-col gap-1" x-show="isSectionExpanded('main')">
+                            <button class="nav-item flex items-center gap-3 px-6 py-3 text-sm font-medium text-gray-400 hover:text-white hover:bg-white/5"
+                                :class="{'active': activeTab === 'dashboard'}" @click="setActiveTab('dashboard')" :title="sidebarCollapsed ? t('dashboard') : ''">
+                                <svg class="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" />
+                                </svg>
+                                <span class="sidebar-label" x-text="t('dashboard')"></span>
+                            </button>
+                            <button class="nav-item flex items-center gap-3 px-6 py-3 text-sm font-medium text-gray-400 hover:text-white hover:bg-white/5"
+                                :class="{'active': activeTab === 'chat'}" @click="setActiveTab('chat')" :title="sidebarCollapsed ? t('chat') : ''">
+                                <svg class="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 10h.01M12 10h.01M16 10h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+                                </svg>
+                                <span class="sidebar-label" x-text="t('chat')"></span>
+                            </button>
+                            <button class="nav-item flex items-center gap-3 px-6 py-3 text-sm font-medium text-gray-400 hover:text-white hover:bg-white/5"
+                                :class="{'active': activeTab === 'channels'}" @click="setActiveTab('channels')" :title="sidebarCollapsed ? t('channels') : ''">
+                                <svg class="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 9h8m-8 4h5m-9 8h16a2 2 0 002-2V7a2 2 0 00-2-2h-3l-2-2H9L7 5H4a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                                </svg>
+                                <span class="sidebar-label" x-text="t('channels')"></span>
+                            </button>
+                            <button class="nav-item flex items-center gap-3 px-6 py-3 text-sm font-medium text-gray-400 hover:text-white hover:bg-white/5"
+                                :class="{'active': activeTab === 'conversationRecords'}" @click="setActiveTab('conversationRecords')" :title="sidebarCollapsed ? t('conversationRecords') : ''">
+                                <svg class="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6M7 4h10a2 2 0 012 2v12a2 2 0 01-2 2H7a2 2 0 01-2-2V6a2 2 0 012-2z" />
+                                </svg>
+                                <span class="sidebar-label" x-text="t('conversationRecords')"></span>
+                            </button>
+                            <button class="nav-item flex items-center gap-3 px-6 py-3 text-sm font-medium text-gray-400 hover:text-white hover:bg-white/5"
+                                :class="{'active': activeTab === 'accounts'}" @click="setActiveTab('accounts')" :title="sidebarCollapsed ? t('accounts') : ''">
+                                <svg class="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
+                                </svg>
+                                <span class="sidebar-label" x-text="t('accounts')"></span>
+                            </button>
+                        </nav>
+                    </div>
 
-                <div class="sidebar-section-title px-4 mt-8 mb-2 text-xs font-bold text-gray-600 uppercase tracking-widest">API</div>
-                <nav class="flex flex-col gap-1">
-                    <button class="nav-item flex items-center gap-3 px-6 py-3 text-sm font-medium text-gray-400 hover:text-white hover:bg-white/5"
-                        :class="{'active': activeTab === 'apikeys'}" @click="setActiveTab('apikeys')" :title="sidebarCollapsed ? t('apiKeys') : ''">
-                        <svg class="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z" />
-                        </svg>
-                        <span class="sidebar-label" x-text="t('apiKeys')"></span>
-                    </button>
-                    <button class="nav-item flex items-center gap-3 px-6 py-3 text-sm font-medium text-gray-400 hover:text-white hover:bg-white/5"
-                        :class="{'active': activeTab === 'usage'}" @click="setActiveTab('usage')" :title="sidebarCollapsed ? t('usageStats') : ''">
-                        <svg class="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
-                        </svg>
-                        <span class="sidebar-label" x-text="t('usageStats')"></span>
-                    </button>
-                    <button class="nav-item flex items-center gap-3 px-6 py-3 text-sm font-medium text-gray-400 hover:text-white hover:bg-white/5"
-                        :class="{'active': activeTab === 'pricing'}" @click="setActiveTab('pricing')" :title="sidebarCollapsed ? t('pricing') : ''">
-                        <svg class="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-2.21 0-4 .895-4 2s1.79 2 4 2 4-.895 4-2-1.79-2-4-2zm0 0V6m0 6v6m0 0c-2.21 0-4-.895-4-2s1.79-2 4-2 4 .895 4 2-1.79 2-4 2z" />
-                        </svg>
-                        <span class="sidebar-label" x-text="t('pricing')"></span>
-                    </button>
-                    <button class="nav-item flex items-center gap-3 px-6 py-3 text-sm font-medium text-gray-400 hover:text-white hover:bg-white/5"
-                        :class="{'active': activeTab === 'apiExplorer'}" @click="setActiveTab('apiExplorer')" :title="sidebarCollapsed ? t('apiExplorer') : ''">
-                        <svg class="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 9h8M8 13h5m-8 8h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v14a2 2 0 002 2z" />
-                        </svg>
-                        <span class="sidebar-label" x-text="t('apiExplorer')"></span>
-                    </button>
-                    <button class="nav-item flex items-center gap-3 px-6 py-3 text-sm font-medium text-gray-400 hover:text-white hover:bg-white/5"
-                        :class="{'active': activeTab === 'requestLogs'}" @click="setActiveTab('requestLogs'); loadRequestLogs()" :title="sidebarCollapsed ? t('requestLogs') : ''">
-                        <svg class="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
-                        </svg>
-                        <span class="sidebar-label" x-text="t('requestLogs')"></span>
-                    </button>
-                </nav>
+                    <div class="sidebar-group">
+                        <button class="sidebar-section-toggle" @click="toggleNavSection('api')" :aria-expanded="isSectionExpanded('api')">
+                            <span class="sidebar-section-title text-xs font-bold text-gray-600 uppercase tracking-widest">API</span>
+                            <svg class="sidebar-section-chevron w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"
+                                :class="{ 'rotate-180': isSectionExpanded('api') }">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+                            </svg>
+                        </button>
+                        <nav class="flex flex-col gap-1" x-show="isSectionExpanded('api')">
+                            <button class="nav-item flex items-center gap-3 px-6 py-3 text-sm font-medium text-gray-400 hover:text-white hover:bg-white/5"
+                                :class="{'active': activeTab === 'apikeys'}" @click="setActiveTab('apikeys')" :title="sidebarCollapsed ? t('apiKeys') : ''">
+                                <svg class="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z" />
+                                </svg>
+                                <span class="sidebar-label" x-text="t('apiKeys')"></span>
+                            </button>
+                            <button class="nav-item flex items-center gap-3 px-6 py-3 text-sm font-medium text-gray-400 hover:text-white hover:bg-white/5"
+                                :class="{'active': activeTab === 'usage'}" @click="setActiveTab('usage')" :title="sidebarCollapsed ? t('usageStats') : ''">
+                                <svg class="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+                                </svg>
+                                <span class="sidebar-label" x-text="t('usageStats')"></span>
+                            </button>
+                            <button class="nav-item flex items-center gap-3 px-6 py-3 text-sm font-medium text-gray-400 hover:text-white hover:bg-white/5"
+                                :class="{'active': activeTab === 'pricing'}" @click="setActiveTab('pricing')" :title="sidebarCollapsed ? t('pricing') : ''">
+                                <svg class="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-2.21 0-4 .895-4 2s1.79 2 4 2 4-.895 4-2-1.79-2-4-2zm0 0V6m0 6v6m0 0c-2.21 0-4-.895-4-2s1.79-2 4-2 4 .895 4 2-1.79 2-4 2z" />
+                                </svg>
+                                <span class="sidebar-label" x-text="t('pricing')"></span>
+                            </button>
+                            <button class="nav-item flex items-center gap-3 px-6 py-3 text-sm font-medium text-gray-400 hover:text-white hover:bg-white/5"
+                                :class="{'active': activeTab === 'apiExplorer'}" @click="setActiveTab('apiExplorer')" :title="sidebarCollapsed ? t('apiExplorer') : ''">
+                                <svg class="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 9h8M8 13h5m-8 8h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v14a2 2 0 002 2z" />
+                                </svg>
+                                <span class="sidebar-label" x-text="t('apiExplorer')"></span>
+                            </button>
+                            <button class="nav-item flex items-center gap-3 px-6 py-3 text-sm font-medium text-gray-400 hover:text-white hover:bg-white/5"
+                                :class="{'active': activeTab === 'requestLogs'}" @click="setActiveTab('requestLogs'); loadRequestLogs()" :title="sidebarCollapsed ? t('requestLogs') : ''">
+                                <svg class="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+                                </svg>
+                                <span class="sidebar-label" x-text="t('requestLogs')"></span>
+                            </button>
+                        </nav>
+                    </div>
 
-                <div class="sidebar-section-title px-4 mt-8 mb-2 text-xs font-bold text-gray-600 uppercase tracking-widest" x-text="t('system')"></div>
-                <nav class="flex flex-col gap-1">
-                    <button class="nav-item flex items-center gap-3 px-6 py-3 text-sm font-medium text-gray-400 hover:text-white hover:bg-white/5"
-                        :class="{'active': activeTab === 'tools'}" @click="setActiveTab('tools'); loadToolsStatus()" :title="sidebarCollapsed ? t('toolInstaller') : ''">
-                        <svg class="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path>
-                        </svg>
-                        <span class="sidebar-label" x-text="t('toolInstaller')"></span>
-                    </button>
-                    <button class="nav-item flex items-center gap-3 px-6 py-3 text-sm font-medium text-gray-400 hover:text-white hover:bg-white/5"
-                        :class="{'active': activeTab === 'localModels'}" @click="setActiveTab('localModels')" :title="sidebarCollapsed ? t('localModels') : ''">
-                        <svg class="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.75 17L6 20.75V6a2 2 0 012-2h8a2 2 0 012 2v5.25M15 15h6m-3-3v6"></path>
-                        </svg>
-                        <span class="sidebar-label" x-text="t('localModels')"></span>
-                    </button>
-                    <button class="nav-item flex items-center gap-3 px-6 py-3 text-sm font-medium text-gray-400 hover:text-white hover:bg-white/5"
-                        :class="{'active': activeTab === 'logs'}" @click="setActiveTab('logs')" :title="sidebarCollapsed ? t('logs') : ''">
-                        <svg class="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                        </svg>
-                        <span class="sidebar-label" x-text="t('logs')"></span>
-                    </button>
-                    <button class="nav-item flex items-center gap-3 px-6 py-3 text-sm font-medium text-gray-400 hover:text-white hover:bg-white/5"
-                        :class="{'active': activeTab === 'settings'}" @click="setActiveTab('settings')" :title="sidebarCollapsed ? t('settings') : ''">
-                        <svg class="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                        </svg>
-                        <span class="sidebar-label" x-text="t('settings')"></span>
-                    </button>
-                    <button class="nav-item flex items-center gap-3 px-6 py-3 text-sm font-medium text-gray-400 hover:text-white hover:bg-white/5"
-                        @click="window.location.href='/resources/'" :title="sidebarCollapsed ? t('resources') : ''">
-                        <svg class="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6.253v13m0-13C10.832 5.483 9.246 5 7.5 5 4.462 5 2 6.79 2 9v8c0-2.21 2.462-4 5.5-4 1.746 0 3.332.483 4.5 1.253m0-8C13.168 5.483 14.754 5 16.5 5c3.038 0 5.5 1.79 5.5 4v8c0-2.21-2.462-4-5.5-4-1.746 0-3.332.483-4.5 1.253" />
-                        </svg>
-                        <span class="sidebar-label" x-text="t('resources')"></span>
-                    </button>
-                </nav>
+                    <div class="sidebar-group">
+                        <button class="sidebar-section-toggle" @click="toggleNavSection('system')" :aria-expanded="isSectionExpanded('system')">
+                            <span class="sidebar-section-title text-xs font-bold text-gray-600 uppercase tracking-widest" x-text="t('system')"></span>
+                            <svg class="sidebar-section-chevron w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"
+                                :class="{ 'rotate-180': isSectionExpanded('system') }">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+                            </svg>
+                        </button>
+                        <nav class="flex flex-col gap-1" x-show="isSectionExpanded('system')">
+                            <button class="nav-item flex items-center gap-3 px-6 py-3 text-sm font-medium text-gray-400 hover:text-white hover:bg-white/5"
+                                :class="{'active': activeTab === 'tools'}" @click="setActiveTab('tools'); loadToolsStatus()" :title="sidebarCollapsed ? t('toolInstaller') : ''">
+                                <svg class="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path>
+                                </svg>
+                                <span class="sidebar-label" x-text="t('toolInstaller')"></span>
+                            </button>
+                            <button class="nav-item flex items-center gap-3 px-6 py-3 text-sm font-medium text-gray-400 hover:text-white hover:bg-white/5"
+                                :class="{'active': activeTab === 'localModels'}" @click="setActiveTab('localModels')" :title="sidebarCollapsed ? t('localModels') : ''">
+                                <svg class="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.75 17L6 20.75V6a2 2 0 012-2h8a2 2 0 012 2v5.25M15 15h6m-3-3v6"></path>
+                                </svg>
+                                <span class="sidebar-label" x-text="t('localModels')"></span>
+                            </button>
+                            <button class="nav-item flex items-center gap-3 px-6 py-3 text-sm font-medium text-gray-400 hover:text-white hover:bg-white/5"
+                                :class="{'active': activeTab === 'logs'}" @click="setActiveTab('logs')" :title="sidebarCollapsed ? t('logs') : ''">
+                                <svg class="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                </svg>
+                                <span class="sidebar-label" x-text="t('logs')"></span>
+                            </button>
+                            <button class="nav-item flex items-center gap-3 px-6 py-3 text-sm font-medium text-gray-400 hover:text-white hover:bg-white/5"
+                                :class="{'active': activeTab === 'settings'}" @click="setActiveTab('settings')" :title="sidebarCollapsed ? t('settings') : ''">
+                                <svg class="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                                </svg>
+                                <span class="sidebar-label" x-text="t('settings')"></span>
+                            </button>
+                            <button class="nav-item flex items-center gap-3 px-6 py-3 text-sm font-medium text-gray-400 hover:text-white hover:bg-white/5"
+                                @click="setActiveTab('resources'); window.location.href='/resources/'" :title="sidebarCollapsed ? t('resources') : ''">
+                                <svg class="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6.253v13m0-13C10.832 5.483 9.246 5 7.5 5 4.462 5 2 6.79 2 9v8c0-2.21 2.462-4 5.5-4 1.746 0 3.332.483 4.5 1.253m0-8C13.168 5.483 14.754 5 16.5 5c3.038 0 5.5 1.79 5.5 4v8c0-2.21-2.462-4-5.5-4-1.746 0-3.332.483-4.5 1.253" />
+                                </svg>
+                                <span class="sidebar-label" x-text="t('resources')"></span>
+                            </button>
+                        </nav>
+                    </div>
+                </div>
 
-                <div class="sidebar-footer mt-auto px-4 pb-2 pt-4 border-t border-space-border/20">
+                <div class="sidebar-footer flex-shrink-0 px-4 pb-2 pt-4 border-t border-space-border/20">
                     <a href="https://github.com/codeking-ai/cligate/issues/new/choose" target="_blank"
                         class="flex items-center gap-2 px-2 py-2 text-xs text-gray-500 hover:text-neon-cyan hover:bg-white/5 rounded transition-all">
                         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">

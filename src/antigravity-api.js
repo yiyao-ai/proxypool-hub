@@ -4,7 +4,7 @@ import { logger } from './utils/logger.js';
 
 const DEFAULT_OAUTH_CLIENT_KEY = 'antigravity-enterprise';
 const DEFAULT_CLIENT_ID = process.env.ANTIGRAVITY_GOOGLE_CLIENT_ID || '1071006060591-tmhssin2h21lcre235vtolojh4g403ep.apps.googleusercontent.com';
-const DEFAULT_CLIENT_SECRET = process.env.ANTIGRAVITY_GOOGLE_CLIENT_SECRET || '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';
+const DEFAULT_CLIENT_SECRET = process.env.ANTIGRAVITY_GOOGLE_CLIENT_SECRET || '';
 
 const TOKEN_URL = 'https://oauth2.googleapis.com/token';
 const USERINFO_URL = 'https://www.googleapis.com/oauth2/v2/userinfo';
@@ -287,15 +287,20 @@ export function toPublicAntigravityModel(modelId) {
 }
 
 export async function refreshAntigravityAccessToken(refreshToken, oauthClientKey = DEFAULT_OAUTH_CLIENT_KEY) {
+    const tokenParams = new URLSearchParams({
+        client_id: DEFAULT_CLIENT_ID,
+        grant_type: 'refresh_token',
+        refresh_token: refreshToken
+    });
+
+    if (DEFAULT_CLIENT_SECRET) {
+        tokenParams.set('client_secret', DEFAULT_CLIENT_SECRET);
+    }
+
     const response = await fetch(TOKEN_URL, {
         method: 'POST',
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: new URLSearchParams({
-            client_id: DEFAULT_CLIENT_ID,
-            client_secret: DEFAULT_CLIENT_SECRET,
-            grant_type: 'refresh_token',
-            refresh_token: refreshToken
-        }).toString()
+        body: tokenParams.toString()
     });
 
     const responseText = await response.text();

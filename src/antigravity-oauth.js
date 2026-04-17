@@ -3,7 +3,7 @@ import http from 'http';
 
 const GOOGLE_OAUTH_CONFIG = {
     clientId: process.env.ANTIGRAVITY_GOOGLE_CLIENT_ID || '1071006060591-tmhssin2h21lcre235vtolojh4g403ep.apps.googleusercontent.com',
-    clientSecret: process.env.ANTIGRAVITY_GOOGLE_CLIENT_SECRET || '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',
+    clientSecret: process.env.ANTIGRAVITY_GOOGLE_CLIENT_SECRET || '',
     authUrl: 'https://accounts.google.com/o/oauth2/v2/auth',
     tokenUrl: 'https://oauth2.googleapis.com/token',
     callbackPort: 36545,
@@ -162,16 +162,23 @@ export function startCallbackServer(expectedState, timeoutMs = 120000) {
 
 export async function exchangeCodeForTokens(code, port) {
     const redirectUri = `http://localhost:${port}${GOOGLE_OAUTH_CONFIG.callbackPath}`;
+    const tokenParams = new URLSearchParams({
+        client_id: GOOGLE_OAUTH_CONFIG.clientId,
+        code,
+        redirect_uri: redirectUri,
+        grant_type: 'authorization_code'
+    });
+
+    // Antigravity accounts are persisted locally after login. A client secret is
+    // optional and should only be supplied via environment, never hardcoded.
+    if (GOOGLE_OAUTH_CONFIG.clientSecret) {
+        tokenParams.set('client_secret', GOOGLE_OAUTH_CONFIG.clientSecret);
+    }
+
     const response = await fetch(GOOGLE_OAUTH_CONFIG.tokenUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: new URLSearchParams({
-            client_id: GOOGLE_OAUTH_CONFIG.clientId,
-            client_secret: GOOGLE_OAUTH_CONFIG.clientSecret,
-            code,
-            redirect_uri: redirectUri,
-            grant_type: 'authorization_code'
-        }).toString()
+        body: tokenParams.toString()
     });
 
     const responseText = await response.text();

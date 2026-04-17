@@ -6,6 +6,11 @@ document.addEventListener('alpine:init', () => {
         isSmallScreen: window.innerWidth < 1024,
         sidebarOpen: false,
         sidebarCollapsed: localStorage.getItem('proxy-sidebar-collapsed') === 'true' && window.innerWidth >= 1024,
+        navSections: {
+            main: true,
+            api: false,
+            system: false
+        },
         loading: false,
         toast: null,
         currentTime: '',
@@ -283,7 +288,9 @@ document.addEventListener('alpine:init', () => {
         init() {
             document.documentElement.classList.toggle('light', !this.darkMode);
             document.documentElement.classList.toggle('dark', this.darkMode);
+            this.loadNavSections();
             this.syncResponsiveLayout();
+            this.ensureActiveNavSection();
             this.updateTime();
             setInterval(() => this.updateTime(), 1000);
             this.refreshAccounts();
@@ -347,6 +354,47 @@ document.addEventListener('alpine:init', () => {
             this.currentTime = new Date().toLocaleTimeString([], {hour: '2-digit', minute: '2-digit', second: '2-digit'});
         },
 
+        loadNavSections() {
+            try {
+                const saved = JSON.parse(localStorage.getItem('proxy-nav-sections') || '{}');
+                this.navSections = {
+                    main: saved.main !== undefined ? !!saved.main : true,
+                    api: saved.api !== undefined ? !!saved.api : false,
+                    system: saved.system !== undefined ? !!saved.system : false
+                };
+            } catch {
+                this.navSections = { main: true, api: false, system: false };
+            }
+        },
+
+        saveNavSections() {
+            localStorage.setItem('proxy-nav-sections', JSON.stringify(this.navSections));
+        },
+
+        sectionForTab(tab) {
+            if (['dashboard', 'chat', 'channels', 'conversationRecords', 'accounts'].includes(tab)) return 'main';
+            if (['apikeys', 'usage', 'pricing', 'apiExplorer', 'requestLogs'].includes(tab)) return 'api';
+            if (['tools', 'localModels', 'logs', 'settings', 'resources'].includes(tab)) return 'system';
+            return 'main';
+        },
+
+        isSectionExpanded(section) {
+            return this.sidebarCollapsed || !!this.navSections[section];
+        },
+
+        toggleNavSection(section) {
+            this.navSections[section] = !this.navSections[section];
+            this.saveNavSections();
+        },
+
+        ensureActiveNavSection() {
+            const section = this.sectionForTab(this.activeTab);
+            if (!this.navSections[section]) {
+                this.navSections[section] = true;
+                this.saveNavSections();
+            }
+        },
+
         syncResponsiveLayout() {
             this.isSmallScreen = window.innerWidth < 1024;
             if (this.isSmallScreen) {
@@ -368,6 +416,7 @@ document.addEventListener('alpine:init', () => {
 
         setActiveTab(tab) {
             this.activeTab = tab;
+            this.ensureActiveNavSection();
             if (this.isSmallScreen) {
                 this.sidebarOpen = false;
             }
