@@ -1,4 +1,5 @@
 import agentChannelConversationStore from '../agent-channels/conversation-store.js';
+import agentChannelDeliveryStore from '../agent-channels/delivery-store.js';
 import agentChannelManager from '../agent-channels/manager.js';
 import agentChannelPairingStore from '../agent-channels/pairing-store.js';
 import agentChannelRegistry from '../agent-channels/registry.js';
@@ -10,7 +11,24 @@ function parseLimit(value, fallback = 50) {
   return parsed;
 }
 
-function decorateConversation(conversation) {
+function summarizeDelivery(delivery) {
+  if (!delivery) {
+    return {
+      lastMessageAt: null,
+      lastMessagePreview: '',
+      lastMessageDirection: null
+    };
+  }
+
+  const text = String(delivery?.payload?.text || delivery?.payload?.summary || '').trim();
+  return {
+    lastMessageAt: delivery.updatedAt || delivery.createdAt || null,
+    lastMessagePreview: text.slice(0, 160),
+    lastMessageDirection: delivery.direction || null
+  };
+}
+
+function decorateConversation(conversation, { includeDeliveries = false } = {}) {
   if (!conversation) return null;
   const pairing = agentChannelPairingStore.get(
     conversation.channel,
@@ -18,11 +36,16 @@ function decorateConversation(conversation) {
     conversation.externalUserId,
     conversation.externalConversationId
   );
+  const deliveries = agentChannelDeliveryStore.listByConversation(conversation.id, {
+    limit: includeDeliveries ? 200 : 1
+  });
   return {
     ...conversation,
     pairingStatus: pairing?.status || null,
     pairingCode: pairing?.code || '',
-    pairingApprovedAt: pairing?.approvedAt || null
+    pairingApprovedAt: pairing?.approvedAt || null,
+    ...summarizeDelivery(deliveries[deliveries.length - 1] || null),
+    deliveries: includeDeliveries ? deliveries : undefined
   };
 }
 
@@ -95,7 +118,7 @@ export function handleListAgentChannelConversations(req, res) {
     success: true,
     conversations: agentChannelConversationStore.list({
       limit: parseLimit(req.query.limit, 50)
-    }).map(decorateConversation)
+    }).map((conversation) => decorateConversation(conversation))
   });
 }
 
@@ -107,7 +130,7 @@ export function handleGetAgentChannelConversation(req, res) {
 
   return res.json({
     success: true,
-    conversation: decorateConversation(conversation)
+    conversation: decorateConversation(conversation, { includeDeliveries: true })
   });
 }
 

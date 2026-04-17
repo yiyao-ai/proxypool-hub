@@ -149,6 +149,13 @@ test('AgentChannelDeliveryStore tracks processed inbound keys and outbound deliv
   assert.equal(store.markInboundProcessed('telegram:1'), true);
   assert.equal(store.isInboundProcessed('telegram:1'), true);
 
+  store.saveInbound({
+    channel: 'telegram',
+    conversationId: 'conv_1',
+    externalMessageId: 'in_1',
+    payload: { text: 'hello' }
+  });
+
   store.saveOutbound({
     channel: 'telegram',
     conversationId: 'conv_1',
@@ -157,8 +164,10 @@ test('AgentChannelDeliveryStore tracks processed inbound keys and outbound deliv
   });
 
   const deliveries = store.listByConversation('conv_1');
-  assert.equal(deliveries.length, 1);
+  assert.equal(deliveries.length, 2);
   assert.equal(deliveries[0].channel, 'telegram');
+  assert.equal(deliveries[0].direction, 'inbound');
+  assert.equal(deliveries[1].direction, 'outbound');
 });
 
 test('AgentChannelPairingStore creates and approves pairing requests', () => {
@@ -231,13 +240,14 @@ test('AgentOrchestratorMessageService supports explicit session reset and fresh 
 
 test('AgentChannelRouter binds runtime sessions to conversations', async () => {
   const runtimeSessionManager = createRuntimeManager();
+  const deliveryStore = new AgentChannelDeliveryStore({
+    configDir: createTempDir('cligate-agent-channels-router-delivery-')
+  });
   const router = new AgentChannelRouter({
     conversationStore: new AgentChannelConversationStore({
       configDir: createTempDir('cligate-agent-channels-router-conv-')
     }),
-    deliveryStore: new AgentChannelDeliveryStore({
-      configDir: createTempDir('cligate-agent-channels-router-delivery-')
-    }),
+    deliveryStore,
     pairingStore: new AgentChannelPairingStore({
       configDir: createTempDir('cligate-agent-channels-router-pairing-')
     }),
@@ -259,6 +269,9 @@ test('AgentChannelRouter binds runtime sessions to conversations', async () => {
   assert.equal(result.type, 'runtime_started');
   assert.equal(result.conversation.activeRuntimeSessionId, result.session.id);
   assert.equal(result.conversation.mode, 'agent-runtime');
+  const deliveries = deliveryStore.listByConversation(result.conversation.id);
+  assert.equal(deliveries[0].direction, 'inbound');
+  assert.equal(deliveries[0].payload.text, '/agent codex inspect repo');
 });
 
 test('AgentChannelRouter clears conversation binding on explicit reset command', async () => {

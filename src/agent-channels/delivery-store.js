@@ -53,8 +53,21 @@ export class AgentChannelDeliveryStore {
     return true;
   }
 
+  saveInbound(record) {
+    const normalized = createChannelDeliveryRecord({
+      ...record,
+      direction: 'inbound'
+    });
+    this.ensureDirs();
+    appendFileSync(this.outboundFile, `${JSON.stringify(normalized)}\n`, { mode: 0o600 });
+    return normalized;
+  }
+
   saveOutbound(record) {
-    const normalized = createChannelDeliveryRecord(record);
+    const normalized = createChannelDeliveryRecord({
+      ...record,
+      direction: 'outbound'
+    });
     this.ensureDirs();
     appendFileSync(this.outboundFile, `${JSON.stringify(normalized)}\n`, { mode: 0o600 });
     return normalized;

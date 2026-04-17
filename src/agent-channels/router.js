@@ -53,6 +53,21 @@ export class AgentChannelRouter {
       }
     });
 
+    this.deliveryStore.saveInbound({
+      channel: message.channel,
+      conversationId: conversation.id,
+      externalMessageId: message.externalMessageId || '',
+      status: 'sent',
+      payload: {
+        text: message.text || '',
+        messageType: message.messageType || 'text',
+        externalUserId: message.externalUserId || '',
+        externalUserName: message.externalUserName || '',
+        action: message.action || null,
+        ts: message.ts || null
+      }
+    });
+
     if (this.requirePairing && !this.pairingStore.isApproved(
       message.channel,
       message.accountId,

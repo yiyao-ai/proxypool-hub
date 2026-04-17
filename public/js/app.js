@@ -80,6 +80,10 @@ document.addEventListener('alpine:init', () => {
         channelSettingsSaving: { telegram: false, feishu: false },
         channelConversations: [],
         channelConversationsLoading: false,
+        selectedChannelConversationId: '',
+        selectedChannelConversation: null,
+        channelConversationMessages: [],
+        channelConversationLoading: false,
 
         // Proxy status
         proxyStatus: {
@@ -254,11 +258,13 @@ document.addEventListener('alpine:init', () => {
                 }
             }, 15000);
             setInterval(() => {
-                if (this.activeTab === 'channels') {
-                    this.loadChannelProviders();
-                    this.loadChannelConversations();
+                if (this.activeTab === 'conversationRecords') {
+                    this.loadChannelConversations({ silent: true });
+                    if (this.selectedChannelConversationId) {
+                        this.loadChannelConversationDetail(this.selectedChannelConversationId, { silent: true });
+                    }
                 }
-            }, 15000);
+            }, 5000);
             this.startLogStream();
             this.loadHaikuModelSetting();
             this.loadAccountStrategySetting();
@@ -342,7 +348,13 @@ document.addEventListener('alpine:init', () => {
             if (tab === 'channels') {
                 this.loadChannelProviders();
                 this.loadChannelSettings();
-                this.loadChannelConversations();
+            }
+            if (tab === 'conversationRecords') {
+                this.loadChannelConversations().then(() => {
+                    if (this.selectedChannelConversationId) {
+                        this.loadChannelConversationDetail(this.selectedChannelConversationId, { silent: true });
+                    }
+                });
             }
             if (tab === 'settings') {
                 if (!this.modelMappingData) this.loadModelMappings();
@@ -2847,13 +2859,101 @@ document.addEventListener('alpine:init', () => {
             };
         },
 
-        async loadChannelConversations() {
-            this.channelConversationsLoading = true;
+        async loadChannelConversations(options = {}) {
+            if (!options.silent) {
+                this.channelConversationsLoading = true;
+            }
             const { ok, data } = await this.api('/api/agent-channels/conversations?limit=80');
             if (ok && Array.isArray(data?.conversations)) {
                 this.channelConversations = data.conversations;
+                if (!this.selectedChannelConversationId && this.channelConversations.length > 0) {
+                    this.selectedChannelConversationId = this.channelConversations[0].id;
+                }
+                if (this.selectedChannelConversationId) {
+                    const selected = this.channelConversations.find((item) => item.id === this.selectedChannelConversationId) || null;
+                    if (selected) {
+                        this.selectedChannelConversation = {
+                            ...(this.selectedChannelConversation || {}),
+                            ...selected
+                        };
+                    }
+                }
             }
-            this.channelConversationsLoading = false;
+            if (!options.silent) {
+                this.channelConversationsLoading = false;
+            }
+        },
+
+        async selectChannelConversation(conversationId) {
+            if (!conversationId) return;
+            this.selectedChannelConversationId = conversationId;
+            await this.loadChannelConversationDetail(conversationId);
+        },
+
+        async loadChannelConversationDetail(conversationId = this.selectedChannelConversationId, options = {}) {
+            if (!conversationId) return;
+            if (!options.silent) {
+                this.channelConversationLoading = true;
+            }
+            const { ok, data } = await this.api(`/api/agent-channels/conversations/${encodeURIComponent(conversationId)}`);
+            if (ok && data?.conversation) {
+                this.selectedChannelConversation = data.conversation;
+                this.channelConversationMessages = Array.isArray(data.conversation.deliveries)
+                    ? data.conversation.deliveries
+                    : [];
+            }
+            if (!options.silent) {
+                this.channelConversationLoading = false;
+            }
+        },
+
+        channelConversationCardClass(conversation) {
+            const isSelected = conversation?.id && conversation.id === this.selectedChannelConversationId;
+            return isSelected
+                ? 'border-neon-cyan/40 bg-neon-cyan/10'
+                : 'border-space-border/30 bg-space-900/40 hover:bg-space-800/50';
+        },
+
+        channelMessageRoleLabel(record) {
+            return record?.direction === 'inbound'
+                ? this.t('you')
+                : this.t('assistant');
+        },
+
+        channelMessageBubbleClass(record) {
+            if (record?.direction === 'inbound') {
+                return 'bg-neon-cyan/15 border-neon-cyan/30 text-white';
+            }
+            if (record?.status === 'failed') {
+                return 'bg-red-500/10 border-red-500/30 text-red-200';
+            }
+            return 'bg-space-800/70 border-space-border/40 text-gray-100';
+        },
+
+        channelMessageText(record) {
+            if (!record) return '';
+            const payload = record.payload || {};
+            if (record.direction === 'inbound') {
+                return payload.text || '';
+            }
+            return payload.text || payload.summary || '';
+        },
+
+        channelMessageMeta(record) {
+            if (!record) return '';
+            const payload = record.payload || {};
+            if (record.direction === 'inbound') {
+                return payload.externalUserName || payload.externalUserId || '';
+            }
+            return record.status === 'failed'
+                ? (record.error || this.t('channelStatusError'))
+                : '';
+        },
+
+        channelConversationPreview(conversation) {
+            if (!conversation?.lastMessagePreview) return '';
+            const prefix = conversation.lastMessageDirection === 'inbound' ? `${this.t('you')}: ` : `${this.t('assistant')}: `;
+            return `${prefix}${conversation.lastMessagePreview}`;
         },
 
         async refreshChannels() {
@@ -2901,6 +3001,9 @@ document.addEventListener('alpine:init', () => {
             if (ok && data?.success) {
                 this.showToast(this.t('channelPairingApproved'), 'success');
                 this.loadChannelConversations();
+                if (conversation?.id === this.selectedChannelConversationId) {
+                    this.loadChannelConversationDetail(conversation.id);
+                }
             } else {
                 this.showToast(data?.error || this.t('requestFailed'), 'error');
             }
@@ -2915,6 +3018,9 @@ document.addEventListener('alpine:init', () => {
             if (ok && data?.success) {
                 this.showToast(this.t('channelPairingDenied'), 'success');
                 this.loadChannelConversations();
+                if (conversation?.id === this.selectedChannelConversationId) {
+                    this.loadChannelConversationDetail(conversation.id);
+                }
             } else {
                 this.showToast(data?.error || this.t('requestFailed'), 'error');
             }
@@ -2928,6 +3034,9 @@ document.addEventListener('alpine:init', () => {
             if (ok && data?.success) {
                 this.showToast(this.t('channelConversationReset'), 'success');
                 this.loadChannelConversations();
+                if (conversation?.id === this.selectedChannelConversationId) {
+                    this.loadChannelConversationDetail(conversation.id);
+                }
             } else {
                 this.showToast(data?.error || this.t('requestFailed'), 'error');
             }
