@@ -478,6 +478,26 @@ test('AgentOrchestratorMessageService resolves approvals and answers pending que
   assert.equal(questionResult.question.status, 'answered');
 });
 
+test('AgentOrchestratorMessageService returns a friendly busy message while the active session is still running', async () => {
+  const runtimeSessionManager = createInteractiveRuntimeManager();
+  const service = new AgentOrchestratorMessageService({ runtimeSessionManager });
+
+  const started = await service.startRuntimeTask({
+    provider: 'claude-code',
+    input: 'interactive task'
+  });
+
+  const busyResult = await service.routeUserMessage({
+    message: { text: 'follow up while busy' },
+    conversation: {
+      activeRuntimeSessionId: started.id
+    }
+  });
+
+  assert.equal(busyResult.type, 'command_error');
+  assert.match(busyResult.message, /permission decision|need your answer|working on the current task/i);
+});
+
 test('TelegramChannelProvider normalizes messages and callback approvals', () => {
   const provider = new TelegramChannelProvider({
     fetchImpl: async () => ({ ok: true, json: async () => ({ ok: true, result: [] }) })

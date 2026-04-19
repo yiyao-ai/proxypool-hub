@@ -1,5 +1,21 @@
 import agentRuntimeSessionManager from '../agent-runtime/session-manager.js';
 
+function withInteractiveCodexDefaults(provider, metadata = {}) {
+  const next = { ...(metadata || {}) };
+  if (provider !== 'codex') {
+    return next;
+  }
+
+  next.runtimeOptions = {
+    ...(next.runtimeOptions || {}),
+    codex: {
+      approvalPolicy: 'on-request',
+      ...((next.runtimeOptions || {}).codex || {})
+    }
+  };
+  return next;
+}
+
 function parseLimit(value, fallback = 50) {
   const parsed = Number.parseInt(String(value || ''), 10);
   if (!Number.isFinite(parsed) || parsed <= 0) return fallback;
@@ -50,7 +66,7 @@ export async function handleCreateAgentRuntimeSession(req, res) {
       input,
       cwd,
       model,
-      metadata
+      metadata: withInteractiveCodexDefaults(provider, metadata)
     });
     return res.json({ success: true, session });
   } catch (error) {

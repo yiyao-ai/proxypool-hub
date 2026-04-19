@@ -1,4 +1,23 @@
 import agentRuntimeSessionManager from '../agent-runtime/session-manager.js';
+import { AGENT_SESSION_STATUS } from '../agent-runtime/models.js';
+
+function withDefaultRuntimeOptions(provider, metadata = {}) {
+  const next = { ...(metadata || {}) };
+  const runtimeOptions = { ...(next.runtimeOptions || {}) };
+
+  if (provider === 'codex') {
+    runtimeOptions.codex = {
+      approvalPolicy: 'on-request',
+      ...(runtimeOptions.codex || {})
+    };
+  }
+
+  if (Object.keys(runtimeOptions).length > 0) {
+    next.runtimeOptions = runtimeOptions;
+  }
+
+  return next;
+}
 
 function parseLeadingCommand(input) {
   const text = String(input || '').trim();
@@ -31,6 +50,37 @@ function buildResetResponse(message, activeSessionId = null) {
   };
 }
 
+function buildBusyResponse(session) {
+  const current = session || {};
+  if (current.status === AGENT_SESSION_STATUS.WAITING_APPROVAL) {
+    return {
+      type: 'command_error',
+      message: 'I am waiting on a permission decision from you. Reply with /approve to continue or /deny to stop that step.'
+    };
+  }
+
+  if (current.status === AGENT_SESSION_STATUS.WAITING_USER) {
+    return {
+      type: 'command_error',
+      message: 'I still need your answer to the pending question before I can continue. Reply directly to that question and I will pass it along.'
+    };
+  }
+
+  return {
+    type: 'command_error',
+    message: 'I am still working on the current task with Codex. Wait for that run to finish, or send /cancel if you want me to stop it first.'
+  };
+}
+
+function isSessionBusy(session) {
+  return [
+    AGENT_SESSION_STATUS.RUNNING,
+    AGENT_SESSION_STATUS.WAITING_APPROVAL,
+    AGENT_SESSION_STATUS.WAITING_USER,
+    AGENT_SESSION_STATUS.STARTING
+  ].includes(session?.status);
+}
+
 export class AgentOrchestratorMessageService {
   constructor({
     runtimeSessionManager = agentRuntimeSessionManager
@@ -44,7 +94,7 @@ export class AgentOrchestratorMessageService {
       input,
       cwd,
       model,
-      metadata
+      metadata: withDefaultRuntimeOptions(provider, metadata)
     });
   }
 
@@ -172,6 +222,10 @@ export class AgentOrchestratorMessageService {
           message: 'No active runtime session to continue'
         };
       }
+      const activeSession = this.getRuntimeSession(activeSessionId);
+      if (isSessionBusy(activeSession)) {
+        return buildBusyResponse(activeSession);
+      }
       const session = await this.continueRuntimeTask({
         sessionId: activeSessionId,
         input: parsed.args || text
@@ -239,6 +293,10 @@ export class AgentOrchestratorMessageService {
     }
 
     if (activeSessionId) {
+      const activeSession = this.getRuntimeSession(activeSessionId);
+      if (isSessionBusy(activeSession)) {
+        return buildBusyResponse(activeSession);
+      }
       const session = await this.continueRuntimeTask({
         sessionId: activeSessionId,
         input: text

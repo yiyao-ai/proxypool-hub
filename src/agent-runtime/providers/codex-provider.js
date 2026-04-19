@@ -18,6 +18,10 @@ const CODEX_APPROVAL_POLICIES = new Set([
   'on-failure',
   'unless-trusted'
 ]);
+const CODEX_INITIAL_OUTPUT_TIMEOUT_MS = 15000;
+const CODEX_NON_FATAL_STDERR_PATTERNS = [
+  /Reading additional input from stdin\.\.\./i
+];
 
 function readRuntimeOption(source, ...keys) {
   for (const key of keys) {
@@ -111,18 +115,17 @@ export function resolveCodexRuntimeOptions(session, { env = process.env } = {}) 
   };
 }
 
-export function buildCodexExecArgs(session, { env = process.env } = {}) {
+export function buildCodexExecArgs(session, input = '', { env = process.env } = {}) {
   const runtimeOptions = resolveCodexRuntimeOptions(session, { env });
-  const args = [];
+  const args = ['exec'];
 
   if (runtimeOptions.dangerouslyBypass) {
     args.push('--dangerously-bypass-approvals-and-sandbox');
   } else {
     args.push('--sandbox', runtimeOptions.sandboxMode);
-    args.push('--ask-for-approval', runtimeOptions.approvalPolicy);
+    args.push('-c', `approval_policy="${runtimeOptions.approvalPolicy}"`);
   }
-
-  args.push('exec', '--experimental-json');
+  args.push('--json');
 
   if (session.model) {
     args.push('--model', session.model);
@@ -138,7 +141,284 @@ export function buildCodexExecArgs(session, { env = process.env } = {}) {
     args.push('resume', session.providerSessionId);
   }
 
+  const prompt = String(input || '').trim();
+  if (prompt) {
+    args.push(prompt);
+  }
+
   return args;
+}
+
+function writeCodexInput(stream, value) {
+  if (!stream?.writable) return;
+  stream.write(String(value ?? ''));
+  if (!String(value ?? '').endsWith('\n')) {
+    stream.write('\n');
+  }
+}
+
+function buildCodexApprovalResponse(approval, decision) {
+  const raw = approval?.rawRequest || {};
+  const approvalRequestId = raw.approval_request_id || raw.approvalRequestId || raw.id || raw.request_id || raw.requestId || '';
+  if (!approvalRequestId) {
+    return decision === 'approve' ? 'approve' : 'deny';
+  }
+
+  return JSON.stringify({
+    type: 'mcp_approval_response',
+    approval_request_id: approvalRequestId,
+    approve: decision === 'approve'
+  });
+}
+
+function buildCodexQuestionResponse(question, answer) {
+  const raw = question?.rawRequest || {};
+  if (raw?.request_id || raw?.requestId || raw?.type) {
+    return JSON.stringify({
+      type: 'input_response',
+      request_id: raw.request_id || raw.requestId || question?.questionId,
+      content: String(answer ?? '')
+    });
+  }
+  return String(answer ?? '');
+}
+
+function summarizeCodexApproval(item = {}) {
+  const parts = [];
+  if (item?.title) parts.push(String(item.title));
+  if (item?.name) parts.push(`tool=${item.name}`);
+  if (item?.server_label) parts.push(`server=${item.server_label}`);
+  if (item?.arguments) parts.push(String(item.arguments));
+  return parts.join(' | ') || 'Codex approval request';
+}
+
+function summarizeCodexQuestion(item = {}) {
+  return String(
+    item?.text
+      || item?.message
+      || item?.prompt
+      || item?.question
+      || item?.summary
+      || 'Codex requires additional input'
+  );
+}
+
+export function createCodexMessageProcessor({
+  session,
+  onProviderEvent,
+  onApprovalRequest,
+  onQuestionRequest,
+  onSessionPatch,
+  closeInput
+} = {}) {
+  const pendingApprovals = new Map();
+  const pendingQuestions = new Map();
+  let terminalState = null;
+  const state = {
+    lastAgentMessage: ''
+  };
+
+  const emit = (event) => {
+    onProviderEvent?.(event);
+    if (event.type === AGENT_EVENT_TYPE.COMPLETED) {
+      terminalState = {
+        status: 'ready',
+        summary: buildCompletionSummary(session, event.payload)
+      };
+      closeInput?.();
+    } else if (event.type === AGENT_EVENT_TYPE.FAILED) {
+      terminalState = {
+        status: 'failed',
+        error: event.payload?.message || 'Codex turn failed'
+      };
+      closeInput?.();
+    }
+  };
+
+  const processMessage = (parsed) => {
+    if (parsed?.type === 'thread.started' && parsed.thread_id) {
+      onSessionPatch?.({ providerSessionId: parsed.thread_id });
+      emit({
+        type: AGENT_EVENT_TYPE.PROGRESS,
+        payload: {
+          phase: 'thread_started',
+          providerSessionId: parsed.thread_id
+        }
+      });
+      return;
+    }
+
+    if (parsed?.type === 'turn.started') {
+      emit({
+        type: AGENT_EVENT_TYPE.PROGRESS,
+        payload: {
+          phase: 'turn_started',
+          turn: session?.turnCount
+        }
+      });
+      return;
+    }
+
+    if (parsed?.type === 'turn.completed') {
+      emit({
+        type: AGENT_EVENT_TYPE.COMPLETED,
+        payload: {
+          result: state.lastAgentMessage || '',
+          summary: buildCompletionSummary(session, {
+            usage: parsed.usage || null,
+            result: state.lastAgentMessage || ''
+          }),
+          usage: parsed.usage || null
+        }
+      });
+      return;
+    }
+
+    if (parsed?.type === 'turn.failed' || parsed?.type === 'error') {
+      emit({
+        type: AGENT_EVENT_TYPE.FAILED,
+        payload: {
+          message: parsed?.error?.message || parsed?.message || 'Codex turn failed'
+        }
+      });
+      return;
+    }
+
+    const item = parsed?.item || null;
+    if (!item) {
+      emit({
+        type: AGENT_EVENT_TYPE.PROGRESS,
+        payload: {
+          phase: parsed?.type || 'unknown',
+          event: parsed
+        }
+      });
+      return;
+    }
+
+    if (item.type === 'agent_message' && parsed?.type === 'item.completed') {
+      const text = item.text || '';
+      if (text) {
+        state.lastAgentMessage = text;
+      }
+      emit({
+        type: AGENT_EVENT_TYPE.MESSAGE,
+        payload: {
+          text,
+          itemType: item.type
+        }
+      });
+      return;
+    }
+
+    if (item.type === 'command_execution') {
+      emit({
+        type: AGENT_EVENT_TYPE.COMMAND,
+        payload: {
+          id: item.id,
+          command: item.command,
+          output: item.aggregated_output || '',
+          exitCode: item.exit_code,
+          status: item.status || (parsed?.type === 'item.completed' ? 'completed' : 'in_progress')
+        }
+      });
+      return;
+    }
+
+    if (item.type === 'file_change') {
+      emit({
+        type: AGENT_EVENT_TYPE.FILE_CHANGE,
+        payload: {
+          id: item.id,
+          status: item.status || (parsed?.type === 'item.completed' ? 'completed' : 'in_progress'),
+          changes: Array.isArray(item.changes) ? item.changes : []
+        }
+      });
+      return;
+    }
+
+    if (item.type === 'todo_list') {
+      emit({
+        type: AGENT_EVENT_TYPE.PROGRESS,
+        payload: {
+          phase: 'todo_list',
+          items: Array.isArray(item.items) ? item.items : []
+        }
+      });
+      return;
+    }
+
+    if (item.type === 'reasoning') {
+      emit({
+        type: AGENT_EVENT_TYPE.PROGRESS,
+        payload: {
+          phase: 'reasoning',
+          text: item.text || ''
+        }
+      });
+      return;
+    }
+
+    if (item.type === 'mcp_approval_request' && parsed?.type === 'item.completed') {
+      const approvalKey = item.id || item.approval_request_id || item.approvalRequestId || `approval:${pendingApprovals.size + 1}`;
+      pendingApprovals.set(approvalKey, item);
+      onApprovalRequest?.({
+        kind: 'tool_permission',
+        title: item.title || item.name || 'Codex approval request',
+        summary: summarizeCodexApproval(item),
+        rawRequest: {
+          ...item,
+          approvalRequestId: approvalKey
+        }
+      });
+      return;
+    }
+
+    if ((item.type === 'question' || item.type === 'input_request' || item.type === 'elicitation') && parsed?.type === 'item.completed') {
+      const questionKey = item.id || item.request_id || item.requestId || `question:${pendingQuestions.size + 1}`;
+      pendingQuestions.set(questionKey, item);
+      onQuestionRequest?.({
+        questionId: questionKey,
+        text: summarizeCodexQuestion(item),
+        options: Array.isArray(item.options) ? item.options : [],
+        rawRequest: {
+          ...item,
+          requestId: questionKey
+        }
+      });
+      return;
+    }
+
+    if (item.type === 'error') {
+      emit({
+        type: AGENT_EVENT_TYPE.FAILED,
+        payload: {
+          message: item.message || 'Codex reported an error item'
+        }
+      });
+      return;
+    }
+
+    emit({
+      type: AGENT_EVENT_TYPE.PROGRESS,
+      payload: {
+        phase: item.type || parsed?.type || 'unknown',
+        event: parsed
+      }
+    });
+  };
+
+  return {
+    pendingApprovals,
+    pendingQuestions,
+    processMessage,
+    getLastAgentMessage() {
+      return state.lastAgentMessage;
+    },
+    getTerminalState() {
+      return terminalState;
+    }
+  };
 }
 
 function mapCodexEvent(session, event, state = {}) {
@@ -257,19 +537,19 @@ export class CodexProvider {
     this.capabilities = {
       supportsResume: true,
       supportsStreamingEvents: true,
-      supportsApprovalRequests: false,
+      supportsApprovalRequests: true,
       supportsInputInjection: true,
       supportsInterrupt: true
     };
   }
 
-  async startTurn({ session, input, onProviderEvent, onSessionPatch, onTurnFinished, onTurnFailed }) {
+  async startTurn({ session, input, onProviderEvent, onApprovalRequest, onQuestionRequest, onSessionPatch, onTurnFinished, onTurnFailed }) {
     ensureCodexRuntimeCompatibility({
       cwd: session.cwd
     });
 
     const runtimeOptions = resolveCodexRuntimeOptions(session);
-    const args = buildCodexExecArgs(session);
+    const args = buildCodexExecArgs(session, input);
     const childEnv = buildCodexSpawnEnv(process.env, runtimeOptions);
 
     const spawnSpec = buildSpawnCommand('codex', args);
@@ -292,39 +572,62 @@ export class CodexProvider {
       throw new Error('Codex child process has no stdout');
     }
 
-    let terminalState = null;
     const stderrChunks = [];
-    const state = {
-      lastAgentMessage: ''
-    };
     const rl = readline.createInterface({
       input: child.stdout,
       crlfDelay: Infinity
     });
-
-    const pushMappedEvents = (parsed) => {
-      if (parsed?.type === 'thread.started' && parsed.thread_id) {
-        onSessionPatch({ providerSessionId: parsed.thread_id });
-      }
-
-      const mappedEvents = mapCodexEvent(session, parsed, state);
-      for (const event of mappedEvents) {
-        onProviderEvent(event);
-        if (event.type === AGENT_EVENT_TYPE.COMPLETED) {
-          terminalState = { status: 'ready', summary: buildCompletionSummary(session, event.payload) };
-        } else if (event.type === AGENT_EVENT_TYPE.FAILED) {
-          terminalState = { status: 'failed', error: event.payload?.message || 'Codex turn failed' };
-        }
+    let turnSettled = false;
+    let sawAnyOutput = false;
+    let stdinClosed = false;
+    const closeInputIfOpen = () => {
+      if (!stdinClosed && child.stdin && !child.stdin.destroyed && child.stdin.writable) {
+        stdinClosed = true;
+        child.stdin.end();
       }
     };
+    const processor = createCodexMessageProcessor({
+      session,
+      onProviderEvent,
+      onApprovalRequest,
+      onQuestionRequest,
+      onSessionPatch,
+      closeInput: closeInputIfOpen
+    });
+    const settleSuccess = (payload = {}) => {
+      if (turnSettled) return;
+      turnSettled = true;
+      clearTimeout(initialOutputTimer);
+      onTurnFinished(payload);
+    };
+    const settleFailure = (error) => {
+      if (turnSettled) return;
+      turnSettled = true;
+      clearTimeout(initialOutputTimer);
+      onTurnFailed(error instanceof Error ? error : new Error(String(error || 'Codex turn failed')));
+    };
+    const initialOutputTimer = setTimeout(() => {
+      if (turnSettled || sawAnyOutput) {
+        return;
+      }
+      const stderrText = Buffer.concat(stderrChunks).toString('utf8').trim();
+      closeInputIfOpen();
+      if (!child.killed) {
+        child.kill();
+      }
+      settleFailure(new Error(
+        stderrText
+          || 'Codex started but did not emit any events within 15 seconds.'
+      ));
+    }, CODEX_INITIAL_OUTPUT_TIMEOUT_MS);
 
     child.once('error', (error) => {
       rl.close();
       if (error?.code === 'ENOENT') {
-        onTurnFailed(buildCliNotFoundError('codex', error));
+        settleFailure(buildCliNotFoundError('codex', error));
         return;
       }
-      onTurnFailed(error);
+      settleFailure(error);
     });
 
     child.stderr?.on('data', (chunk) => {
@@ -336,6 +639,7 @@ export class CodexProvider {
         for await (const line of rl) {
           const trimmed = String(line || '').trim();
           if (!trimmed) continue;
+          sawAnyOutput = true;
 
           let parsed;
           try {
@@ -351,37 +655,59 @@ export class CodexProvider {
             continue;
           }
 
-          pushMappedEvents(parsed);
+          if (turnSettled) {
+            continue;
+          }
+
+          processor.processMessage(parsed);
+          const resolvedTerminalState = processor.getTerminalState();
+          if (resolvedTerminalState?.status === 'ready') {
+            settleSuccess(resolvedTerminalState);
+          } else if (resolvedTerminalState?.status === 'failed') {
+            settleFailure(new Error(resolvedTerminalState.error));
+          }
         }
       } catch (error) {
-        onTurnFailed(error);
+        settleFailure(error);
       }
     })();
 
     child.once('exit', (code, signal) => {
       rl.close();
-      if (terminalState?.status === 'ready') {
-        onTurnFinished(terminalState);
+      if (turnSettled) {
         return;
       }
-      if (terminalState?.status === 'failed') {
-        onTurnFailed(new Error(terminalState.error));
+      const resolvedTerminalState = processor.getTerminalState();
+      const lastAgentMessage = processor.getLastAgentMessage();
+      if (resolvedTerminalState?.status === 'ready') {
+        settleSuccess(resolvedTerminalState);
+        return;
+      }
+      if (resolvedTerminalState?.status === 'failed') {
+        settleFailure(new Error(resolvedTerminalState.error));
         return;
       }
 
       if (code === 0 && !signal) {
-        onTurnFinished({
+        closeInputIfOpen();
+        settleSuccess({
           status: 'ready',
           summary: buildCompletionSummary(session, {
-            result: state.lastAgentMessage || ''
+            result: lastAgentMessage || ''
           })
         });
         return;
       }
 
       const stderrText = Buffer.concat(stderrChunks).toString('utf8').trim();
+      const meaningfulStderr = stderrText
+        .split(/\r?\n/)
+        .map((line) => line.trim())
+        .filter(Boolean)
+        .filter((line) => !CODEX_NON_FATAL_STDERR_PATTERNS.some((pattern) => pattern.test(line)))
+        .join('\n');
       const detail = signal ? `signal ${signal}` : `code ${code ?? 1}`;
-      onTurnFailed(new Error(stderrText || `Codex exited with ${detail}`));
+      settleFailure(new Error(meaningfulStderr || stderrText || `Codex exited with ${detail}`));
     });
 
     if (!child.stdin) {
@@ -389,12 +715,18 @@ export class CodexProvider {
       throw new Error('Codex child process has no stdin');
     }
 
-    child.stdin.write(String(input || ''));
-    child.stdin.end();
+    closeInputIfOpen();
 
     return {
       pid: child.pid || null,
+      async respondApproval({ approval, decision }) {
+        writeCodexInput(child.stdin, buildCodexApprovalResponse(approval, decision));
+      },
+      async respondQuestion({ question, answer }) {
+        writeCodexInput(child.stdin, buildCodexQuestionResponse(question, answer));
+      },
       cancel() {
+        closeInputIfOpen();
         if (!child.killed) {
           child.kill();
         }

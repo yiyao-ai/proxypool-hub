@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { existsSync, mkdtempSync, readFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -13,7 +13,7 @@ import {
   buildUserMessage,
   createClaudeCodeMessageProcessor
 } from '../../src/agent-runtime/providers/claude-code-provider.js';
-import { buildCodexExecArgs, buildCodexSpawnEnv, resolveCodexRuntimeOptions } from '../../src/agent-runtime/providers/codex-provider.js';
+import { buildCodexExecArgs, buildCodexSpawnEnv, createCodexMessageProcessor, resolveCodexRuntimeOptions } from '../../src/agent-runtime/providers/codex-provider.js';
 import { buildCliNotFoundError, buildSpawnCommand, resolveCliExecutable } from '../../src/agent-runtime/cli-resolver.js';
 import { applyCodexRuntimeCompatibility, ensureCodexRuntimeCompatibility } from '../../src/codex-runtime-config.js';
 import { AgentRuntimeRegistry } from '../../src/agent-runtime/registry.js';
@@ -328,6 +328,73 @@ test('createClaudeCodeMessageProcessor maps Claude control flow into normalized 
   assert.ok(providerEvents.some((event) => event.type === AGENT_EVENT_TYPE.COMPLETED));
 });
 
+test('createCodexMessageProcessor maps Codex JSON events into normalized runtime events', () => {
+  const providerEvents = [];
+  const approvals = [];
+  const questions = [];
+  const patches = [];
+  let closed = false;
+
+  const processor = createCodexMessageProcessor({
+    session: { turnCount: 1 },
+    onProviderEvent: (event) => providerEvents.push(event),
+    onApprovalRequest: (approval) => approvals.push(approval),
+    onQuestionRequest: (question) => questions.push(question),
+    onSessionPatch: (patch) => patches.push(patch),
+    closeInput: () => {
+      closed = true;
+    }
+  });
+
+  processor.processMessage({
+    type: 'thread.started',
+    thread_id: 'codex-thread-1'
+  });
+  processor.processMessage({
+    type: 'item.completed',
+    item: {
+      id: 'item_msg',
+      type: 'agent_message',
+      text: 'assistant reply'
+    }
+  });
+  processor.processMessage({
+    type: 'item.completed',
+    item: {
+      id: 'approval-1',
+      type: 'mcp_approval_request',
+      title: 'Permission',
+      name: 'shell',
+      server_label: 'workspace',
+      arguments: '{"cmd":"dir"}'
+    }
+  });
+  processor.processMessage({
+    type: 'item.completed',
+    item: {
+      id: 'question-1',
+      type: 'input_request',
+      prompt: 'Which file should I edit?'
+    }
+  });
+  processor.processMessage({
+    type: 'turn.completed',
+    usage: { input_tokens: 1, output_tokens: 2 }
+  });
+
+  assert.deepEqual(patches, [{ providerSessionId: 'codex-thread-1' }]);
+  assert.equal(approvals.length, 1);
+  assert.equal(approvals[0].rawRequest.approvalRequestId, 'approval-1');
+  assert.match(approvals[0].summary, /tool=shell/i);
+  assert.equal(questions.length, 1);
+  assert.equal(questions[0].questionId, 'question-1');
+  assert.equal(closed, true);
+  assert.equal(processor.getTerminalState()?.status, 'ready');
+  assert.equal(processor.getLastAgentMessage(), 'assistant reply');
+  assert.ok(providerEvents.some((event) => event.type === AGENT_EVENT_TYPE.MESSAGE));
+  assert.ok(providerEvents.some((event) => event.type === AGENT_EVENT_TYPE.COMPLETED));
+});
+
 test('Claude Code response builders emit expected protocol envelopes', () => {
   assert.deepEqual(buildUserMessage('weather'), {
     type: 'user',
@@ -399,6 +466,28 @@ test('buildSpawnCommand wraps Windows cmd shims with cmd.exe', () => {
   ]);
 });
 
+test('buildSpawnCommand unwraps npm node shims on Windows when the bootstrap script is available', () => {
+  const shimRoot = mkdtempSync(join(tmpdir(), 'cligate-codex-shim-'));
+  const npmDir = join(shimRoot, 'npm');
+  const scriptPath = join(npmDir, 'node_modules', '@openai', 'codex', 'bin');
+  mkdirSync(scriptPath, { recursive: true });
+  writeFileSync(join(scriptPath, 'codex.js'), 'console.log("ok");');
+  writeFileSync(join(npmDir, 'codex.cmd'), [
+    '@ECHO off',
+    'endLocal & goto #_undefined_# 2>NUL || title %COMSPEC% & "%_prog%"  "%dp0%\\node_modules\\@openai\\codex\\bin\\codex.js" %*'
+  ].join('\n'));
+
+  const spawnSpec = buildSpawnCommand('codex', ['exec', '--json', 'hello world'], {
+    env: { ComSpec: 'C:\\WINDOWS\\system32\\cmd.exe' },
+    platform: 'win32',
+    whereResolver: () => join(npmDir, 'codex.cmd')
+  });
+
+  assert.equal(spawnSpec.command, 'node');
+  assert.equal(spawnSpec.args[0], join(scriptPath, 'codex.js'));
+  assert.deepEqual(spawnSpec.args.slice(1), ['exec', '--json', 'hello world']);
+});
+
 test('buildSpawnCommand preserves embedded quotes in config-style arguments', () => {
   const spawnSpec = buildSpawnCommand('codex', ['--config', 'approval_policy="never"'], {
     env: { ComSpec: 'C:\\WINDOWS\\system32\\cmd.exe' },
@@ -410,7 +499,7 @@ test('buildSpawnCommand preserves embedded quotes in config-style arguments', ()
     '/d',
     '/s',
     '/c',
-    'C:\\Users\\liuting\\AppData\\Roaming\\npm\\codex.cmd --config approval_policy="never"'
+    'C:\\Users\\liuting\\AppData\\Roaming\\npm\\codex.cmd --config "approval_policy=""never"""'
   ]);
 });
 
@@ -458,21 +547,22 @@ test('buildCodexExecArgs emits writable defaults and supports dangerous bypass',
     cwd: 'D:\\cligatespace',
     model: 'gpt-5.4',
     metadata: {}
-  }, {
+  }, 'inspect the repo', {
     env: {}
   });
 
   assert.deepEqual(defaultArgs.slice(0, 7), [
+    'exec',
     '--sandbox',
     'workspace-write',
-    '--ask-for-approval',
-    'never',
-    'exec',
-    '--experimental-json',
+    '-c',
+    'approval_policy="never"',
+    '--json',
     '--model'
   ]);
   assert.ok(defaultArgs.includes('--cd'));
   assert.ok(defaultArgs.includes('D:\\cligatespace'));
+  assert.equal(defaultArgs.at(-1), 'inspect the repo');
 
   const bypassArgs = buildCodexExecArgs({
     metadata: {
@@ -482,17 +572,39 @@ test('buildCodexExecArgs emits writable defaults and supports dangerous bypass',
         }
       }
     }
-  }, {
+  }, 'do the thing', {
     env: {}
   });
 
   assert.deepEqual(bypassArgs.slice(0, 3), [
-    '--dangerously-bypass-approvals-and-sandbox',
     'exec',
-    '--experimental-json'
+    '--dangerously-bypass-approvals-and-sandbox',
+    '--json'
   ]);
   assert.ok(!bypassArgs.includes('--sandbox'));
   assert.ok(!bypassArgs.includes('--ask-for-approval'));
+  assert.equal(bypassArgs.at(-1), 'do the thing');
+});
+
+test('buildCodexExecArgs appends resume prompt after the provider session id', () => {
+  const args = buildCodexExecArgs({
+    providerSessionId: 'thread_123',
+    cwd: 'D:\\tmp',
+    metadata: {
+      runtimeOptions: {
+        codex: {
+          approvalPolicy: 'on-request'
+        }
+      }
+    }
+  }, 'continue with the next step', {
+    env: {}
+  });
+
+  const resumeIndex = args.indexOf('resume');
+  assert.ok(resumeIndex > 0);
+  assert.equal(args[resumeIndex + 1], 'thread_123');
+  assert.equal(args[resumeIndex + 2], 'continue with the next step');
 });
 
 test('buildCodexSpawnEnv filters PowerShell 7 from PATH on windows sandbox runs', () => {

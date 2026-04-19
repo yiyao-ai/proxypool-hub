@@ -1,5 +1,7 @@
 import { execFileSync } from 'child_process';
+import { existsSync, readFileSync } from 'fs';
 import { platform as getPlatform } from 'os';
+import path from 'path';
 
 const TOOL_DEFAULTS = Object.freeze({
   codex: {
@@ -70,10 +72,35 @@ export function buildCliNotFoundError(toolId, cause = null) {
 function quoteForCmd(value) {
   const text = String(value ?? '');
   if (!text) return '""';
-  if (!/\s/u.test(text)) {
+  if (!/[\s"]/u.test(text)) {
     return text;
   }
   return `"${text.replace(/"/g, '""')}"`;
+}
+
+function tryResolveNodeShim(executable) {
+  try {
+    const content = readFileSync(executable, 'utf8');
+    const match = content.match(/"%dp0%\\([^"]+)" %\*/i);
+    if (!match) {
+      return null;
+    }
+
+    const baseDir = path.dirname(executable);
+    const relativeScript = match[1].replace(/\\/g, path.sep);
+    const scriptPath = path.join(baseDir, relativeScript);
+    if (!existsSync(scriptPath)) {
+      return null;
+    }
+
+    const bundledNode = path.join(baseDir, 'node.exe');
+    return {
+      command: existsSync(bundledNode) ? bundledNode : 'node',
+      bootstrapArgs: [scriptPath]
+    };
+  } catch {
+    return null;
+  }
 }
 
 export function buildSpawnCommand(toolId, args = [], {
@@ -85,6 +112,14 @@ export function buildSpawnCommand(toolId, args = [], {
   const normalizedArgs = Array.isArray(args) ? args.map((item) => String(item)) : [];
 
   if (platform === 'win32' && /\.(cmd|bat)$/i.test(executable)) {
+    const nodeShim = tryResolveNodeShim(executable);
+    if (nodeShim) {
+      return {
+        command: nodeShim.command,
+        args: [...nodeShim.bootstrapArgs, ...normalizedArgs]
+      };
+    }
+
     const commandLine = [quoteForCmd(executable), ...normalizedArgs.map(quoteForCmd)].join(' ');
     return {
       command: env?.ComSpec || 'cmd.exe',
