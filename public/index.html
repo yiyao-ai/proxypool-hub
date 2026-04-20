@@ -2117,8 +2117,9 @@
                                     <span class="text-[11px] font-mono text-gray-500 uppercase tracking-wider block mb-1" x-text="t('channelConversationFilterChannel')"></span>
                                     <select class="select select-sm w-full bg-space-800 border-space-border text-white" x-model="channelConversationChannelFilter">
                                         <option value="all" x-text="t('allChannels')"></option>
-                                        <option value="telegram">Telegram</option>
-                                        <option value="feishu">Feishu</option>
+                                        <template x-for="provider in channelConversationFilterOptions" :key="provider.id">
+                                            <option :value="provider.id" x-text="provider.label"></option>
+                                        </template>
                                     </select>
                                 </label>
                                 <label class="block">

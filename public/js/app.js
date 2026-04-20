@@ -287,6 +287,35 @@ document.addEventListener('alpine:init', () => {
             });
         },
 
+        get channelConversationFilterOptions() {
+            const options = [];
+            const seen = new Set();
+
+            const addOption = (id, label) => {
+                const value = String(id || '').trim();
+                if (!value || value === 'all' || seen.has(value)) return;
+                seen.add(value);
+                options.push({
+                    id: value,
+                    label: String(label || value).trim() || value
+                });
+            };
+
+            for (const provider of this.channelCatalog) {
+                addOption(provider?.id, provider?.label);
+            }
+
+            for (const provider of this.channelProviders) {
+                addOption(provider?.id, provider?.label);
+            }
+
+            for (const conversation of this.channelConversations) {
+                addOption(conversation?.channel, conversation?.channel);
+            }
+
+            return options;
+        },
+
         init() {
             document.documentElement.classList.toggle('light', !this.darkMode);
             document.documentElement.classList.toggle('dark', this.darkMode);
@@ -441,6 +470,8 @@ document.addEventListener('alpine:init', () => {
                 this.loadChannelSettings();
             }
             if (tab === 'conversationRecords') {
+                this.loadChannelProviders();
+                this.loadChannelCatalog();
                 this.loadChannelConversations().then(() => {
                     if (this.selectedChannelConversationId) {
                         this.loadChannelConversationDetail(this.selectedChannelConversationId, { silent: true });
