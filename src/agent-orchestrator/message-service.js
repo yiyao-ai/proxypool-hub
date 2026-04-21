@@ -116,6 +116,22 @@ function isWrapUpInquiry(input) {
   return /(总结一下|总结下|收尾|收个尾|整理一下|整理下|归纳一下|列一下结果|给我结果|给我总结|总结当前产出|wrap up|summarize|summary|recap|final status)/i.test(text);
 }
 
+function hasExecutionIntent(input) {
+  const text = String(input || '').trim().toLowerCase();
+  if (!text) return false;
+
+  // When a message mixes status wording with explicit implementation/debugging asks,
+  // prefer forwarding it to the active runtime instead of answering locally.
+  const directTaskPattern = /(请重新查看代码|重新查看代码|查看代码|检查代码|重新检查|请进行修复|进行修复|继续修复|帮我修复|请修复|修一下|改一下|修改代码|实现一下|排查一下|定位一下|处理一下|提交并推送|提交代码|推送到git|fix|debug|investigate|inspect the code|check the code|review the code|modify the code|implement the fix)/i;
+  if (directTaskPattern.test(text)) {
+    return true;
+  }
+
+  const requestCuePattern = /^(请|帮我|麻烦|继续|重新|再|并|然后|直接|先)\b/i;
+  const actionVerbPattern = /(查看|检查|修复|修改|实现|排查|定位|处理|提交|推送|完善|优化|重构|新增|删除|更新|fix|debug|investigate|inspect|review|modify|implement|update)/i;
+  return requestCuePattern.test(text) && actionVerbPattern.test(text);
+}
+
 function detectProviderSwitchIntent(input) {
   const text = String(input || '').trim();
   if (!text) return null;
@@ -521,12 +537,13 @@ export class AgentOrchestratorMessageService {
     const inferredRevision = !parsed?.command ? detectTaskRevisionIntent(text) : null;
     const inferredRetry = !parsed?.command ? detectRetryIntent(text) : false;
     const inferredReturnToSource = !parsed?.command ? detectReturnToSourceIntent(text) : false;
+    const inferredExecutionIntent = !parsed?.command ? hasExecutionIntent(text) : false;
 
-    if (!parsed?.command && isWrapUpInquiry(text)) {
+    if (!parsed?.command && !inferredExecutionIntent && isWrapUpInquiry(text)) {
       return buildSupervisorWrapUpResponse(conversation, activeSession);
     }
 
-    if (!parsed?.command && isStatusInquiry(text)) {
+    if (!parsed?.command && !inferredExecutionIntent && isStatusInquiry(text)) {
       return buildSupervisorStatusResponse(conversation, activeSession);
     }
 

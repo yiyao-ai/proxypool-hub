@@ -814,6 +814,45 @@ test('AgentOrchestratorMessageService answers wrap-up requests from remembered t
   assert.match(result.message, /D:\\tmp\\login\.html/);
 });
 
+test('AgentOrchestratorMessageService forwards mixed status and fix requests to the active runtime', async () => {
+  const runtimeSessionManager = createRuntimeManager();
+  const service = new AgentOrchestratorMessageService({ runtimeSessionManager });
+
+  const started = await service.routeUserMessage({
+    message: { text: '/cx inspect repo' },
+    conversation: null
+  });
+
+  const result = await service.routeUserMessage({
+    message: {
+      text: '我刚才发给你的消息你修复了吗，这个问题，请重新查看代码，我已经看到了你收起的实例块，但是我点击实例或者展开按钮都无法进行展开，目前是收起的状态，请进行修复'
+    },
+    conversation: {
+      activeRuntimeSessionId: started.session.id,
+      metadata: {
+        supervisor: {
+          brief: {
+            kind: 'current',
+            title: 'Fix channel instance collapse interaction',
+            provider: 'codex',
+            providerLabel: 'Codex',
+            status: 'completed',
+            summary: 'Previous patch changed the collapse UI.',
+            result: '',
+            error: '',
+            waitingReason: '',
+            nextSuggestion: 'Ask for a follow-up change if the interaction is still broken.'
+          }
+        }
+      }
+    }
+  });
+
+  assert.equal(result.type, 'runtime_continued');
+  assert.equal(result.session.id, started.session.id);
+  assert.equal(result.session.turnCount, 2);
+});
+
 test('AgentOrchestratorMessageService treats high-confidence fresh-task phrasing as a new task', async () => {
   const runtimeSessionManager = createRuntimeManager();
   const service = new AgentOrchestratorMessageService({ runtimeSessionManager });
