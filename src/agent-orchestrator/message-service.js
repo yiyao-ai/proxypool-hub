@@ -1,5 +1,8 @@
 import agentRuntimeSessionManager from '../agent-runtime/session-manager.js';
 import agentRuntimeApprovalPolicyStore from '../agent-runtime/approval-policy-store.js';
+import agentPreferenceStore from '../agent-core/preference-store.js';
+import { buildPreferenceSavedMessage, saveConversationPreferences } from '../agent-core/preference-service.js';
+import { selectRuntimeProvider } from '../agent-core/provider-selection.js';
 import { AGENT_SESSION_STATUS } from '../agent-runtime/models.js';
 import { buildApprovalSessionPolicy } from '../agent-runtime/approval-policy.js';
 import { buildSupervisorBrief } from './supervisor-brief.js';
@@ -148,6 +151,13 @@ function detectProviderSwitchIntent(input) {
     return 'codex';
   }
   return null;
+}
+
+function isPreferenceMemoryIntent(input) {
+  const text = String(input || '').trim();
+  if (!text) return false;
+  return /(记住|以后|后续|默认|总是|prefer|always|default)/i.test(text)
+    && /(中文|英文|claude|codex|简洁|详细|最小改动|concise|detailed|minimal)/i.test(text);
 }
 
 function parseSupervisorStartIntent(input, defaultProvider = 'codex') {
@@ -455,10 +465,12 @@ function wantsConversationRememberedApproval(input) {
 export class AgentOrchestratorMessageService {
   constructor({
     runtimeSessionManager = agentRuntimeSessionManager,
-    approvalPolicyStore = agentRuntimeApprovalPolicyStore
+    approvalPolicyStore = agentRuntimeApprovalPolicyStore,
+    preferenceStore = agentPreferenceStore
   } = {}) {
     this.runtimeSessionManager = runtimeSessionManager;
     this.approvalPolicyStore = approvalPolicyStore;
+    this.preferenceStore = preferenceStore;
   }
 
   async startRuntimeTask({ provider, input, cwd, model = '', metadata = {} } = {}) {
@@ -528,8 +540,13 @@ export class AgentOrchestratorMessageService {
     const pendingApprovalId = conversation?.lastPendingApprovalId || null;
     const pendingQuestionId = conversation?.lastPendingQuestionId || null;
     const activeSession = activeSessionId ? this.getRuntimeSession(activeSessionId) : null;
-    const preferredProvider = getPreferredConversationProvider(conversation, activeSession, defaultRuntimeProvider);
     const supervisorBrief = getSupervisorBrief(conversation, activeSession);
+    const preferredProvider = selectRuntimeProvider({
+      conversation,
+      activeSession,
+      rememberedBrief: supervisorBrief,
+      defaultRuntimeProvider: getPreferredConversationProvider(conversation, activeSession, defaultRuntimeProvider)
+    });
     const inferredProviderSwitch = !parsed?.command ? detectProviderSwitchIntent(text) : null;
     const inferredFreshTask = !parsed?.command ? parseSupervisorStartIntent(text, preferredProvider) : null;
     const inferredRelatedTask = !parsed?.command ? parseSupervisorRelatedTaskIntent(text, preferredProvider) : null;
@@ -538,6 +555,19 @@ export class AgentOrchestratorMessageService {
     const inferredRetry = !parsed?.command ? detectRetryIntent(text) : false;
     const inferredReturnToSource = !parsed?.command ? detectReturnToSourceIntent(text) : false;
     const inferredExecutionIntent = !parsed?.command ? hasExecutionIntent(text) : false;
+
+    if (!parsed?.command && !activeSessionId && conversation?.id && isPreferenceMemoryIntent(text)) {
+      const savedPreferences = saveConversationPreferences(conversation, text, {
+        store: this.preferenceStore
+      });
+      const savedMessage = buildPreferenceSavedMessage(savedPreferences);
+      if (savedMessage) {
+        return {
+          type: 'preference_saved',
+          message: savedMessage
+        };
+      }
+    }
 
     if (!parsed?.command && !inferredExecutionIntent && isWrapUpInquiry(text)) {
       return buildSupervisorWrapUpResponse(conversation, activeSession);
@@ -905,7 +935,7 @@ export class AgentOrchestratorMessageService {
     }
 
     const session = await this.startRuntimeTask({
-      provider: defaultRuntimeProvider,
+      provider: preferredProvider,
       input: text,
       cwd,
       model,
@@ -914,7 +944,7 @@ export class AgentOrchestratorMessageService {
 
     return {
       type: 'runtime_started',
-      provider: defaultRuntimeProvider,
+      provider: preferredProvider,
       session
     };
   }

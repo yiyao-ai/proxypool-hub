@@ -1,6 +1,8 @@
 import agentRuntimeSessionManager from '../agent-runtime/session-manager.js';
 import { AGENT_EVENT_TYPE } from '../agent-runtime/models.js';
-import { buildSupervisorBrief } from '../agent-orchestrator/supervisor-brief.js';
+import agentTaskStore from '../agent-core/task-store.js';
+import { syncTaskTerminalState } from '../agent-core/task-service.js';
+import { buildConversationSupervisorPatch } from '../agent-orchestrator/conversation-supervisor-state.js';
 import agentChannelConversationStore from './conversation-store.js';
 import agentChannelDeliveryStore from './delivery-store.js';
 import { formatAgentRuntimeEventForChannel } from './formatter.js';
@@ -19,12 +21,14 @@ export class AgentChannelOutboundDispatcher {
     runtimeSessionManager = agentRuntimeSessionManager,
     conversationStore = agentChannelConversationStore,
     deliveryStore = agentChannelDeliveryStore,
-    registry = agentChannelRegistry
+    registry = agentChannelRegistry,
+    taskStore = agentTaskStore
   } = {}) {
     this.runtimeSessionManager = runtimeSessionManager;
     this.conversationStore = conversationStore;
     this.deliveryStore = deliveryStore;
     this.registry = registry;
+    this.taskStore = taskStore;
     this.unsubscribe = null;
   }
 
@@ -42,76 +46,6 @@ export class AgentChannelOutboundDispatcher {
     this.unsubscribe = null;
   }
 
-  buildConversationSupervisorPatch({ conversation, session, event }) {
-    const metadata = {
-      ...(conversation?.metadata || {})
-    };
-    const supervisor = {
-      ...((metadata.supervisor && typeof metadata.supervisor === 'object') ? metadata.supervisor : {})
-    };
-    const taskMemory = {
-      ...((supervisor.taskMemory && typeof supervisor.taskMemory === 'object') ? supervisor.taskMemory : {})
-    };
-
-    if (event?.type === AGENT_EVENT_TYPE.STARTED) {
-      taskMemory.current = {
-        sessionId: session?.id || event?.sessionId || null,
-        provider: session?.provider || '',
-        title: session?.title || event?.payload?.title || '',
-        status: 'running',
-        startedAt: event?.ts || new Date().toISOString(),
-        lastUpdateAt: event?.ts || new Date().toISOString(),
-        summary: '',
-        result: ''
-      };
-    }
-
-    if (event?.type === AGENT_EVENT_TYPE.APPROVAL_REQUEST && taskMemory.current) {
-      taskMemory.current.status = 'waiting_approval';
-      taskMemory.current.lastUpdateAt = event?.ts || new Date().toISOString();
-      taskMemory.current.pendingApprovalTitle = event?.payload?.title || '';
-    }
-
-    if (event?.type === AGENT_EVENT_TYPE.QUESTION && taskMemory.current) {
-      taskMemory.current.status = 'waiting_user';
-      taskMemory.current.lastUpdateAt = event?.ts || new Date().toISOString();
-      taskMemory.current.pendingQuestion = event?.payload?.text || '';
-    }
-
-    if (event?.type === AGENT_EVENT_TYPE.COMPLETED && taskMemory.current) {
-      taskMemory.current.status = 'completed';
-      taskMemory.current.lastUpdateAt = event?.ts || new Date().toISOString();
-      taskMemory.current.summary = String(session?.summary || event?.payload?.summary || '').trim();
-      taskMemory.current.result = String(event?.payload?.result || '').trim();
-      taskMemory.lastCompleted = {
-        sessionId: taskMemory.current.sessionId,
-        provider: taskMemory.current.provider,
-        title: taskMemory.current.title,
-        completedAt: event?.ts || new Date().toISOString(),
-        summary: taskMemory.current.summary,
-        result: taskMemory.current.result
-      };
-    }
-
-    if (event?.type === AGENT_EVENT_TYPE.FAILED && taskMemory.current) {
-      taskMemory.current.status = 'failed';
-      taskMemory.current.lastUpdateAt = event?.ts || new Date().toISOString();
-      taskMemory.current.error = String(event?.payload?.message || session?.error || '').trim();
-      taskMemory.lastFailed = {
-        sessionId: taskMemory.current.sessionId,
-        provider: taskMemory.current.provider,
-        title: taskMemory.current.title,
-        failedAt: event?.ts || new Date().toISOString(),
-        error: taskMemory.current.error
-      };
-    }
-
-    supervisor.taskMemory = taskMemory;
-    supervisor.brief = buildSupervisorBrief({ taskMemory, session });
-    metadata.supervisor = supervisor;
-    return { metadata };
-  }
-
   async handleRuntimeEvent(event) {
     if (!NOTIFIABLE_EVENT_TYPES.has(event?.type)) {
       return;
@@ -123,6 +57,12 @@ export class AgentChannelOutboundDispatcher {
     }
 
     const session = this.runtimeSessionManager.getSession(event.sessionId);
+    syncTaskTerminalState({
+      session,
+      event,
+      store: this.taskStore
+    });
+
     for (const conversation of conversations) {
       const provider = this.registry.get(conversation.channel, conversation.accountId);
       if (!provider?.sendMessage) {
@@ -174,7 +114,7 @@ export class AgentChannelOutboundDispatcher {
 
         this.conversationStore.patch(
           conversation.id,
-          this.buildConversationSupervisorPatch({ conversation, session, event })
+          buildConversationSupervisorPatch({ conversation, session, event })
         );
       } catch (error) {
         this.deliveryStore.saveOutbound({

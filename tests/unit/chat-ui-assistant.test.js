@@ -6,6 +6,7 @@ import { join } from 'node:path';
 
 import { handleChatWithSource, handleConfirmAssistantToolAction } from '../../src/routes/chat-ui-route.js';
 import { createPendingAssistantAction } from '../../src/assistant/tool-executor.js';
+import { prepareAssistantRequest } from '../../src/assistant/assistant-chat-service.js';
 
 function mockRes() {
   return {
@@ -89,4 +90,49 @@ test('handleConfirmAssistantToolAction executes pending Claude proxy action agai
       process.env.CLAUDE_CONFIG_PATH = originalConfigPath;
     }
   }
+});
+
+test('handleChatWithSource returns saved preference confirmation for assistant session preference input', async () => {
+  const req = mockReq({
+    sourceId: 'unsupported:test',
+    model: 'gpt-5.2',
+    assistantMode: true,
+    sessionId: 'chat-session-pref-1',
+    uiLang: 'zh',
+    messages: [
+      { role: 'user', content: '记住：以后默认用中文，并且回答简洁一些。' }
+    ]
+  });
+  const res = mockRes();
+
+  await handleChatWithSource(req, res);
+
+  assert.equal(res._status, 200);
+  assert.equal(res._body.success, true);
+  assert.equal(res._body.assistant.intent, 'preference_saved');
+  assert.match(String(res._body.reply.content || ''), /Preference saved:/);
+  assert.equal(res._body.reply.usage, null);
+});
+
+test('prepareAssistantRequest applies remembered session preferences to later assistant requests', () => {
+  const sessionId = `chat-session-pref-${Date.now()}`;
+
+  const saved = prepareAssistantRequest({
+    uiLang: 'en',
+    sessionId,
+    messages: [{ role: 'user', content: 'Remember: always reply in Chinese and keep replies concise.' }]
+  });
+
+  assert.equal(saved.intent.type, 'preference_saved');
+
+  const prepared = prepareAssistantRequest({
+    uiLang: 'en',
+    sessionId,
+    messages: [{ role: 'user', content: 'How do I use Claude Code with a proxy?' }]
+  });
+
+  assert.equal(prepared.language, 'zh-CN');
+  assert.equal(prepared.preferences.response_style, 'concise');
+  assert.equal(prepared.intent.type, 'manual_qa');
+  assert.match(String(prepared.messages?.[0]?.content || ''), /回答保持简洁|Keep answers concise/i);
 });

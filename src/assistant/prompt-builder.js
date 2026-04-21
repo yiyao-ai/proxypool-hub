@@ -13,8 +13,24 @@ const ASSISTANT_SYSTEM_PROMPTS = {
   ].join(' ')
 };
 
-export function buildAssistantMessages(messages, { manualContext, language, intent } = {}) {
+export function buildAssistantMessages(messages, { manualContext, language, intent, preferences = {} } = {}) {
   const systemParts = [ASSISTANT_SYSTEM_PROMPTS[language] || ASSISTANT_SYSTEM_PROMPTS.en];
+
+  if (preferences.response_style === 'detailed') {
+    systemParts.push(
+      language === 'zh-CN'
+        ? '回答时可以更详细一些，但仍需保持准确，不要编造信息。'
+        : 'You may answer in more detail, but keep the response accurate and do not invent information.'
+    );
+  }
+
+  if (preferences.response_style === 'concise') {
+    systemParts.push(
+      language === 'zh-CN'
+        ? '回答保持简洁，优先直接给出结论。'
+        : 'Keep answers concise and prioritize direct conclusions.'
+    );
+  }
 
   if (intent?.type === 'manual_qa' || intent?.type === 'tool_request') {
     systemParts.push(

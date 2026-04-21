@@ -45,6 +45,8 @@ function buildRouterResultText(result) {
       return result?.message || `Approval ${result?.approval?.status || 'resolved'}.`;
     case 'question_answered':
       return 'Answer sent to the active task.';
+    case 'preference_saved':
+      return result?.message || 'Preference saved.';
     default:
       return '';
   }
@@ -221,8 +223,7 @@ export class DingTalkChannelProvider {
     if (typeof globalThis.WebSocket === 'function') {
       return new globalThis.WebSocket(url);
     }
-    const { default: WebSocket } = await import('ws');
-    return new WebSocket(url);
+    throw new Error('WebSocket is unavailable. Provide webSocketFactory or install a runtime with global WebSocket support.');
   }
 
   async openStreamConnection() {

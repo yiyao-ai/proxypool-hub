@@ -50,7 +50,7 @@ export class AgentChannelManager {
     this.outboundDispatcher = outboundDispatcher;
     if (this.outboundDispatcher) {
       this.outboundDispatcher.registry = {
-        get: (providerId, instanceId) => this.getInstance(providerId, instanceId) || this.registry.get(providerId)
+        get: (providerId, instanceId) => this.getInstance(providerId, instanceId)
       };
     }
     this.settingsProvider = settingsProvider;

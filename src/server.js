@@ -15,6 +15,7 @@ import { setRequestLoggingEnabled } from './request-logger.js';
 import { getServerSettings } from './server-settings.js';
 import { startModelDiscovery } from './model-discovery.js';
 import agentChannelManager from './agent-channels/manager.js';
+import chatUiRuntimeObserver from './chat-ui/runtime-observer.js';
 
 export function createServer({ port }) {
   ensureAccountsPersist();
@@ -89,6 +90,7 @@ export function createServer({ port }) {
   agentChannelManager.start().catch((error) => {
     console.error('[AgentChannel] Failed to start channel manager:', error.message);
   });
+  chatUiRuntimeObserver.start();
 
   // Global error handler — catches unhandled errors in route handlers
   app.use((err, req, res, _next) => {
@@ -106,6 +108,7 @@ export function startServer({ port }) {
   const server = app.listen(port);
   server.on('close', () => {
     agentChannelManager.stop().catch(() => {});
+    chatUiRuntimeObserver.stop();
   });
   return server;
 }

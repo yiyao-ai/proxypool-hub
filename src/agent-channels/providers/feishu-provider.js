@@ -38,6 +38,8 @@ function buildRouterResultText(result) {
       return result?.message || `Approval ${result?.approval?.status || 'resolved'}.`;
     case 'question_answered':
       return 'Answer sent to the active task.';
+    case 'preference_saved':
+      return result?.message || 'Preference saved.';
     default:
       return '';
   }

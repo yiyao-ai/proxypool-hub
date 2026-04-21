@@ -2151,63 +2151,85 @@ document.addEventListener('alpine:init', () => {
                     });
                 }
 
-                if (session.runtimePendingQuestion?.questionId && session.runtimeSessionId) {
-                    const { ok, data, error } = await this.api(`/api/agent-runtimes/sessions/${encodeURIComponent(session.runtimeSessionId)}/question`, {
-                        method: 'POST',
-                        body: JSON.stringify({
-                            questionId: session.runtimePendingQuestion.questionId,
-                            answer: input
-                        })
-                    });
-                    if (!ok) {
-                        throw new Error(data?.error || error || this.t('requestFailed'));
-                    }
+                const pendingQuestionId = session.runtimePendingQuestion?.questionId || null;
+                const { ok, data, error } = await this.api('/api/chat/agent-message', {
+                    method: 'POST',
+                    body: JSON.stringify({
+                        sessionId: session.id,
+                        input,
+                        provider: this.chatRuntimeProvider,
+                        model: this.chatModel.trim() || ''
+                    })
+                });
+                const result = data?.result;
+                if (!ok || !result) {
+                    throw new Error(data?.error || error || this.t('requestFailed'));
+                }
 
+                if (result.type === 'question_answered' && pendingQuestionId) {
                     this.updateAgentRuntimeMessage(
                         session.id,
-                        (message) => message.kind === 'agent-question' && message.questionId === session.runtimePendingQuestion?.questionId,
+                        (message) => message.kind === 'agent-question' && message.questionId === pendingQuestionId,
                         (message) => ({
                             ...message,
-                            questionStatus: data?.question?.status || 'answered'
+                            questionStatus: result?.question?.status || 'answered'
                         })
                     );
                     session.runtimePendingQuestion = null;
                     session.runtimeStatus = 'running';
-                } else if (!session.runtimeSessionId) {
-                    const { ok, data, error } = await this.api('/api/agent-runtimes/sessions', {
-                        method: 'POST',
-                        body: JSON.stringify({
-                            provider: this.chatRuntimeProvider,
-                            input,
-                            model: this.chatModel.trim() || '',
-                            metadata: {
-                                origin: 'chat-ui'
-                            }
-                        })
+                }
+
+                if (result.type === 'command_error' || result.type === 'supervisor_status' || result.type === 'preference_saved') {
+                    this.appendAgentRuntimeMessage(session.id, {
+                        kind: 'agent-status',
+                        content: result.message || this.t('requestFailed'),
+                        isError: result.type === 'command_error'
                     });
-                    if (!ok || !data?.session) {
-                        throw new Error(data?.error || error || this.t('requestFailed'));
+                    if (result.type === 'command_error') {
+                        this.showToast(result.message || this.t('requestFailed'), 'warning');
                     }
-                    session.runtimeSessionId = data.session.id;
-                    session.runtimeProvider = data.session.provider || this.chatRuntimeProvider;
-                    session.attachedRuntimeProvider = data.session.provider || this.chatRuntimeProvider;
-                    session.attachedRuntimeModel = data.session.model || (this.chatModel.trim() || '');
-                    session.runtimeStatus = data.session.status || 'running';
+                }
+
+                if (result.type === 'conversation_reset') {
+                    session.runtimeSessionId = null;
+                    session.runtimeStatus = 'ready';
+                    session.runtimePendingApprovals = [];
+                    session.runtimePendingQuestion = null;
+                    if (result.message) {
+                        this.appendAgentRuntimeMessage(session.id, {
+                            kind: 'agent-status',
+                            content: result.message,
+                            isError: false
+                        });
+                    }
+                }
+
+                if (result.type === 'approval_resolved' && session.runtimePendingApprovals.length > 0) {
+                    session.runtimePendingApprovals = [];
+                    session.runtimeStatus = session.runtimePendingQuestion ? 'waiting_user' : 'running';
+                    if (result.message) {
+                        this.appendAgentRuntimeMessage(session.id, {
+                            kind: 'agent-status',
+                            content: result.message,
+                            isError: false
+                        });
+                    }
+                }
+
+                if (result.session?.id) {
+                    session.runtimeSessionId = result.session.id;
+                    session.runtimeProvider = result.session.provider || this.chatRuntimeProvider;
+                    session.attachedRuntimeProvider = result.session.provider || this.chatRuntimeProvider;
+                    session.attachedRuntimeModel = result.session.model || (this.chatModel.trim() || '');
+                    session.runtimeStatus = result.session.status || 'running';
                     session.model = this.chatModel.trim() || session.model;
-                    this.connectAgentRuntimeStream(session);
-                } else {
-                    const { ok, data, error } = await this.api(`/api/agent-runtimes/sessions/${encodeURIComponent(session.runtimeSessionId)}/input`, {
-                        method: 'POST',
-                        body: JSON.stringify({
-                            input
-                        })
-                    });
-                    if (!ok || !data?.session) {
-                        throw new Error(data?.error || error || this.t('requestFailed'));
+                    if (result.message && (result.type === 'runtime_started' || result.type === 'runtime_continued')) {
+                        this.appendAgentRuntimeMessage(session.id, {
+                            kind: 'agent-status',
+                            content: result.message,
+                            isError: false
+                        });
                     }
-                    session.runtimeStatus = data.session.status || 'running';
-                    session.attachedRuntimeProvider = data.session.provider || session.attachedRuntimeProvider || session.runtimeProvider;
-                    session.attachedRuntimeModel = data.session.model || session.attachedRuntimeModel || session.model || '';
                     this.connectAgentRuntimeStream(session);
                 }
             } catch (error) {

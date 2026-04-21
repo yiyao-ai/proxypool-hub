@@ -13,6 +13,7 @@ import { resolveModel } from '../model-mapping.js';
 import { logger } from '../utils/logger.js';
 import { prepareAssistantRequest } from '../assistant/assistant-chat-service.js';
 import { createPendingAssistantAction, executePendingAssistantAction } from '../assistant/tool-executor.js';
+import chatUiConversationService from '../chat-ui/conversation-service.js';
 
 export async function handleListChatSources(_req, res) {
   const chatgptSources = listAccounts().accounts
@@ -64,7 +65,7 @@ export async function handleListChatSources(_req, res) {
 }
 
 export async function handleChatWithSource(req, res) {
-  const { sourceId, model, messages, temperature, assistantMode, uiLang } = req.body || {};
+  const { sourceId, model, messages, temperature, assistantMode, uiLang, sessionId } = req.body || {};
 
   if (!sourceId || typeof sourceId !== 'string') {
     return res.status(400).json({ success: false, error: 'sourceId is required' });
@@ -75,7 +76,9 @@ export async function handleChatWithSource(req, res) {
   }
 
   const requestedModel = typeof model === 'string' && model.trim() ? model.trim() : 'gpt-5.2';
-  const assistantRequest = assistantMode === true ? prepareAssistantRequest({ messages, uiLang }) : null;
+  const assistantRequest = assistantMode === true
+    ? prepareAssistantRequest({ messages, uiLang, sessionId })
+    : null;
   const outboundMessages = assistantRequest?.messages || messages;
   const citations = assistantRequest?.citations || [];
   const assistantMeta = assistantRequest
@@ -86,6 +89,26 @@ export async function handleChatWithSource(req, res) {
         citations
       }
     : null;
+
+  if (assistantMode === true && assistantRequest?.intent?.type === 'preference_saved') {
+    return res.json({
+      success: true,
+      source: {
+        id: sourceId,
+        kind: sourceId.split(':')[0],
+        label: sourceId
+      },
+      model: requestedModel,
+      assistant: assistantMeta,
+      reply: {
+        role: 'assistant',
+        content: assistantRequest.preferenceMessage,
+        model: requestedModel,
+        citations,
+        usage: null
+      }
+    });
+  }
 
   if (assistantMode === true && assistantRequest?.intent?.type === 'tool_request' && assistantRequest.intent.actionName) {
     const pendingAction = createPendingAssistantAction(assistantRequest.intent.actionName, {
@@ -268,7 +291,7 @@ export async function handleChatWithSource(req, res) {
 }
 
 export async function handleStreamChatWithSource(req, res) {
-  const { sourceId, model, messages, temperature, assistantMode, uiLang } = req.body || {};
+  const { sourceId, model, messages, temperature, assistantMode, uiLang, sessionId } = req.body || {};
 
   if (!sourceId || typeof sourceId !== 'string') {
     return res.status(400).json({ success: false, error: 'sourceId is required' });
@@ -279,7 +302,9 @@ export async function handleStreamChatWithSource(req, res) {
   }
 
   const requestedModel = typeof model === 'string' && model.trim() ? model.trim() : 'gpt-5.2';
-  const assistantRequest = assistantMode === true ? prepareAssistantRequest({ messages, uiLang }) : null;
+  const assistantRequest = assistantMode === true
+    ? prepareAssistantRequest({ messages, uiLang, sessionId })
+    : null;
   const outboundMessages = assistantRequest?.messages || messages;
   const citations = assistantRequest?.citations || [];
   const assistantMeta = assistantRequest
@@ -292,6 +317,27 @@ export async function handleStreamChatWithSource(req, res) {
     : null;
 
   prepareSseResponse(res);
+
+  if (assistantMode === true && assistantRequest?.intent?.type === 'preference_saved') {
+    writeSse(res, {
+      type: 'start',
+      source: { id: sourceId, kind: sourceId.split(':')[0], label: sourceId },
+      model: requestedModel,
+      assistant: assistantMeta
+    });
+    writeSse(res, {
+      type: 'delta',
+      text: assistantRequest.preferenceMessage
+    });
+    writeSse(res, {
+      type: 'done',
+      model: requestedModel,
+      mappedModel: null,
+      usage: null,
+      citations
+    });
+    return res.end();
+  }
 
   if (assistantMode === true && assistantRequest?.intent?.type === 'tool_request' && assistantRequest.intent.actionName) {
     const pendingAction = createPendingAssistantAction(assistantRequest.intent.actionName, {
@@ -704,6 +750,52 @@ export async function handleConfirmAssistantToolAction(req, res) {
   }
 
   return res.json(result);
+}
+
+export async function handleRouteChatAgentMessage(req, res) {
+  try {
+    const {
+      sessionId,
+      input,
+      provider,
+      cwd,
+      model
+    } = req.body || {};
+
+    if (!sessionId || typeof sessionId !== 'string') {
+      return res.status(400).json({ success: false, error: 'sessionId is required' });
+    }
+
+    if (!input || typeof input !== 'string' || !input.trim()) {
+      return res.status(400).json({ success: false, error: 'input is required' });
+    }
+
+    const result = await chatUiConversationService.routeMessage({
+      sessionId,
+      text: input,
+      defaultRuntimeProvider: String(provider || 'codex'),
+      cwd: String(cwd || ''),
+      model: String(model || ''),
+      metadata: {
+        ui: {
+          origin: 'chat-ui'
+        }
+      }
+    });
+
+    return res.json({
+      success: true,
+      result
+    });
+  } catch (error) {
+    const status = /required|not found|unsupported|usage/i.test(String(error.message || ''))
+      ? 400
+      : 500;
+    return res.status(status).json({
+      success: false,
+      error: error.message
+    });
+  }
 }
 
 async function streamAnthropicResponse(response, res, options) {

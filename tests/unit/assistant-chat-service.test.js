@@ -73,3 +73,27 @@ test('prepareAssistantRequest injects manual context for manual questions', () =
   assert.match(prepared.messages[0].content, /产品使用说明书/);
   assert.ok(prepared.citations.length > 0);
 });
+
+test('prepareAssistantRequest applies remembered scoped preferences to later general chat', () => {
+  const sessionId = `assistant-pref-${Date.now()}`;
+
+  const saved = prepareAssistantRequest({
+    uiLang: 'en',
+    sessionId,
+    messages: [{ role: 'user', content: 'Remember: always reply in Chinese and keep replies concise.' }]
+  });
+
+  assert.equal(saved.intent.type, 'preference_saved');
+
+  const prepared = prepareAssistantRequest({
+    uiLang: 'en',
+    sessionId,
+    messages: [{ role: 'user', content: 'Summarize the current features.' }]
+  });
+
+  assert.equal(prepared.intent.type, 'general');
+  assert.equal(prepared.language, 'zh-CN');
+  assert.equal(prepared.preferences.response_style, 'concise');
+  assert.equal(prepared.messages[0].role, 'system');
+  assert.match(String(prepared.messages[0].content || ''), /回答保持简洁|Keep answers concise/i);
+});

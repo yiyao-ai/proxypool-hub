@@ -12,6 +12,7 @@ import { AgentRuntimeRegistry } from '../../src/agent-runtime/registry.js';
 import { AgentRuntimeSessionManager } from '../../src/agent-runtime/session-manager.js';
 import AgentRuntimeSessionStore from '../../src/agent-runtime/session-store.js';
 import { AgentOrchestratorMessageService } from '../../src/agent-orchestrator/message-service.js';
+import { AgentPreferenceStore } from '../../src/agent-core/preference-store.js';
 import { AgentChannelConversationStore } from '../../src/agent-channels/conversation-store.js';
 import { AgentChannelDeliveryStore } from '../../src/agent-channels/delivery-store.js';
 import { AgentChannelPairingStore } from '../../src/agent-channels/pairing-store.js';
@@ -1010,6 +1011,69 @@ test('AgentOrchestratorMessageService prefers remembered provider for related fr
   assert.equal(response.startedFresh, true);
 });
 
+test('AgentOrchestratorMessageService stores explicit conversation preferences from natural language', async () => {
+  const runtimeSessionManager = createHybridRuntimeManager();
+  const preferenceStore = new AgentPreferenceStore({
+    configDir: createTempDir('cligate-agent-preference-store-')
+  });
+  const service = new AgentOrchestratorMessageService({ runtimeSessionManager, preferenceStore });
+
+  const response = await service.routeUserMessage({
+    message: { text: '记住：以后默认中文回复，优先用 Claude Code，并且尽量最小改动' },
+    conversation: {
+      id: 'conv_pref_1',
+      metadata: {}
+    },
+    defaultRuntimeProvider: 'codex'
+  });
+
+  assert.equal(response.type, 'preference_saved');
+  assert.match(String(response.message || ''), /Preference saved/i);
+  assert.equal(preferenceStore.getPreference({
+    scope: 'conversation',
+    scopeRef: 'conv_pref_1',
+    key: 'reply_language'
+  })?.value, 'zh-CN');
+  assert.equal(preferenceStore.getPreference({
+    scope: 'conversation',
+    scopeRef: 'conv_pref_1',
+    key: 'preferred_runtime_provider'
+  })?.value, 'claude-code');
+  assert.equal(preferenceStore.getPreference({
+    scope: 'conversation',
+    scopeRef: 'conv_pref_1',
+    key: 'execution_style'
+  })?.value, 'minimal-change');
+});
+
+test('AgentOrchestratorMessageService prefers conversation-saved provider for new tasks', async () => {
+  const runtimeSessionManager = createHybridRuntimeManager();
+  const preferenceStore = new AgentPreferenceStore({
+    configDir: createTempDir('cligate-agent-preference-provider-')
+  });
+  preferenceStore.upsertPreference({
+    scope: 'conversation',
+    scopeRef: 'conv_pref_2',
+    key: 'preferred_runtime_provider',
+    value: 'claude-code',
+    metadata: { source: 'test' }
+  });
+
+  const service = new AgentOrchestratorMessageService({ runtimeSessionManager, preferenceStore });
+  const response = await service.routeUserMessage({
+    message: { text: '帮我检查一下这个仓库的登录流程' },
+    conversation: {
+      id: 'conv_pref_2',
+      metadata: {}
+    },
+    defaultRuntimeProvider: 'codex'
+  });
+
+  assert.equal(response.type, 'runtime_started');
+  assert.equal(response.provider, 'claude-code');
+  assert.equal(response.session.provider, 'claude-code');
+});
+
 test('AgentChannelRouter writes remembered follow-up context into current task memory', async () => {
   const runtimeSessionManager = createHybridRuntimeManager();
   const conversationStore = new AgentChannelConversationStore({
@@ -1434,6 +1498,24 @@ test('AgentChannelManager starts enabled telegram provider from settings', async
   assert.equal(providers[0].status.running, true);
 });
 
+test('AgentChannelManager outbound registry does not fall back to template provider when instance is missing', async () => {
+  const manager = new AgentChannelManager({
+    registry: {
+      list: () => [],
+      get: () => ({
+        id: 'telegram',
+        sendMessage: async () => ({ messageId: 'template-message' })
+      })
+    },
+    router: {},
+    outboundDispatcher: { start() {}, stop() {} },
+    settingsProvider: () => ({ channels: {} }),
+    settingsWriter: (patch) => ({ channels: patch.channels })
+  });
+
+  assert.equal(manager.outboundDispatcher.registry.get('telegram', 'default'), null);
+});
+
 test('FeishuChannelProvider normalizes challenge and text events', () => {
   const provider = new FeishuChannelProvider({
     fetchImpl: async () => ({ ok: true, json: async () => ({ code: 0, data: {} }) })
@@ -1688,6 +1770,32 @@ test('DingTalkChannelProvider starts stream mode and routes callback frames', as
   assert.equal(sentFrames.length, 1);
   assert.equal(sentFrames[0].code, 200);
   assert.equal(sentFrames[0].headers.messageId, 'stream_msg_1');
+});
+
+test('DingTalkChannelProvider fails clearly when stream mode has no WebSocket implementation', async () => {
+  const provider = new DingTalkChannelProvider({
+    fetchImpl: async () => ({
+      ok: true,
+      json: async () => ({
+        endpoint: 'wss://example.invalid/gateway',
+        ticket: 'ticket_123'
+      })
+    })
+  });
+
+  await assert.rejects(
+    () => provider.start({
+      settings: {
+        enabled: true,
+        mode: 'stream',
+        clientId: 'client_id',
+        clientSecret: 'client_secret'
+      },
+      router: { routeInboundMessage: async () => ({ type: 'duplicate' }) },
+      logger: console
+    }),
+    /WebSocket is unavailable/i
+  );
 });
 
 test('DingTalkChannelProvider falls back to app API when session webhook is unavailable', async () => {

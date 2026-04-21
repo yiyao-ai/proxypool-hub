@@ -31,7 +31,13 @@ import { handleGetConfigFile } from './config-files-route.js';
 import { handleListResources, handleGetResourceSummary, handleGetResourceById } from './resources-route.js';
 import { handleGetRequestLogs, handleGetLogDates, handleGetLogSettings, handleUpdateLogSettings } from './request-logs-route.js';
 import { handleGetToolsStatus, handleGetNodeInfo, handleInstallTool, handleInstallNode, handleLaunchTool, handleCheckUpdates, handleUpdateTool } from './tools-route.js';
-import { handleListChatSources, handleChatWithSource, handleStreamChatWithSource, handleConfirmAssistantToolAction } from './chat-ui-route.js';
+import {
+  handleListChatSources,
+  handleChatWithSource,
+  handleStreamChatWithSource,
+  handleConfirmAssistantToolAction,
+  handleRouteChatAgentMessage
+} from './chat-ui-route.js';
 import { handleGetRuntimeCredentials, handleGetRoutingDecisions, handleGetRoutingPreview, handleGetLocalRoutingStatus } from './runtime-route.js';
 import { handleGetLocalRuntimeStatus, handleSetLocalRuntimeEnabled, handleUpdateLocalRuntime, handleCheckLocalRuntime, handleRefreshLocalRuntimeModels } from './local-runtimes-route.js';
 import {
@@ -358,6 +364,7 @@ export function registerApiRoutes(app, { port }) {
   app.get('/api/chat/sources', handleListChatSources);
   app.post('/api/chat/complete', handleChatWithSource);
   app.post('/api/chat/stream', handleStreamChatWithSource);
+  app.post('/api/chat/agent-message', handleRouteChatAgentMessage);
   app.post('/api/chat/tool-confirm', handleConfirmAssistantToolAction);
 }
 
