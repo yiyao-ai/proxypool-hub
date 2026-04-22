@@ -4,16 +4,21 @@ import { syncTaskFromRuntimeResult } from '../agent-core/task-service.js';
 import { buildSupervisorBrief } from '../agent-orchestrator/supervisor-brief.js';
 import { CHANNEL_CONVERSATION_MODE } from '../agent-channels/models.js';
 import chatUiConversationStore from './conversation-store.js';
+import AssistantModeService from '../assistant-core/mode-service.js';
 
 export class ChatUiConversationService {
   constructor({
     conversationStore = chatUiConversationStore,
     messageService = agentOrchestratorMessageService,
-    taskStore = agentTaskStore
+    taskStore = agentTaskStore,
+    assistantModeService = null
   } = {}) {
     this.conversationStore = conversationStore;
     this.messageService = messageService;
     this.taskStore = taskStore;
+    this.assistantModeService = assistantModeService || new AssistantModeService({
+      conversationStore: this.conversationStore
+    });
   }
 
   getConversation(sessionId, metadata = {}) {
@@ -29,6 +34,18 @@ export class ChatUiConversationService {
     metadata = {}
   } = {}) {
     const conversation = this.getConversation(sessionId, metadata);
+    const assistantResult = await this.assistantModeService.maybeHandleMessage({
+      conversation,
+      text
+    });
+    if (assistantResult) {
+      return {
+        ...assistantResult,
+        previousSessionId: conversation.activeRuntimeSessionId || null,
+        conversation: assistantResult.conversation || this.conversationStore.get(conversation.id)
+      };
+    }
+
     const previousSessionId = conversation.activeRuntimeSessionId || null;
     const result = await this.messageService.routeUserMessage({
       message: { text },
@@ -58,6 +75,9 @@ export class ChatUiConversationService {
       const supervisorContext = (result?.supervisorContext && typeof result.supervisorContext === 'object')
         ? result.supervisorContext
         : {};
+      const pendingApproval = this.messageService.listPendingApprovals(result.session.id)[0] || null;
+      const pendingQuestion = this.messageService.listPendingQuestions(result.session.id)
+        .find((entry) => entry.status === 'pending') || null;
       const taskMemory = {
         ...((conversation.metadata?.supervisor?.taskMemory && typeof conversation.metadata.supervisor.taskMemory === 'object')
           ? conversation.metadata.supervisor.taskMemory
@@ -66,7 +86,9 @@ export class ChatUiConversationService {
           sessionId: result.session.id,
           provider: result.session.provider,
           title: supervisorContext.title || result.session.title || text || '',
-          status: 'starting',
+          status: pendingQuestion
+            ? 'waiting_user'
+            : (pendingApproval ? 'waiting_approval' : (result.session.status || 'starting')),
           startedAt: result.session.createdAt || new Date().toISOString(),
           lastUpdateAt: result.session.updatedAt || new Date().toISOString(),
           summary: String(supervisorContext.summary || '').trim(),
@@ -74,12 +96,16 @@ export class ChatUiConversationService {
           originKind: String(supervisorContext.kind || '').trim() || 'direct',
           sourceTitle: String(supervisorContext.sourceTitle || '').trim(),
           sourceProvider: String(supervisorContext.sourceProvider || '').trim(),
-          sourceStatus: String(supervisorContext.sourceStatus || '').trim()
+          sourceStatus: String(supervisorContext.sourceStatus || '').trim(),
+          pendingApprovalTitle: String(pendingApproval?.title || '').trim(),
+          pendingQuestion: String(pendingQuestion?.text || '').trim()
         }
       };
 
       this.conversationStore.bindRuntimeSession(conversation.id, result.session.id, {
         mode: CHANNEL_CONVERSATION_MODE.AGENT_RUNTIME,
+        lastPendingApprovalId: pendingApproval?.approvalId || null,
+        lastPendingQuestionId: pendingQuestion?.questionId || null,
         metadata: {
           ...(conversation.metadata || {}),
           supervisor: {

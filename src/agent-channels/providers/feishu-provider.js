@@ -42,6 +42,10 @@ function buildRouterResultText(result) {
       return 'Answer sent to the active task.';
     case 'preference_saved':
       return result?.message || 'Preference saved.';
+    case 'assistant_mode_entered':
+    case 'assistant_mode_exited':
+    case 'assistant_response':
+      return result?.message || '';
     default:
       return '';
   }

@@ -1292,6 +1292,101 @@ test('AgentOrchestratorMessageService starts the preferred provider for retry ph
   assert.equal(response.provider, 'claude-code');
 });
 
+test('AgentChannelRouter supports /cligate mode switching and one-shot assistant replies', async () => {
+  const runtimeSessionManager = createHybridRuntimeManager();
+  const conversationStore = new AgentChannelConversationStore({
+    configDir: createTempDir('cligate-agent-channels-assistant-conv-')
+  });
+  const deliveryStore = new AgentChannelDeliveryStore({
+    configDir: createTempDir('cligate-agent-channels-assistant-delivery-')
+  });
+  const pairingStore = new AgentChannelPairingStore({
+    configDir: createTempDir('cligate-agent-channels-assistant-pairing-')
+  });
+  const router = new AgentChannelRouter({
+    conversationStore,
+    deliveryStore,
+    pairingStore,
+    messageService: new AgentOrchestratorMessageService({ runtimeSessionManager })
+  });
+
+  const entered = await router.routeInboundMessage({
+    channel: 'telegram',
+    accountId: 'default',
+    externalConversationId: 'assistant-chat-1',
+    externalUserId: 'user-1',
+    externalUserName: 'tester',
+    externalMessageId: 'msg-enter',
+    text: '/cligate',
+    messageType: 'text'
+  });
+  assert.equal(entered.type, 'assistant_mode_entered');
+  assert.equal(entered.conversation.metadata?.assistantCore?.mode, 'assistant');
+
+  const replied = await router.routeInboundMessage({
+    channel: 'telegram',
+    accountId: 'default',
+    externalConversationId: 'assistant-chat-1',
+    externalUserId: 'user-1',
+    externalUserName: 'tester',
+    externalMessageId: 'msg-status',
+    text: 'status',
+    messageType: 'text'
+  });
+  assert.equal(replied.type, 'assistant_response');
+  assert.match(String(replied.message || ''), /runtime|conversation|Current|当前/i);
+
+  const exited = await router.routeInboundMessage({
+    channel: 'telegram',
+    accountId: 'default',
+    externalConversationId: 'assistant-chat-1',
+    externalUserId: 'user-1',
+    externalUserName: 'tester',
+    externalMessageId: 'msg-exit',
+    text: '/runtime',
+    messageType: 'text'
+  });
+  assert.equal(exited.type, 'assistant_mode_exited');
+  assert.equal(exited.conversation.metadata?.assistantCore?.mode, 'direct-runtime');
+});
+
+test('AgentChannelRouter runs Phase 4 assistant tool flow to start a runtime task', async () => {
+  const runtimeSessionManager = createHybridRuntimeManager();
+  const conversationStore = new AgentChannelConversationStore({
+    configDir: createTempDir('cligate-agent-channels-assistant-runner-conv-')
+  });
+  const deliveryStore = new AgentChannelDeliveryStore({
+    configDir: createTempDir('cligate-agent-channels-assistant-runner-delivery-')
+  });
+  const pairingStore = new AgentChannelPairingStore({
+    configDir: createTempDir('cligate-agent-channels-assistant-runner-pairing-')
+  });
+  const router = new AgentChannelRouter({
+    conversationStore,
+    deliveryStore,
+    pairingStore,
+    messageService: new AgentOrchestratorMessageService({ runtimeSessionManager })
+  });
+
+  const result = await router.routeInboundMessage({
+    channel: 'telegram',
+    accountId: 'default',
+    externalConversationId: 'assistant-runner-chat-1',
+    externalUserId: 'user-1',
+    externalUserName: 'tester',
+    externalMessageId: 'msg-start',
+    text: '/cligate start codex inspect repo',
+    messageType: 'text'
+  }, {
+    defaultRuntimeProvider: 'claude-code'
+  });
+
+  assert.equal(result.type, 'assistant_response');
+  assert.ok(result.assistantRun?.id);
+  assert.equal(result.assistantRun.steps[0]?.toolName, 'start_runtime_task');
+  assert.equal(result.assistantRun.relatedRuntimeSessionIds.length, 1);
+});
+
 test('AgentOrchestratorMessageService starts the default remembered provider for return phrasing without special interception', async () => {
   const runtimeSessionManager = createHybridRuntimeManager();
   const service = new AgentOrchestratorMessageService({ runtimeSessionManager });

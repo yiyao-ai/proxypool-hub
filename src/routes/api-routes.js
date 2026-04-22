@@ -52,6 +52,13 @@ import {
   handleStreamAgentRuntimeSession
 } from './agent-runtimes-route.js';
 import {
+  handleGetAssistantWorkspaceContext,
+  handleListAssistantRuntimeSessions,
+  handleGetAssistantRuntimeSession,
+  handleListAssistantConversations,
+  handleGetAssistantConversationContext
+} from './assistant-observation-route.js';
+import {
   handleListAgentChannelProviders,
   handleGetAgentChannelCatalog,
   handleGetAgentChannelSettings,
@@ -327,6 +334,13 @@ export function registerApiRoutes(app, { port }) {
   app.post('/api/agent-runtimes/sessions/:id/approval', handleResolveAgentRuntimeApproval);
   app.post('/api/agent-runtimes/sessions/:id/question', handleAnswerAgentRuntimeQuestion);
   app.post('/api/agent-runtimes/sessions/:id/cancel', handleCancelAgentRuntimeSession);
+
+  // ─── Assistant Observation ───────────────────────────────────────────────
+  app.get('/api/assistant/workspace-context', handleGetAssistantWorkspaceContext);
+  app.get('/api/assistant/runtime-sessions', handleListAssistantRuntimeSessions);
+  app.get('/api/assistant/runtime-sessions/:id', handleGetAssistantRuntimeSession);
+  app.get('/api/assistant/conversations', handleListAssistantConversations);
+  app.get('/api/assistant/conversations/:id', handleGetAssistantConversationContext);
 
   // ─── Agent Channel Gateway ──────────────────────────────────────────────
   app.get('/api/agent-channels/providers', handleListAgentChannelProviders);

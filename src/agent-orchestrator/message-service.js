@@ -141,6 +141,30 @@ function buildSupervisorStatusResponse(conversation, session = null) {
   };
 }
 
+function shouldStartFreshFromRememberedContext(brief = null) {
+  if (!brief || typeof brief !== 'object') return false;
+  return ['last_completed', 'last_failed'].includes(String(brief.kind || ''));
+}
+
+function buildRememberedContextMessage(brief = null) {
+  const sourceTitle = String(brief?.title || '').trim();
+  if (!sourceTitle) {
+    return 'Started a fresh task using remembered conversation context.';
+  }
+  return `Started a fresh task using remembered conversation context from "${sourceTitle}".`;
+}
+
+function buildRememberedSupervisorContext(brief = null) {
+  return {
+    kind: 'direct',
+    title: '',
+    summary: '',
+    sourceTitle: String(brief?.title || '').trim(),
+    sourceProvider: String(brief?.provider || '').trim(),
+    sourceStatus: String(brief?.status || '').trim()
+  };
+}
+
 function buildBusyResponse(session, conversation = null) {
   const current = session || {};
   const brief = getSupervisorBrief(conversation, session);
@@ -286,7 +310,8 @@ export class AgentOrchestratorMessageService {
       conversation,
       activeSession,
       rememberedBrief: supervisorBrief,
-      defaultRuntimeProvider: getPreferredConversationProvider(conversation, activeSession, defaultRuntimeProvider)
+      defaultRuntimeProvider: getPreferredConversationProvider(conversation, activeSession, defaultRuntimeProvider),
+      preferenceStore: this.preferenceStore
     });
 
     if (!parsed?.command && !activeSessionId && conversation?.id && isPreferenceMemoryIntent(text)) {
@@ -533,6 +558,17 @@ export class AgentOrchestratorMessageService {
       model,
       metadata
     });
+
+    if (shouldStartFreshFromRememberedContext(supervisorBrief)) {
+      return {
+        type: 'runtime_started',
+        provider: preferredProvider,
+        session,
+        startedFresh: true,
+        message: buildRememberedContextMessage(supervisorBrief),
+        supervisorContext: buildRememberedSupervisorContext(supervisorBrief)
+      };
+    }
 
     return {
       type: 'runtime_started',

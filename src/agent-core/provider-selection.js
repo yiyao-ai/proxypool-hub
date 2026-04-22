@@ -4,13 +4,16 @@ export function selectRuntimeProvider({
   conversation = null,
   activeSession = null,
   rememberedBrief = null,
-  defaultRuntimeProvider = 'codex'
+  defaultRuntimeProvider = 'codex',
+  preferenceStore
 } = {}) {
   if (activeSession?.provider) {
     return String(activeSession.provider);
   }
 
-  const preferences = resolveConversationPreferences(conversation);
+  const preferences = resolveConversationPreferences(conversation, {
+    store: preferenceStore
+  });
   if (preferences.preferred_runtime_provider) {
     return String(preferences.preferred_runtime_provider);
   }

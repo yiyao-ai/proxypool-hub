@@ -6,8 +6,13 @@ export class AgentRuntimeApprovalService {
   }
 
   createApproval({ sessionId, provider, kind = 'tool_permission', title, summary, rawRequest = null }) {
+    const rawApprovalId = rawRequest?.approval_request_id
+      || rawRequest?.approvalRequestId
+      || rawRequest?.request_id
+      || rawRequest?.requestId
+      || rawRequest?.id;
     const approval = {
-      approvalId: crypto.randomUUID(),
+      approvalId: String(rawApprovalId || crypto.randomUUID()),
       sessionId,
       provider,
       status: 'pending',

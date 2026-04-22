@@ -2179,7 +2179,14 @@ document.addEventListener('alpine:init', () => {
                     session.runtimeStatus = 'running';
                 }
 
-                if (result.type === 'command_error' || result.type === 'supervisor_status' || result.type === 'preference_saved') {
+                if (
+                    result.type === 'command_error'
+                    || result.type === 'supervisor_status'
+                    || result.type === 'preference_saved'
+                    || result.type === 'assistant_mode_entered'
+                    || result.type === 'assistant_mode_exited'
+                    || result.type === 'assistant_response'
+                ) {
                     this.appendAgentRuntimeMessage(session.id, {
                         kind: 'agent-status',
                         content: result.message || this.t('requestFailed'),

@@ -5,6 +5,11 @@ export const CHANNEL_CONVERSATION_MODE = Object.freeze({
   AGENT_RUNTIME: 'agent-runtime'
 });
 
+export const CONVERSATION_ASSISTANT_CONTROL_MODE = Object.freeze({
+  DIRECT_RUNTIME: 'direct-runtime',
+  ASSISTANT: 'assistant'
+});
+
 export const CHANNEL_DELIVERY_STATUS = Object.freeze({
   SENT: 'sent',
   FAILED: 'failed'
@@ -43,7 +48,15 @@ export function createChannelConversation({
     lastPendingApprovalId: null,
     lastPendingQuestionId: null,
     title: String(title || `${externalUserId || 'unknown'} / ${channel || 'channel'}`),
-    metadata,
+    metadata: {
+      assistantCore: {
+        mode: CONVERSATION_ASSISTANT_CONTROL_MODE.DIRECT_RUNTIME,
+        assistantSessionId: null,
+        lastRunId: null,
+        updatedAt: now
+      },
+      ...(metadata && typeof metadata === 'object' ? metadata : {})
+    },
     createdAt: now,
     updatedAt: now
   };

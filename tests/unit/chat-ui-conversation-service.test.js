@@ -228,3 +228,125 @@ test('ChatUiRuntimeObserver writes runtime approval and completion state back in
     observer.stop();
   }
 });
+
+test('ChatUiConversationService enters assistant mode on /cligate and exits on /runtime', async () => {
+  const runtimeSessionManager = createHybridRuntimeManager();
+  const conversationStore = new ChatUiConversationStore({
+    configDir: createTempDir('cligate-chat-ui-conv-assistant-mode-')
+  });
+  const taskStore = new AgentTaskStore({
+    configDir: createTempDir('cligate-chat-ui-task-assistant-mode-')
+  });
+  const service = new ChatUiConversationService({
+    conversationStore,
+    messageService: new AgentOrchestratorMessageService({ runtimeSessionManager }),
+    taskStore
+  });
+
+  const entered = await service.routeMessage({
+    sessionId: 'chat-ui-assistant-mode-1',
+    text: '/cligate'
+  });
+
+  assert.equal(entered.type, 'assistant_mode_entered');
+  assert.equal(entered.conversation.metadata?.assistantCore?.mode, 'assistant');
+  assert.ok(entered.assistantSession?.id);
+
+  const exited = await service.routeMessage({
+    sessionId: 'chat-ui-assistant-mode-1',
+    text: '/runtime'
+  });
+
+  assert.equal(exited.type, 'assistant_mode_exited');
+  assert.equal(exited.conversation.metadata?.assistantCore?.mode, 'direct-runtime');
+});
+
+test('ChatUiConversationService handles one-shot /cligate requests without starting a runtime session', async () => {
+  const runtimeSessionManager = createHybridRuntimeManager();
+  const conversationStore = new ChatUiConversationStore({
+    configDir: createTempDir('cligate-chat-ui-conv-assistant-oneshot-')
+  });
+  const taskStore = new AgentTaskStore({
+    configDir: createTempDir('cligate-chat-ui-task-assistant-oneshot-')
+  });
+  const service = new ChatUiConversationService({
+    conversationStore,
+    messageService: new AgentOrchestratorMessageService({ runtimeSessionManager }),
+    taskStore
+  });
+
+  const result = await service.routeMessage({
+    sessionId: 'chat-ui-assistant-oneshot-1',
+    text: '/cligate status'
+  });
+
+  assert.equal(result.type, 'assistant_response');
+  assert.match(String(result.message || ''), /runtime|conversation|当前/i);
+  assert.equal(result.session, undefined);
+  assert.equal(result.conversation.activeRuntimeSessionId, null);
+  assert.equal(result.conversation.metadata?.assistantCore?.mode, 'direct-runtime');
+  assert.ok(result.assistantRun?.id);
+});
+
+test('ChatUiConversationService returns to direct runtime handling after /runtime', async () => {
+  const runtimeSessionManager = createHybridRuntimeManager();
+  const conversationStore = new ChatUiConversationStore({
+    configDir: createTempDir('cligate-chat-ui-conv-assistant-return-')
+  });
+  const taskStore = new AgentTaskStore({
+    configDir: createTempDir('cligate-chat-ui-task-assistant-return-')
+  });
+  const service = new ChatUiConversationService({
+    conversationStore,
+    messageService: new AgentOrchestratorMessageService({ runtimeSessionManager }),
+    taskStore
+  });
+
+  await service.routeMessage({
+    sessionId: 'chat-ui-assistant-return-1',
+    text: '/cligate'
+  });
+
+  await service.routeMessage({
+    sessionId: 'chat-ui-assistant-return-1',
+    text: '/runtime'
+  });
+
+  const runtimeResult = await service.routeMessage({
+    sessionId: 'chat-ui-assistant-return-1',
+    text: '帮我检查一下这个仓库的登录流程',
+    defaultRuntimeProvider: 'codex'
+  });
+
+  assert.equal(runtimeResult.type, 'runtime_started');
+  assert.equal(runtimeResult.session.provider, 'codex');
+});
+
+test('ChatUiConversationService runs Phase 4 assistant tool flow to start a runtime task', async () => {
+  const runtimeSessionManager = createHybridRuntimeManager();
+  const conversationStore = new ChatUiConversationStore({
+    configDir: createTempDir('cligate-chat-ui-conv-assistant-runner-')
+  });
+  const taskStore = new AgentTaskStore({
+    configDir: createTempDir('cligate-chat-ui-task-assistant-runner-')
+  });
+  const service = new ChatUiConversationService({
+    conversationStore,
+    messageService: new AgentOrchestratorMessageService({ runtimeSessionManager }),
+    taskStore
+  });
+
+  const result = await service.routeMessage({
+    sessionId: 'chat-ui-assistant-runner-1',
+    text: '/cligate start codex inspect repo',
+    defaultRuntimeProvider: 'claude-code'
+  });
+
+  assert.equal(result.type, 'assistant_response');
+  assert.match(String(result.message || ''), /Started a new task|已通过 assistant tool 发起新任务/i);
+  assert.ok(result.assistantRun?.id);
+  assert.equal(result.assistantRun.status, 'completed');
+  assert.ok(Array.isArray(result.assistantRun.steps));
+  assert.equal(result.assistantRun.steps[0]?.toolName, 'start_runtime_task');
+  assert.equal(result.assistantRun.relatedRuntimeSessionIds.length, 1);
+});
