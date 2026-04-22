@@ -4,8 +4,9 @@ import agentPreferenceStore from '../agent-core/preference-store.js';
 import { buildPreferenceSavedMessage, saveConversationPreferences } from '../agent-core/preference-service.js';
 import { selectRuntimeProvider } from '../agent-core/provider-selection.js';
 import { AGENT_SESSION_STATUS } from '../agent-runtime/models.js';
-import { buildApprovalSessionPolicy } from '../agent-runtime/approval-policy.js';
 import { buildSupervisorBrief } from './supervisor-brief.js';
+import { AssistantMemoryService } from '../assistant-core/memory-service.js';
+import { AssistantPolicyService } from '../assistant-core/policy-service.js';
 
 function withDefaultRuntimeOptions(provider, metadata = {}) {
   const next = { ...(metadata || {}) };
@@ -231,11 +232,23 @@ export class AgentOrchestratorMessageService {
   constructor({
     runtimeSessionManager = agentRuntimeSessionManager,
     approvalPolicyStore = agentRuntimeApprovalPolicyStore,
-    preferenceStore = agentPreferenceStore
+    preferenceStore = agentPreferenceStore,
+    memoryService = null,
+    policyService = null
   } = {}) {
     this.runtimeSessionManager = runtimeSessionManager;
     this.approvalPolicyStore = approvalPolicyStore;
     this.preferenceStore = preferenceStore;
+    this.memoryService = memoryService instanceof AssistantMemoryService
+      ? memoryService
+      : new AssistantMemoryService({
+          preferenceStore: this.preferenceStore
+        });
+    this.policyService = policyService instanceof AssistantPolicyService
+      ? policyService
+      : new AssistantPolicyService({
+          approvalPolicyStore: this.approvalPolicyStore
+        });
   }
 
   async startRuntimeTask({ provider, input, cwd, model = '', metadata = {} } = {}) {
@@ -312,13 +325,24 @@ export class AgentOrchestratorMessageService {
       rememberedBrief: supervisorBrief,
       defaultRuntimeProvider: getPreferredConversationProvider(conversation, activeSession, defaultRuntimeProvider),
       preferenceStore: this.preferenceStore
+      ,
+      memoryService: this.memoryService,
+      cwd,
+      metadata
     });
 
     if (!parsed?.command && !activeSessionId && conversation?.id && isPreferenceMemoryIntent(text)) {
-      const savedPreferences = saveConversationPreferences(conversation, text, {
+      const savedPreferences = this.memoryService.savePreferencesFromText({
+        conversation,
+        runtimeSession: activeSession,
+        text,
+        cwd,
+        metadata
+      }, {
         store: this.preferenceStore
       });
-      const savedMessage = buildPreferenceSavedMessage(savedPreferences);
+      const savedMessage = this.memoryService.buildSavedMessage(savedPreferences)
+        || buildPreferenceSavedMessage(savedPreferences);
       if (savedMessage) {
         return {
           type: 'preference_saved',
@@ -333,22 +357,15 @@ export class AgentOrchestratorMessageService {
         if (isApprovalAffirmative(text) || isApprovalNegative(text)) {
           let policy = null;
           if (isApprovalAffirmative(text) && wantsRememberedApproval(text)) {
-            const policyDraft = buildApprovalSessionPolicy(approval);
-            if (policyDraft) {
-              const scope = wantsConversationRememberedApproval(text) && conversation?.id
-                ? 'conversation'
-                : 'session';
-              const scopeRef = scope === 'conversation' ? conversation.id : activeSessionId;
-              policy = this.approvalPolicyStore.createPolicy({
-                ...policyDraft,
-                scope,
-                scopeRef,
-                metadata: {
-                  ...(policyDraft.metadata || {}),
-                  sourceText: text
-                }
-              });
-            }
+            const scope = wantsConversationRememberedApproval(text) && conversation?.id
+              ? 'conversation'
+              : 'runtime_session';
+            const scopeRef = scope === 'conversation' ? conversation.id : activeSessionId;
+            policy = this.policyService.rememberApproval({
+              approval,
+              scope,
+              scopeRef
+            });
           }
 
           const resolved = await this.resolveApproval({

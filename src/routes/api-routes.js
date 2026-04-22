@@ -44,6 +44,7 @@ import {
   handleListAgentRuntimeProviders,
   handleListAgentRuntimeSessions,
   handleGetAgentRuntimeSession,
+  handleGetAgentRuntimeTurn,
   handleCreateAgentRuntimeSession,
   handleSendAgentRuntimeInput,
   handleResolveAgentRuntimeApproval,
@@ -55,9 +56,22 @@ import {
   handleGetAssistantWorkspaceContext,
   handleListAssistantRuntimeSessions,
   handleGetAssistantRuntimeSession,
+  handleGetAssistantRuntimeTurn,
   handleListAssistantConversations,
   handleGetAssistantConversationContext
 } from './assistant-observation-route.js';
+import {
+  handleListAssistantRuns,
+  handleGetAssistantRun
+} from './assistant-runs-route.js';
+import {
+  handleGetAssistantMemory,
+  handleGetAssistantPolicies
+} from './assistant-memory-route.js';
+import {
+  handleListAssistantTasks,
+  handleGetAssistantTask
+} from './assistant-tasks-route.js';
 import {
   handleListAgentChannelProviders,
   handleGetAgentChannelCatalog,
@@ -329,6 +343,7 @@ export function registerApiRoutes(app, { port }) {
   app.get('/api/agent-runtimes/sessions', handleListAgentRuntimeSessions);
   app.post('/api/agent-runtimes/sessions', handleCreateAgentRuntimeSession);
   app.get('/api/agent-runtimes/sessions/:id', handleGetAgentRuntimeSession);
+  app.get('/api/agent-runtimes/sessions/:id/turns/:turnId', handleGetAgentRuntimeTurn);
   app.get('/api/agent-runtimes/sessions/:id/stream', handleStreamAgentRuntimeSession);
   app.post('/api/agent-runtimes/sessions/:id/input', handleSendAgentRuntimeInput);
   app.post('/api/agent-runtimes/sessions/:id/approval', handleResolveAgentRuntimeApproval);
@@ -339,8 +354,15 @@ export function registerApiRoutes(app, { port }) {
   app.get('/api/assistant/workspace-context', handleGetAssistantWorkspaceContext);
   app.get('/api/assistant/runtime-sessions', handleListAssistantRuntimeSessions);
   app.get('/api/assistant/runtime-sessions/:id', handleGetAssistantRuntimeSession);
+  app.get('/api/assistant/runtime-sessions/:id/turns/:turnId', handleGetAssistantRuntimeTurn);
   app.get('/api/assistant/conversations', handleListAssistantConversations);
   app.get('/api/assistant/conversations/:id', handleGetAssistantConversationContext);
+  app.get('/api/assistant/runs', handleListAssistantRuns);
+  app.get('/api/assistant/runs/:id', handleGetAssistantRun);
+  app.get('/api/assistant/tasks', handleListAssistantTasks);
+  app.get('/api/assistant/tasks/:id', handleGetAssistantTask);
+  app.get('/api/assistant/memory', handleGetAssistantMemory);
+  app.get('/api/assistant/policies', handleGetAssistantPolicies);
 
   // ─── Agent Channel Gateway ──────────────────────────────────────────────
   app.get('/api/agent-channels/providers', handleListAgentChannelProviders);

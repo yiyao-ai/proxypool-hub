@@ -7,6 +7,7 @@ export class AgentRuntimeSessionStore {
   constructor({ configDir = CONFIG_DIR } = {}) {
     this.rootDir = join(configDir, 'agent-runtime');
     this.eventsDir = join(this.rootDir, 'events');
+    this.turnsDir = join(this.rootDir, 'turns');
     this.sessionsFile = join(this.rootDir, 'sessions.json');
     this.ensureDirs();
   }
@@ -18,6 +19,13 @@ export class AgentRuntimeSessionStore {
     if (!existsSync(this.eventsDir)) {
       mkdirSync(this.eventsDir, { recursive: true, mode: 0o700 });
     }
+    if (!existsSync(this.turnsDir)) {
+      mkdirSync(this.turnsDir, { recursive: true, mode: 0o700 });
+    }
+  }
+
+  _turnsFile(sessionId) {
+    return join(this.turnsDir, `${sessionId}.json`);
   }
 
   loadSessions() {
@@ -70,6 +78,28 @@ export class AgentRuntimeSessionStore {
     } catch {
       return [];
     }
+  }
+
+  loadTurns(sessionId) {
+    this.ensureDirs();
+    const file = this._turnsFile(sessionId);
+    if (!existsSync(file)) return [];
+
+    try {
+      const parsed = JSON.parse(readFileSync(file, 'utf8'));
+      return Array.isArray(parsed?.turns) ? parsed.turns : [];
+    } catch {
+      return [];
+    }
+  }
+
+  saveTurns(sessionId, turns) {
+    this.ensureDirs();
+    writeFileSync(
+      this._turnsFile(sessionId),
+      JSON.stringify({ turns: Array.isArray(turns) ? turns : [] }, null, 2),
+      { mode: 0o600 }
+    );
   }
 }
 

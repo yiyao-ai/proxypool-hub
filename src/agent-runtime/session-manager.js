@@ -2,12 +2,76 @@ import { logger } from '../utils/logger.js';
 import AgentRuntimeApprovalService from './approval-service.js';
 import agentRuntimeApprovalPolicyStore, { AgentRuntimeApprovalPolicyStore } from './approval-policy-store.js';
 import AgentRuntimeEventBus from './event-bus.js';
-import { createAgentEvent, createAgentSession, AGENT_EVENT_TYPE, AGENT_SESSION_STATUS } from './models.js';
+import { createAgentEvent, createAgentSession, createAgentTurn, AGENT_EVENT_TYPE, AGENT_SESSION_STATUS, AGENT_TURN_STATUS } from './models.js';
 import { createDefaultAgentRuntimeRegistry } from './registry.js';
 import AgentRuntimeSessionStore from './session-store.js';
+import { AssistantPolicyService } from '../assistant-core/policy-service.js';
 
 function nowIso() {
   return new Date().toISOString();
+}
+
+function patchTurnStats(turn = {}, patch = {}) {
+  const current = turn?.stats || {};
+  return {
+    messageCount: Number(patch.messageCount ?? current.messageCount ?? 0),
+    commandCount: Number(patch.commandCount ?? current.commandCount ?? 0),
+    fileChangeCount: Number(patch.fileChangeCount ?? current.fileChangeCount ?? 0),
+    approvalCount: Number(patch.approvalCount ?? current.approvalCount ?? 0),
+    approvalResolvedCount: Number(patch.approvalResolvedCount ?? current.approvalResolvedCount ?? 0),
+    questionCount: Number(patch.questionCount ?? current.questionCount ?? 0),
+    failureCount: Number(patch.failureCount ?? current.failureCount ?? 0),
+    lastMessage: String(patch.lastMessage ?? current.lastMessage ?? '')
+  };
+}
+
+function incrementTurnStats(turn = {}, type, payload = {}) {
+  const stats = patchTurnStats(turn);
+  if (type === AGENT_EVENT_TYPE.MESSAGE) {
+    stats.messageCount += 1;
+    if (payload?.text) {
+      stats.lastMessage = String(payload.text);
+    }
+  }
+  if (type === AGENT_EVENT_TYPE.COMMAND) stats.commandCount += 1;
+  if (type === AGENT_EVENT_TYPE.FILE_CHANGE) stats.fileChangeCount += 1;
+  if (type === AGENT_EVENT_TYPE.APPROVAL_REQUEST) stats.approvalCount += 1;
+  if (type === AGENT_EVENT_TYPE.APPROVAL_RESOLVED) stats.approvalResolvedCount += 1;
+  if (type === AGENT_EVENT_TYPE.QUESTION) stats.questionCount += 1;
+  if (type === AGENT_EVENT_TYPE.FAILED) stats.failureCount += 1;
+  return stats;
+}
+
+function buildTurnTerminalSummary(turn = {}, { provider = '', summary = '', error = '' } = {}) {
+  const explicit = String(summary || '').trim();
+  if (explicit) {
+    return explicit;
+  }
+
+  const stats = turn?.stats || {};
+  const parts = [];
+  if (stats.lastMessage) {
+    parts.push(String(stats.lastMessage).replace(/\s+/g, ' ').slice(0, 240));
+  }
+
+  const activity = [];
+  if (Number(stats.commandCount || 0) > 0) activity.push(`${stats.commandCount} commands`);
+  if (Number(stats.fileChangeCount || 0) > 0) activity.push(`${stats.fileChangeCount} file changes`);
+  if (Number(stats.approvalCount || 0) > 0) activity.push(`${stats.approvalCount} approvals`);
+  if (Number(stats.questionCount || 0) > 0) activity.push(`${stats.questionCount} questions`);
+  if (activity.length > 0) {
+    parts.push(activity.join(', '));
+  }
+
+  if (error) {
+    parts.push(`error: ${String(error).slice(0, 160)}`);
+  }
+
+  if (parts.length > 0) {
+    return parts.join(' | ');
+  }
+
+  return `${String(provider || 'runtime')} turn completed`;
 }
 
 export class AgentRuntimeSessionManager {
@@ -16,7 +80,8 @@ export class AgentRuntimeSessionManager {
     store = new AgentRuntimeSessionStore(),
     eventBus = new AgentRuntimeEventBus(),
     approvalService = new AgentRuntimeApprovalService(),
-    approvalPolicyStore = agentRuntimeApprovalPolicyStore
+    approvalPolicyStore = agentRuntimeApprovalPolicyStore,
+    policyService = null
   } = {}) {
     this.registry = registry;
     this.store = store;
@@ -25,15 +90,22 @@ export class AgentRuntimeSessionManager {
     this.approvalPolicyStore = approvalPolicyStore instanceof AgentRuntimeApprovalPolicyStore
       ? approvalPolicyStore
       : approvalPolicyStore;
+    this.policyService = policyService instanceof AssistantPolicyService
+      ? policyService
+      : new AssistantPolicyService({
+          approvalPolicyStore: this.approvalPolicyStore
+        });
     this.questionsBySession = new Map();
     this.sessions = new Map();
     this.seqBySession = new Map();
     this.turnHandles = new Map();
+    this.turnsBySession = new Map();
 
     for (const session of this.store.loadSessions()) {
       const normalized = this._normalizeLoadedSession(session);
       this.sessions.set(normalized.id, normalized);
       this.seqBySession.set(normalized.id, Number(normalized.lastEventSeq || 0));
+      this.turnsBySession.set(normalized.id, this.store.loadTurns(normalized.id));
     }
   }
 
@@ -89,9 +161,51 @@ export class AgentRuntimeSessionManager {
     return event;
   }
 
+  _saveTurns(sessionId) {
+    this.store.saveTurns(sessionId, this.turnsBySession.get(sessionId) || []);
+  }
+
+  _listTurns(sessionId) {
+    return [...(this.turnsBySession.get(sessionId) || [])]
+      .sort((left, right) => String(right.updatedAt || '').localeCompare(String(left.updatedAt || '')));
+  }
+
+  _getTurn(sessionId, turnId) {
+    return (this.turnsBySession.get(sessionId) || []).find((entry) => entry.id === String(turnId || '')) || null;
+  }
+
+  _saveTurn(sessionId, turn) {
+    const turns = this.turnsBySession.get(sessionId) || [];
+    const index = turns.findIndex((entry) => entry.id === turn.id);
+    const updated = {
+      ...turn,
+      updatedAt: nowIso()
+    };
+    if (index >= 0) {
+      turns[index] = updated;
+    } else {
+      turns.push(updated);
+    }
+    this.turnsBySession.set(sessionId, turns);
+    this._saveTurns(sessionId);
+    return updated;
+  }
+
+  _patchTurn(sessionId, turnId, patch = {}) {
+    const current = this._getTurn(sessionId, turnId);
+    if (!current) return null;
+    return this._saveTurn(sessionId, {
+      ...current,
+      ...patch
+    });
+  }
+
   _refreshInteractiveState(sessionId) {
     const session = this.getSession(sessionId);
     if (!session) return null;
+    if ([AGENT_SESSION_STATUS.READY, AGENT_SESSION_STATUS.FAILED, AGENT_SESSION_STATUS.CANCELLED].includes(session.status)) {
+      return session;
+    }
 
     const pendingApprovals = this.approvalService.listPending(sessionId).length;
     const pendingQuestions = (this.questionsBySession.get(sessionId) || [])
@@ -140,6 +254,26 @@ export class AgentRuntimeSessionManager {
 
   subscribe(sessionId, listener) {
     return this.eventBus.subscribe(sessionId, listener);
+  }
+
+  listTurns(sessionId, { limit = 50 } = {}) {
+    return this._listTurns(String(sessionId || '')).slice(0, Math.max(1, limit));
+  }
+
+  getTurn(sessionId, turnId) {
+    return this._getTurn(String(sessionId || ''), String(turnId || ''));
+  }
+
+  listTurnEvents(sessionId, turnId, { limit = 200 } = {}) {
+    const normalizedSessionId = String(sessionId || '');
+    const normalizedTurnId = String(turnId || '');
+    const maxScan = Math.max(limit * 10, 1000);
+    return this.getEvents(normalizedSessionId, {
+      afterSeq: 0,
+      limit: maxScan
+    })
+      .filter((event) => String(event?.turnId || event?.payload?.turnId || '') === normalizedTurnId)
+      .slice(-Math.max(1, limit));
   }
 
   async createSession({ provider, input, cwd, model = '', metadata = {} } = {}) {
@@ -223,10 +357,19 @@ export class AgentRuntimeSessionManager {
       }
       await provider.respondApproval({ session, approval, decision });
     }
+    const currentTurn = approval?.turnId ? this._getTurn(sessionId, approval.turnId) : null;
+    if (currentTurn) {
+      this._patchTurn(sessionId, currentTurn.id, {
+        stats: incrementTurnStats(currentTurn, AGENT_EVENT_TYPE.APPROVAL_RESOLVED, {
+          approvalId
+        })
+      });
+    }
     this._refreshInteractiveState(sessionId);
     this._emitEvent(sessionId, AGENT_EVENT_TYPE.APPROVAL_RESOLVED, {
       approvalId,
-      decision: approval.status
+      decision: approval.status,
+      turnId: approval?.turnId || session.currentTurnId || null
     });
     return approval;
   }
@@ -293,6 +436,12 @@ export class AgentRuntimeSessionManager {
     }
 
     const turnId = `${session.id}:turn:${session.turnCount + 1}`;
+    this._saveTurn(sessionId, createAgentTurn({
+      sessionId,
+      turnId,
+      input,
+      status: AGENT_TURN_STATUS.RUNNING
+    }));
     const turnState = { settled: false };
     let handle = null;
     const deferredApprovalResponses = [];
@@ -309,11 +458,20 @@ export class AgentRuntimeSessionManager {
       session: patched,
       input,
       onProviderEvent: ({ type, payload }) => {
-        this._emitEvent(sessionId, type, payload);
+        const turn = this._getTurn(sessionId, turnId);
+        this._patchTurn(sessionId, turnId, {
+          eventCount: Number(turn?.eventCount || 0) + 1,
+          stats: incrementTurnStats(turn, type, payload)
+        });
+        this._emitEvent(sessionId, type, {
+          ...(payload || {}),
+          turnId
+        });
       },
       onApprovalRequest: ({ kind = 'tool_permission', title, summary, rawRequest }) => {
         const approval = this.approvalService.createApproval({
           sessionId,
+          turnId,
           provider: patched.provider,
           kind,
           title,
@@ -321,11 +479,11 @@ export class AgentRuntimeSessionManager {
           rawRequest
         });
         const conversationId = patched?.metadata?.source?.conversationId || patched?.metadata?.conversationId || '';
-        const rememberedPolicy = this.approvalPolicyStore?.findFirstMatchingPolicy?.({
-          candidates: [
-            conversationId ? { scope: 'conversation', scopeRef: conversationId } : null,
-            { scope: 'session', scopeRef: sessionId }
-          ].filter(Boolean),
+        const rememberedPolicy = this.policyService?.findAutoApprovalPolicy?.({
+          conversation: conversationId ? { id: conversationId } : null,
+          runtimeSession: patched,
+          cwd: patched?.cwd || '',
+          metadata: patched?.metadata || {},
           provider: patched.provider,
           rawRequest
         });
@@ -375,13 +533,22 @@ export class AgentRuntimeSessionManager {
         this._patchSession(sessionId, {
           status: AGENT_SESSION_STATUS.WAITING_APPROVAL
         });
-        this._emitEvent(sessionId, AGENT_EVENT_TYPE.APPROVAL_REQUEST, approval);
+        const currentTurn = this._getTurn(sessionId, turnId);
+        this._patchTurn(sessionId, turnId, {
+          status: AGENT_TURN_STATUS.WAITING_APPROVAL,
+          stats: incrementTurnStats(currentTurn, AGENT_EVENT_TYPE.APPROVAL_REQUEST, approval)
+        });
+        this._emitEvent(sessionId, AGENT_EVENT_TYPE.APPROVAL_REQUEST, {
+          ...approval,
+          turnId
+        });
       },
       onQuestionRequest: ({ text, options = [], rawRequest = null, questionId = null }) => {
         const questions = this.questionsBySession.get(sessionId) || [];
         const question = {
           questionId: questionId || `${sessionId}:question:${questions.length + 1}`,
           sessionId,
+          turnId,
           provider: patched.provider,
           status: 'pending',
           text: String(text || ''),
@@ -395,7 +562,15 @@ export class AgentRuntimeSessionManager {
         this._patchSession(sessionId, {
           status: AGENT_SESSION_STATUS.WAITING_USER
         });
-        this._emitEvent(sessionId, AGENT_EVENT_TYPE.QUESTION, question);
+        const currentTurn = this._getTurn(sessionId, turnId);
+        this._patchTurn(sessionId, turnId, {
+          status: AGENT_TURN_STATUS.WAITING_USER,
+          stats: incrementTurnStats(currentTurn, AGENT_EVENT_TYPE.QUESTION, question)
+        });
+        this._emitEvent(sessionId, AGENT_EVENT_TYPE.QUESTION, {
+          ...question,
+          turnId
+        });
       },
       onSessionPatch: (delta) => {
         this._patchSession(sessionId, delta);
@@ -403,12 +578,22 @@ export class AgentRuntimeSessionManager {
       onTurnFinished: ({ status = 'ready', summary = '' } = {}) => {
         turnState.settled = true;
         this.turnHandles.delete(sessionId);
+        const currentTurn = this._getTurn(sessionId, turnId);
+        const terminalSummary = buildTurnTerminalSummary(currentTurn, {
+          provider: patched.provider,
+          summary
+        });
         this._patchSession(sessionId, {
           status: status === 'ready' ? AGENT_SESSION_STATUS.READY : status,
-          summary,
+          summary: terminalSummary,
           currentTurnId: null
         });
         this.questionsBySession.delete(sessionId);
+        this._patchTurn(sessionId, turnId, {
+          status: status === 'ready' ? AGENT_TURN_STATUS.READY : status,
+          summary: terminalSummary,
+          completedAt: nowIso()
+        });
       },
       onTurnFailed: (error) => {
         turnState.settled = true;
@@ -420,8 +605,22 @@ export class AgentRuntimeSessionManager {
           currentTurnId: null
         });
         this.questionsBySession.delete(sessionId);
+        const currentTurn = this._getTurn(sessionId, turnId);
+        this._patchTurn(sessionId, turnId, {
+          status: AGENT_TURN_STATUS.FAILED,
+          summary: buildTurnTerminalSummary(currentTurn, {
+            provider: patched.provider,
+            error: message
+          }),
+          error: message,
+          stats: incrementTurnStats(currentTurn, AGENT_EVENT_TYPE.FAILED, {
+            message
+          }),
+          completedAt: nowIso()
+        });
         this._emitEvent(sessionId, AGENT_EVENT_TYPE.FAILED, {
-          message
+          message,
+          turnId
         });
       }
     });

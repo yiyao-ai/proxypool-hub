@@ -17,6 +17,7 @@ import { AgentTaskStore } from '../../src/agent-core/task-store.js';
 import { ChatUiConversationStore } from '../../src/chat-ui/conversation-store.js';
 import { ChatUiConversationService } from '../../src/chat-ui/conversation-service.js';
 import { ChatUiRuntimeObserver } from '../../src/chat-ui/runtime-observer.js';
+import assistantRunStore from '../../src/assistant-core/run-store.js';
 
 function createTempDir(prefix) {
   return mkdtempSync(join(tmpdir(), prefix));
@@ -347,6 +348,98 @@ test('ChatUiConversationService runs Phase 4 assistant tool flow to start a runt
   assert.ok(result.assistantRun?.id);
   assert.equal(result.assistantRun.status, 'completed');
   assert.ok(Array.isArray(result.assistantRun.steps));
-  assert.equal(result.assistantRun.steps[0]?.toolName, 'start_runtime_task');
+  assert.equal(result.assistantRun.steps[0]?.toolName, 'get_workspace_context');
+  assert.equal(result.assistantRun.steps[1]?.toolName, 'delegate_to_runtime');
   assert.equal(result.assistantRun.relatedRuntimeSessionIds.length, 1);
+});
+
+test('ChatUiConversationService uses task-centric assistant summary for /cligate status', async () => {
+  const runtimeSessionManager = createHybridRuntimeManager();
+  const conversationStore = new ChatUiConversationStore({
+    configDir: createTempDir('cligate-chat-ui-conv-assistant-status-')
+  });
+  const taskStore = new AgentTaskStore({
+    configDir: createTempDir('cligate-chat-ui-task-assistant-status-')
+  });
+  const service = new ChatUiConversationService({
+    conversationStore,
+    messageService: new AgentOrchestratorMessageService({ runtimeSessionManager }),
+    taskStore
+  });
+
+  await service.routeMessage({
+    sessionId: 'chat-ui-assistant-status-1',
+    text: 'build login page',
+    defaultRuntimeProvider: 'codex'
+  });
+
+  const result = await service.routeMessage({
+    sessionId: 'chat-ui-assistant-status-1',
+    text: '/cligate status',
+    defaultRuntimeProvider: 'codex'
+  });
+
+  assert.equal(result.type, 'assistant_response');
+  assert.equal(result.assistantRun.status, 'completed');
+  assert.equal(result.assistantRun.steps[0]?.toolName, 'list_tasks');
+  assert.match(String(result.message || ''), /Task:|State:|Summary:/);
+});
+
+test('ChatUiConversationService marks assistant run as waiting_user when delegated runtime asks a question', async () => {
+  const runtimeSessionManager = createHybridRuntimeManager();
+  const conversationStore = new ChatUiConversationStore({
+    configDir: createTempDir('cligate-chat-ui-conv-assistant-waiting-')
+  });
+  const taskStore = new AgentTaskStore({
+    configDir: createTempDir('cligate-chat-ui-task-assistant-waiting-')
+  });
+  const service = new ChatUiConversationService({
+    conversationStore,
+    messageService: new AgentOrchestratorMessageService({ runtimeSessionManager }),
+    taskStore
+  });
+
+  const result = await service.routeMessage({
+    sessionId: 'chat-ui-assistant-waiting-1',
+    text: '/cligate start claude inspect repo'
+  });
+
+  assert.equal(result.type, 'assistant_response');
+  assert.equal(result.assistantRun.status, 'waiting_user');
+  assert.equal(result.assistantRun.relatedRuntimeSessionIds.length, 1);
+});
+
+test('ChatUiConversationService can accept assistant runs for background execution', async () => {
+  const runtimeSessionManager = createHybridRuntimeManager();
+  const conversationStore = new ChatUiConversationStore({
+    configDir: createTempDir('cligate-chat-ui-conv-assistant-async-')
+  });
+  const taskStore = new AgentTaskStore({
+    configDir: createTempDir('cligate-chat-ui-task-assistant-async-')
+  });
+  const service = new ChatUiConversationService({
+    conversationStore,
+    messageService: new AgentOrchestratorMessageService({ runtimeSessionManager }),
+    taskStore
+  });
+
+  const accepted = await service.routeMessage({
+    sessionId: 'chat-ui-assistant-async-1',
+    text: '/cligate start codex inspect repo',
+    assistantExecutionMode: 'async'
+  });
+
+  assert.equal(accepted.type, 'assistant_run_accepted');
+  assert.ok(accepted.assistantRun?.id);
+
+  let completed = null;
+  for (let index = 0; index < 20; index += 1) {
+    completed = assistantRunStore.get(accepted.assistantRun.id);
+    if (completed?.status === 'completed') {
+      break;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+
+  assert.equal(completed?.status, 'completed');
 });

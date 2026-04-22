@@ -56,7 +56,36 @@ export function handleGetAgentRuntimeSession(req, res) {
     return res.status(404).json({ success: false, error: 'session not found' });
   }
 
-  return res.json({ success: true, session });
+  return res.json({
+    success: true,
+    session,
+    turns: agentRuntimeSessionManager.listTurns(session.id, {
+      limit: parseLimit(req.query.turnLimit, 20)
+    })
+  });
+}
+
+export function handleGetAgentRuntimeTurn(req, res) {
+  const sessionId = String(req.params.id || '');
+  const turnId = String(req.params.turnId || '');
+  const session = agentRuntimeSessionManager.getSession(sessionId);
+  if (!session) {
+    return res.status(404).json({ success: false, error: 'session not found' });
+  }
+
+  const turn = agentRuntimeSessionManager.getTurn(sessionId, turnId);
+  if (!turn) {
+    return res.status(404).json({ success: false, error: 'turn not found' });
+  }
+
+  return res.json({
+    success: true,
+    session,
+    turn,
+    events: agentRuntimeSessionManager.listTurnEvents(sessionId, turnId, {
+      limit: parseLimit(req.query.eventLimit, 100)
+    })
+  });
 }
 
 export async function handleCreateAgentRuntimeSession(req, res) {
@@ -174,6 +203,7 @@ export default {
   handleListAgentRuntimeProviders,
   handleListAgentRuntimeSessions,
   handleGetAgentRuntimeSession,
+  handleGetAgentRuntimeTurn,
   handleCreateAgentRuntimeSession,
   handleSendAgentRuntimeInput,
   handleResolveAgentRuntimeApproval,

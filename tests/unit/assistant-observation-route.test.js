@@ -19,6 +19,7 @@ import {
   handleGetAssistantWorkspaceContext,
   handleListAssistantRuntimeSessions,
   handleGetAssistantRuntimeSession,
+  handleGetAssistantRuntimeTurn,
   handleListAssistantConversations,
   handleGetAssistantConversationContext
 } from '../../src/routes/assistant-observation-route.js';
@@ -137,19 +138,42 @@ test('AssistantObservationService returns summary-first workspace and drill-down
   const workspace = observationService.getWorkspaceContext();
   assert.equal(workspace.summary.runtimeCount, 1);
   assert.equal(workspace.summary.conversationCount, 1);
+  assert.equal(workspace.summary.turnCount, 1);
+  assert.equal(workspace.turnStats.turnCount, 1);
+  assert.equal(workspace.turnStats.messageCount, 1);
   assert.equal(workspace.runtimeSessions[0].id, session.id);
+  assert.equal(workspace.runtimeSessions[0].latestTurn.input, 'inspect repo');
+  assert.equal(workspace.runtimeSessions[0].turnStats.turnCount, 1);
   assert.equal(workspace.conversations[0].assistantMode, 'assistant');
 
   const runtimeDetail = observationService.getRuntimeSessionDetail(session.id);
   assert.equal(runtimeDetail.session.id, session.id);
+  assert.equal(runtimeDetail.session.latestTurn.id, runtimeDetail.turns[0].id);
+  assert.equal(runtimeDetail.session.turnStats.turnCount, 1);
+  assert.equal(runtimeDetail.turns.length, 1);
+  assert.equal(runtimeDetail.turns[0].input, 'inspect repo');
+  assert.equal(runtimeDetail.turns[0].stats.messageCount, 1);
+  assert.equal(runtimeDetail.turns[0].stats.lastMessage, 'echo:inspect repo');
   assert.equal(runtimeDetail.task.title, 'inspect repo');
   assert.ok(Array.isArray(runtimeDetail.recentEvents));
+
+  const turnDetail = observationService.getRuntimeTurnDetail(session.id, runtimeDetail.turns[0].id);
+  assert.equal(turnDetail.turn.id, runtimeDetail.turns[0].id);
+  assert.equal(turnDetail.turn.stats.messageCount, 1);
+  assert.ok(Array.isArray(turnDetail.recentEvents));
+  assert.ok(turnDetail.recentEvents.every((event) => event.turnId === runtimeDetail.turns[0].id));
 
   const conversationDetail = observationService.getConversationContext(conversation.id);
   assert.equal(conversationDetail.conversation.id, conversation.id);
   assert.equal(conversationDetail.activeRuntime.id, session.id);
   assert.equal(conversationDetail.latestTask.title, 'inspect repo');
   assert.equal(conversationDetail.deliveries.length, 1);
+  assert.ok(conversationDetail.memory);
+  assert.ok(conversationDetail.policy);
+
+  const search = observationService.searchProjectMemory({ query: 'inspect', limit: 5 });
+  assert.equal(search.tasks.length, 1);
+  assert.equal(search.conversations.length, 0);
 });
 
 test('assistant observation routes return workspace, runtime, and conversation details', async () => {
@@ -164,6 +188,7 @@ test('assistant observation routes return workspace, runtime, and conversation d
   const originalWorkspace = handleGetAssistantWorkspaceContext;
   const originalRuntimeList = handleListAssistantRuntimeSessions;
   const originalRuntimeDetail = handleGetAssistantRuntimeSession;
+  const originalRuntimeTurnDetail = handleGetAssistantRuntimeTurn;
   const originalConversationList = handleListAssistantConversations;
   const originalConversationDetail = handleGetAssistantConversationContext;
 
@@ -193,12 +218,14 @@ test('assistant observation routes return workspace, runtime, and conversation d
     getWorkspaceContext,
     listRuntimeSessions,
     getRuntimeSessionDetail,
+    getRuntimeTurnDetail,
     listConversations,
     getConversationContext
   } = singleton;
   singleton.getWorkspaceContext = observationService.getWorkspaceContext.bind(observationService);
   singleton.listRuntimeSessions = observationService.listRuntimeSessions.bind(observationService);
   singleton.getRuntimeSessionDetail = observationService.getRuntimeSessionDetail.bind(observationService);
+  singleton.getRuntimeTurnDetail = observationService.getRuntimeTurnDetail.bind(observationService);
   singleton.listConversations = observationService.listConversations.bind(observationService);
   singleton.getConversationContext = observationService.getConversationContext.bind(observationService);
 
@@ -208,15 +235,28 @@ test('assistant observation routes return workspace, runtime, and conversation d
     assert.equal(workspaceRes._status, 200);
     assert.equal(workspaceRes._body.success, true);
     assert.equal(workspaceRes._body.context.summary.runtimeCount, 1);
+    assert.equal(workspaceRes._body.context.turnStats.turnCount, 1);
+    assert.ok(workspaceRes._body.context.memory);
+    assert.ok(workspaceRes._body.context.policy);
 
     const runtimeListRes = mockRes();
     handleListAssistantRuntimeSessions({ query: {} }, runtimeListRes);
     assert.equal(runtimeListRes._body.sessions[0].id, session.id);
+    assert.equal(runtimeListRes._body.sessions[0].latestTurn.input, 'check status');
 
     const runtimeDetailRes = mockRes();
     handleGetAssistantRuntimeSession({ params: { id: session.id }, query: {} }, runtimeDetailRes);
     assert.equal(runtimeDetailRes._status, 200);
     assert.equal(runtimeDetailRes._body.detail.session.id, session.id);
+    assert.equal(runtimeDetailRes._body.detail.turns.length, 1);
+
+    const runtimeTurnDetailRes = mockRes();
+    handleGetAssistantRuntimeTurn({
+      params: { id: session.id, turnId: runtimeDetailRes._body.detail.turns[0].id },
+      query: {}
+    }, runtimeTurnDetailRes);
+    assert.equal(runtimeTurnDetailRes._status, 200);
+    assert.equal(runtimeTurnDetailRes._body.detail.turn.id, runtimeDetailRes._body.detail.turns[0].id);
 
     const conversationListRes = mockRes();
     handleListAssistantConversations({ query: {} }, conversationListRes);
@@ -231,6 +271,10 @@ test('assistant observation routes return workspace, runtime, and conversation d
     handleGetAssistantRuntimeSession({ params: { id: 'missing' }, query: {} }, missingRuntimeRes);
     assert.equal(missingRuntimeRes._status, 404);
 
+    const missingTurnRes = mockRes();
+    handleGetAssistantRuntimeTurn({ params: { id: session.id, turnId: 'missing' }, query: {} }, missingTurnRes);
+    assert.equal(missingTurnRes._status, 404);
+
     const missingConversationRes = mockRes();
     handleGetAssistantConversationContext({ params: { id: 'missing' }, query: {} }, missingConversationRes);
     assert.equal(missingConversationRes._status, 404);
@@ -238,8 +282,10 @@ test('assistant observation routes return workspace, runtime, and conversation d
     singleton.getWorkspaceContext = getWorkspaceContext;
     singleton.listRuntimeSessions = listRuntimeSessions;
     singleton.getRuntimeSessionDetail = getRuntimeSessionDetail;
+    singleton.getRuntimeTurnDetail = getRuntimeTurnDetail;
     singleton.listConversations = listConversations;
     singleton.getConversationContext = getConversationContext;
+    void originalRuntimeTurnDetail;
     void originalWorkspace;
     void originalRuntimeList;
     void originalRuntimeDetail;

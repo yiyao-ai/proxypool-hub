@@ -51,6 +51,24 @@ function summarizeSessionState(session, conversation) {
   return 'completed';
 }
 
+function summarizeLatestTurn(runtimeSessionManager, sessionId) {
+  const [latestTurn] = runtimeSessionManager.listTurns(String(sessionId || ''), { limit: 1 });
+  if (!latestTurn?.id) {
+    return {
+      latestTurnId: '',
+      latestTurnStatus: '',
+      latestTurnSummary: '',
+      latestTurnStats: null
+    };
+  }
+  return {
+    latestTurnId: latestTurn.id,
+    latestTurnStatus: latestTurn.status || '',
+    latestTurnSummary: latestTurn.summary || '',
+    latestTurnStats: latestTurn.stats || null
+  };
+}
+
 function decorateConversation(conversation, { includeDeliveries = false } = {}) {
   if (!conversation) return null;
   const pairing = agentChannelPairingStore.get(
@@ -129,6 +147,7 @@ export function buildAgentChannelSessionRecords({
         state: summarizeSessionState(session, decoratedConversation),
         turnCount: Number(session.turnCount || 0),
         summary: String(session.summary || ''),
+        ...summarizeLatestTurn(runtimeSessionManager, session.id),
         createdAt: session.createdAt || null,
         updatedAt: session.updatedAt || null,
         channel: decoratedConversation?.channel || session?.metadata?.source?.channel || '',
@@ -175,6 +194,7 @@ export function buildAgentChannelSessionRecordDetail(sessionId, {
   return {
     session: {
       ...session,
+      ...summarizeLatestTurn(runtimeSessionManager, session.id),
       state: summarizeSessionState(session, {
         pairingStatus: pairing?.status || null
       })

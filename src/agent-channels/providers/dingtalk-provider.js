@@ -50,6 +50,7 @@ function buildRouterResultText(result) {
       return result?.message || 'Preference saved.';
     case 'assistant_mode_entered':
     case 'assistant_mode_exited':
+    case 'assistant_run_accepted':
     case 'assistant_response':
       return result?.message || '';
     default:

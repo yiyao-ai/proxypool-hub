@@ -209,6 +209,43 @@ function summarizeCodexQuestion(item = {}) {
   );
 }
 
+function extractCodexTurnResultText(parsed = {}, fallback = '') {
+  const directCandidates = [
+    parsed?.result,
+    parsed?.output_text,
+    parsed?.outputText,
+    parsed?.final_output,
+    parsed?.finalOutput,
+    parsed?.text,
+    parsed?.message
+  ];
+
+  for (const candidate of directCandidates) {
+    const text = String(candidate || '').trim();
+    if (text) {
+      return text;
+    }
+  }
+
+  const outputs = Array.isArray(parsed?.output) ? parsed.output : [];
+  for (const item of outputs) {
+    if (item?.type === 'message' && Array.isArray(item.content)) {
+      for (const part of item.content) {
+        const text = String(part?.text || '').trim();
+        if (part?.type === 'output_text' && text) {
+          return text;
+        }
+      }
+    }
+    const text = String(item?.text || '').trim();
+    if (text) {
+      return text;
+    }
+  }
+
+  return String(fallback || '').trim();
+}
+
 export function createCodexMessageProcessor({
   session,
   onProviderEvent,
@@ -266,13 +303,17 @@ export function createCodexMessageProcessor({
     }
 
     if (parsed?.type === 'turn.completed') {
+      const finalResult = extractCodexTurnResultText(parsed, state.lastAgentMessage || '');
+      if (finalResult) {
+        state.lastAgentMessage = finalResult;
+      }
       emit({
         type: AGENT_EVENT_TYPE.COMPLETED,
         payload: {
-          result: state.lastAgentMessage || '',
+          result: finalResult,
           summary: buildCompletionSummary(session, {
             usage: parsed.usage || null,
-            result: state.lastAgentMessage || ''
+            result: finalResult
           }),
           usage: parsed.usage || null
         }
@@ -507,13 +548,17 @@ function mapCodexEvent(session, event, state = {}) {
       });
     }
   } else if (event?.type === 'turn.completed') {
+    const finalResult = extractCodexTurnResultText(event, state.lastAgentMessage || '');
+    if (finalResult) {
+      state.lastAgentMessage = finalResult;
+    }
     events.push({
       type: AGENT_EVENT_TYPE.COMPLETED,
       payload: {
-        result: state.lastAgentMessage || '',
+        result: finalResult,
         summary: buildCompletionSummary(session, {
           usage: event.usage || null,
-          result: state.lastAgentMessage || ''
+          result: finalResult
         }),
         usage: event.usage || null
       }

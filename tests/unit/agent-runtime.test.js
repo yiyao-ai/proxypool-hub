@@ -6,7 +6,7 @@ import { join } from 'node:path';
 
 import AgentRuntimeApprovalService from '../../src/agent-runtime/approval-service.js';
 import AgentRuntimeEventBus from '../../src/agent-runtime/event-bus.js';
-import { AGENT_EVENT_TYPE, AGENT_SESSION_STATUS } from '../../src/agent-runtime/models.js';
+import { AGENT_EVENT_TYPE, AGENT_SESSION_STATUS, AGENT_TURN_STATUS } from '../../src/agent-runtime/models.js';
 import {
   buildApprovalResponse,
   buildQuestionResponse,
@@ -163,6 +163,26 @@ test('AgentRuntimeSessionStore persists sessions and events', () => {
   assert.equal(events[0].type, AGENT_EVENT_TYPE.STARTED);
 });
 
+test('AgentRuntimeSessionStore persists turns', () => {
+  const store = createTempStore();
+  store.saveTurns('session_1', [
+    {
+      id: 'session_1:turn:1',
+      sessionId: 'session_1',
+      status: AGENT_TURN_STATUS.READY,
+      input: 'inspect repo',
+      summary: 'done:inspect repo',
+      eventCount: 2
+    }
+  ]);
+
+  const turns = store.loadTurns('session_1');
+
+  assert.equal(turns.length, 1);
+  assert.equal(turns[0].id, 'session_1:turn:1');
+  assert.equal(turns[0].status, AGENT_TURN_STATUS.READY);
+});
+
 test('AgentRuntimeSessionManager creates a session, emits events, and persists provider session id', async () => {
   const store = createTempStore();
   const manager = createManagerWithProvider(new FakeProvider(), store);
@@ -183,6 +203,14 @@ test('AgentRuntimeSessionManager creates a session, emits events, and persists p
   const events = manager.getEvents(session.id);
   assert.ok(events.some((event) => event.type === AGENT_EVENT_TYPE.STARTED));
   assert.ok(events.some((event) => event.type === AGENT_EVENT_TYPE.MESSAGE));
+
+  const turns = manager.listTurns(session.id);
+  assert.equal(turns.length, 1);
+  assert.equal(turns[0].status, AGENT_TURN_STATUS.READY);
+  assert.equal(turns[0].summary, 'done:inspect repo');
+  assert.equal(turns[0].stats.messageCount, 1);
+  assert.equal(turns[0].stats.lastMessage, 'echo:inspect repo');
+  assert.ok(events.some((event) => event.turnId === turns[0].id));
 });
 
 test('AgentRuntimeSessionManager supports follow-up input after a synchronously completed turn', async () => {
@@ -199,6 +227,13 @@ test('AgentRuntimeSessionManager supports follow-up input after a synchronously 
   assert.equal(updated.status, AGENT_SESSION_STATUS.READY);
   assert.equal(updated.turnCount, 2);
   assert.equal(updated.summary, 'done:second turn');
+
+  const turns = manager.listTurns(session.id);
+  assert.equal(turns.length, 2);
+  assert.equal(turns[0].input, 'second turn');
+  assert.equal(turns[1].input, 'first turn');
+  assert.equal(manager.getTurn(session.id, turns[0].id)?.status, AGENT_TURN_STATUS.READY);
+  assert.equal(manager.getTurn(session.id, turns[0].id)?.stats.messageCount, 1);
 });
 
 test('AgentRuntimeSessionManager blocks concurrent input and supports cancellation for running turns', async () => {
@@ -239,6 +274,39 @@ test('AgentRuntimeSessionManager restores unfinished sessions as failed after re
   assert.match(restored.error, /interrupted/i);
 });
 
+test('AgentRuntimeSessionManager reloads persisted turns from store', async () => {
+  const store = createTempStore();
+  const manager = createManagerWithProvider(new FakeProvider(), store);
+
+  const session = await manager.createSession({
+    provider: 'codex',
+    input: 'persist turn'
+  });
+
+  const reloaded = createManagerWithProvider(new FakeProvider(), store);
+  const turns = reloaded.listTurns(session.id);
+
+  assert.equal(turns.length, 1);
+  assert.equal(turns[0].input, 'persist turn');
+  assert.equal(turns[0].status, AGENT_TURN_STATUS.READY);
+});
+
+test('AgentRuntimeSessionManager lists events for a specific turn', async () => {
+  const manager = createManagerWithProvider(new FakeProvider());
+
+  const session = await manager.createSession({
+    provider: 'codex',
+    input: 'turn events'
+  });
+
+  const [turn] = manager.listTurns(session.id);
+  const events = manager.listTurnEvents(session.id, turn.id, { limit: 20 });
+
+  assert.ok(events.length >= 1);
+  assert.ok(events.every((event) => event.turnId === turn.id));
+  assert.ok(events.some((event) => event.type === AGENT_EVENT_TYPE.MESSAGE));
+});
+
 test('AgentRuntimeSessionManager resolves approval and question state for interactive providers', async () => {
   const manager = createManagerWithProvider(new FakeInteractiveProvider());
 
@@ -251,6 +319,7 @@ test('AgentRuntimeSessionManager resolves approval and question state for intera
 
   const [approval] = manager.approvalService.listPending(session.id);
   assert.ok(approval);
+  assert.ok(approval.turnId);
 
   const resolvedApproval = await manager.resolveApproval(session.id, approval.approvalId, 'approve');
   assert.equal(resolvedApproval.status, 'approved');
@@ -258,6 +327,7 @@ test('AgentRuntimeSessionManager resolves approval and question state for intera
 
   const [question] = manager.listPendingQuestions(session.id);
   assert.ok(question);
+  assert.equal(question.turnId, approval.turnId);
 
   const answeredQuestion = await manager.answerQuestion(session.id, question.questionId, 'yes');
   assert.equal(answeredQuestion.status, 'answered');
@@ -267,6 +337,10 @@ test('AgentRuntimeSessionManager resolves approval and question state for intera
   assert.ok(events.some((event) => event.type === AGENT_EVENT_TYPE.APPROVAL_REQUEST));
   assert.ok(events.some((event) => event.type === AGENT_EVENT_TYPE.APPROVAL_RESOLVED));
   assert.ok(events.some((event) => event.type === AGENT_EVENT_TYPE.QUESTION));
+  const [turn] = manager.listTurns(session.id);
+  assert.equal(turn.stats.approvalCount, 1);
+  assert.equal(turn.stats.approvalResolvedCount, 1);
+  assert.equal(turn.stats.questionCount, 1);
 });
 
 test('createClaudeCodeMessageProcessor maps Claude control flow into normalized events', () => {
@@ -419,6 +493,49 @@ test('Claude Code response builders emit expected protocol envelopes', () => {
   assert.equal(question.response.request_id, 'req-2');
   assert.equal(question.response.response.action, 'accept');
   assert.deepEqual(question.response.response.content, { answer: 'Proceed' });
+});
+
+test('Codex message processor prefers turn.completed output text over stale intermediate message', () => {
+  const providerEvents = [];
+  const processor = createCodexMessageProcessor({
+    session: { turnCount: 2 },
+    onProviderEvent: (event) => providerEvents.push(event),
+    onApprovalRequest: () => {},
+    onQuestionRequest: () => {},
+    onSessionPatch: () => {},
+    closeInput: () => {}
+  });
+
+  processor.processMessage({
+    type: 'item.completed',
+    item: {
+      id: 'item_msg',
+      type: 'agent_message',
+      text: '我先查一下上海今天，也就是 2026-04-23 的天气。'
+    }
+  });
+
+  processor.processMessage({
+    type: 'turn.completed',
+    output: [
+      {
+        type: 'message',
+        content: [
+          {
+            type: 'output_text',
+            text: '今天上海多云，气温 18 到 25 摄氏度。'
+          }
+        ]
+      }
+    ],
+    usage: { input_tokens: 10, output_tokens: 20 }
+  });
+
+  const completed = providerEvents.find((event) => event.type === AGENT_EVENT_TYPE.COMPLETED);
+  assert.ok(completed);
+  assert.equal(completed.payload.result, '今天上海多云，气温 18 到 25 摄氏度。');
+  assert.match(String(completed.payload.summary || ''), /今天上海多云/);
+  assert.equal(processor.getLastAgentMessage(), '今天上海多云，气温 18 到 25 摄氏度。');
 });
 
 test('resolveCliExecutable prefers explicit env override when present', () => {

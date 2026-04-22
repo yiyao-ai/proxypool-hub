@@ -1,21 +1,29 @@
-import { resolveConversationPreferences } from './preference-service.js';
+import assistantMemoryService from '../assistant-core/memory-service.js';
 
 export function selectRuntimeProvider({
   conversation = null,
   activeSession = null,
   rememberedBrief = null,
   defaultRuntimeProvider = 'codex',
-  preferenceStore
+  preferenceStore,
+  memoryService = assistantMemoryService,
+  cwd = '',
+  metadata = {}
 } = {}) {
   if (activeSession?.provider) {
     return String(activeSession.provider);
   }
 
-  const preferences = resolveConversationPreferences(conversation, {
+  const preferences = memoryService.resolvePreferences({
+    conversation,
+    runtimeSession: activeSession,
+    cwd,
+    metadata
+  }, {
     store: preferenceStore
   });
-  if (preferences.preferred_runtime_provider) {
-    return String(preferences.preferred_runtime_provider);
+  if (preferences?.values?.preferred_runtime_provider) {
+    return String(preferences.values.preferred_runtime_provider);
   }
 
   if (rememberedBrief?.provider) {

@@ -776,6 +776,7 @@ export async function handleRouteChatAgentMessage(req, res) {
       defaultRuntimeProvider: String(provider || 'codex'),
       cwd: String(cwd || ''),
       model: String(model || ''),
+      assistantExecutionMode: 'async',
       metadata: {
         ui: {
           origin: 'chat-ui'

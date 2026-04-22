@@ -4,7 +4,12 @@ import { syncTaskFromRuntimeResult } from '../agent-core/task-service.js';
 import { buildSupervisorBrief } from '../agent-orchestrator/supervisor-brief.js';
 import { CHANNEL_CONVERSATION_MODE } from '../agent-channels/models.js';
 import chatUiConversationStore from './conversation-store.js';
+import assistantRunStore from '../assistant-core/run-store.js';
 import AssistantModeService from '../assistant-core/mode-service.js';
+import { AssistantObservationService } from '../assistant-core/observation-service.js';
+import { AssistantTaskViewService } from '../assistant-core/task-view-service.js';
+import agentRuntimeSessionManager from '../agent-runtime/session-manager.js';
+import agentChannelDeliveryStore from '../agent-channels/delivery-store.js';
 
 export class ChatUiConversationService {
   constructor({
@@ -17,7 +22,21 @@ export class ChatUiConversationService {
     this.messageService = messageService;
     this.taskStore = taskStore;
     this.assistantModeService = assistantModeService || new AssistantModeService({
-      conversationStore: this.conversationStore
+      conversationStore: this.conversationStore,
+      messageService: this.messageService,
+      observationService: new AssistantObservationService({
+        conversationStore: this.conversationStore,
+        runtimeSessionManager: this.messageService?.runtimeSessionManager || agentRuntimeSessionManager,
+        taskStore: this.taskStore,
+        deliveryStore: agentChannelDeliveryStore
+      }),
+      taskViewService: new AssistantTaskViewService({
+        conversationStore: this.conversationStore,
+        runtimeSessionManager: this.messageService?.runtimeSessionManager || agentRuntimeSessionManager,
+        taskStore: this.taskStore,
+        deliveryStore: agentChannelDeliveryStore,
+        assistantRunStore
+      })
     });
   }
 
@@ -31,12 +50,17 @@ export class ChatUiConversationService {
     defaultRuntimeProvider = 'codex',
     cwd,
     model = '',
-    metadata = {}
+    metadata = {},
+    assistantExecutionMode = 'sync'
   } = {}) {
     const conversation = this.getConversation(sessionId, metadata);
     const assistantResult = await this.assistantModeService.maybeHandleMessage({
       conversation,
-      text
+      text,
+      defaultRuntimeProvider,
+      cwd,
+      model,
+      executionMode: assistantExecutionMode
     });
     if (assistantResult) {
       return {

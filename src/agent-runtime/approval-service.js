@@ -5,7 +5,7 @@ export class AgentRuntimeApprovalService {
     this.approvalsBySession = new Map();
   }
 
-  createApproval({ sessionId, provider, kind = 'tool_permission', title, summary, rawRequest = null }) {
+  createApproval({ sessionId, provider, kind = 'tool_permission', title, summary, rawRequest = null, turnId = null }) {
     const rawApprovalId = rawRequest?.approval_request_id
       || rawRequest?.approvalRequestId
       || rawRequest?.request_id
@@ -14,6 +14,7 @@ export class AgentRuntimeApprovalService {
     const approval = {
       approvalId: String(rawApprovalId || crypto.randomUUID()),
       sessionId,
+      turnId: turnId ? String(turnId) : null,
       provider,
       status: 'pending',
       kind,

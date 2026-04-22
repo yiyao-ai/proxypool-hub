@@ -3,6 +3,8 @@ import assistantSessionStore, { AssistantSessionStore } from './session-store.js
 import assistantRunStore, { AssistantRunStore } from './run-store.js';
 import assistantObservationService, { AssistantObservationService } from './observation-service.js';
 import AssistantRunner from './runner.js';
+import agentOrchestratorMessageService from '../agent-orchestrator/message-service.js';
+import assistantTaskViewService from './task-view-service.js';
 
 function nowIso() {
   return new Date().toISOString();
@@ -44,6 +46,8 @@ export class AssistantModeService {
     assistantSessionStore: assistantSessionStoreArg = assistantSessionStore,
     assistantRunStore: assistantRunStoreArg = assistantRunStore,
     observationService = assistantObservationService,
+    messageService = agentOrchestratorMessageService,
+    taskViewService = assistantTaskViewService,
     runner = null
   } = {}) {
     this.conversationStore = conversationStore;
@@ -56,9 +60,13 @@ export class AssistantModeService {
     this.observationService = observationService instanceof AssistantObservationService
       ? observationService
       : observationService;
+    this.messageService = messageService;
+    this.taskViewService = taskViewService;
     this.runner = runner || new AssistantRunner({
       runStore: this.assistantRunStore,
-      observationService: this.observationService
+      observationService: this.observationService,
+      messageService: this.messageService,
+      taskViewService: this.taskViewService
     });
   }
 
@@ -95,12 +103,88 @@ export class AssistantModeService {
     });
   }
 
+  async finalizeRunSuccess({ conversation, assistantSession, runText, executed, assistantModeActive } = {}) {
+    this.assistantSessionStore.save({
+      ...assistantSession,
+      lastRunId: executed.run.id,
+      lastUserMessage: runText,
+      lastAssistantSummary: executed.reply.summary
+    });
+
+    const nextConversation = this.patchConversation(conversation, {
+      metadata: {
+        assistantCore: buildAssistantMetadata(this.getConversationAssistantState(conversation), {
+          mode: assistantModeActive ? ASSISTANT_CONTROL_MODE.ASSISTANT : ASSISTANT_CONTROL_MODE.DIRECT_RUNTIME,
+          assistantSessionId: assistantSession.id,
+          lastRunId: executed.run.id,
+          lastRunSummary: executed.reply.summary
+        })
+      }
+    });
+
+    return {
+      type: 'assistant_response',
+      message: executed.reply.message,
+      assistantSession,
+      assistantRun: executed.run,
+      toolResults: executed.toolResults,
+      conversation: nextConversation
+    };
+  }
+
+  async finalizeRunFailure({ conversation, assistantSession, runText, run, error, assistantModeActive } = {}) {
+    const failedRun = error?.assistantRun || this.assistantRunStore.save({
+      ...run,
+      status: ASSISTANT_RUN_STATUS.FAILED,
+      summary: error.message || 'Assistant run failed',
+      metadata: {
+        ...(run.metadata || {}),
+        error: error.message || 'Assistant run failed'
+      }
+    });
+
+    this.assistantSessionStore.save({
+      ...assistantSession,
+      lastRunId: failedRun.id,
+      lastUserMessage: runText,
+      lastAssistantSummary: failedRun.summary || ''
+    });
+
+    const nextConversation = this.patchConversation(conversation, {
+      metadata: {
+        assistantCore: buildAssistantMetadata(this.getConversationAssistantState(conversation), {
+          mode: assistantModeActive ? ASSISTANT_CONTROL_MODE.ASSISTANT : ASSISTANT_CONTROL_MODE.DIRECT_RUNTIME,
+          assistantSessionId: assistantSession.id,
+          lastRunId: failedRun.id,
+          lastRunSummary: failedRun.summary || ''
+        })
+      }
+    });
+
+    return {
+      type: 'assistant_response',
+      message: error.message || 'Assistant run failed',
+      isError: true,
+      assistantSession,
+      assistantRun: failedRun,
+      conversation: nextConversation
+    };
+  }
+
+  runAcceptedMessage(text) {
+    return /[\u3400-\u9fff]/.test(String(text || ''))
+      ? 'CliGate Assistant 已开始处理，我会继续在后台推进。'
+      : 'CliGate Assistant started working on it and will continue in the background.';
+  }
+
   async maybeHandleMessage({
     conversation,
     text,
     defaultRuntimeProvider = 'codex',
     cwd = '',
-    model = ''
+    model = '',
+    executionMode = 'sync',
+    onBackgroundResult = null
   } = {}) {
     const parsed = parseModeCommand(text);
     const assistantModeActive = this.isAssistantModeActive(conversation);
@@ -165,6 +249,62 @@ export class AssistantModeService {
       }
     });
 
+    if (executionMode === 'async') {
+      Promise.resolve().then(async () => {
+        try {
+          const executed = await this.runner.run({
+            run,
+            conversation,
+            text: runText,
+            defaultRuntimeProvider,
+            cwd,
+            model
+          });
+          const result = await this.finalizeRunSuccess({
+            conversation,
+            assistantSession,
+            runText,
+            executed,
+            assistantModeActive
+          });
+          if (typeof onBackgroundResult === 'function') {
+            await onBackgroundResult(result);
+          }
+        } catch (error) {
+          const failed = await this.finalizeRunFailure({
+            conversation,
+            assistantSession,
+            runText,
+            run,
+            error,
+            assistantModeActive
+          });
+          if (typeof onBackgroundResult === 'function') {
+            await onBackgroundResult(failed);
+          }
+        }
+      }).catch(() => {});
+
+      const nextConversation = this.patchConversation(conversation, {
+        metadata: {
+          assistantCore: buildAssistantMetadata(this.getConversationAssistantState(conversation), {
+            mode: assistantModeActive ? ASSISTANT_CONTROL_MODE.ASSISTANT : ASSISTANT_CONTROL_MODE.DIRECT_RUNTIME,
+            assistantSessionId: assistantSession.id,
+            lastRunId: run.id,
+            lastRunSummary: 'accepted'
+          })
+        }
+      });
+
+      return {
+        type: 'assistant_run_accepted',
+        message: this.runAcceptedMessage(runText),
+        assistantSession,
+        assistantRun: this.assistantRunStore.get(run.id) || run,
+        conversation: nextConversation
+      };
+    }
+
     try {
       const executed = await this.runner.run({
         run,
@@ -174,70 +314,22 @@ export class AssistantModeService {
         cwd,
         model
       });
-
-      this.assistantSessionStore.save({
-        ...assistantSession,
-        lastRunId: executed.run.id,
-        lastUserMessage: runText,
-        lastAssistantSummary: executed.reply.summary
-      });
-
-      const nextConversation = this.patchConversation(conversation, {
-        metadata: {
-          assistantCore: buildAssistantMetadata(this.getConversationAssistantState(conversation), {
-            mode: assistantModeActive ? ASSISTANT_CONTROL_MODE.ASSISTANT : ASSISTANT_CONTROL_MODE.DIRECT_RUNTIME,
-            assistantSessionId: assistantSession.id,
-            lastRunId: executed.run.id,
-            lastRunSummary: executed.reply.summary
-          })
-        }
-      });
-
-      return {
-        type: 'assistant_response',
-        message: executed.reply.message,
+      return this.finalizeRunSuccess({
+        conversation,
         assistantSession,
-        assistantRun: executed.run,
-        toolResults: executed.toolResults,
-        conversation: nextConversation
-      };
+        runText,
+        executed,
+        assistantModeActive
+      });
     } catch (error) {
-      const failedRun = error?.assistantRun || this.assistantRunStore.save({
-        ...run,
-        status: ASSISTANT_RUN_STATUS.FAILED,
-        summary: error.message || 'Assistant run failed',
-        metadata: {
-          ...(run.metadata || {}),
-          error: error.message || 'Assistant run failed'
-        }
-      });
-
-      this.assistantSessionStore.save({
-        ...assistantSession,
-        lastRunId: failedRun.id,
-        lastUserMessage: runText,
-        lastAssistantSummary: failedRun.summary || ''
-      });
-
-      const nextConversation = this.patchConversation(conversation, {
-        metadata: {
-          assistantCore: buildAssistantMetadata(this.getConversationAssistantState(conversation), {
-            mode: assistantModeActive ? ASSISTANT_CONTROL_MODE.ASSISTANT : ASSISTANT_CONTROL_MODE.DIRECT_RUNTIME,
-            assistantSessionId: assistantSession.id,
-            lastRunId: failedRun.id,
-            lastRunSummary: failedRun.summary || ''
-          })
-        }
-      });
-
-      return {
-        type: 'assistant_response',
-        message: error.message || 'Assistant run failed',
-        isError: true,
+      return this.finalizeRunFailure({
+        conversation,
         assistantSession,
-        assistantRun: failedRun,
-        conversation: nextConversation
-      };
+        runText,
+        run,
+        error,
+        assistantModeActive
+      });
     }
   }
 }

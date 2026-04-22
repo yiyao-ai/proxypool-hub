@@ -51,6 +51,28 @@ export function handleGetAssistantRuntimeSession(req, res) {
   });
 }
 
+export function handleGetAssistantRuntimeTurn(req, res) {
+  const detail = assistantObservationService.getRuntimeTurnDetail(
+    String(req.params.id || ''),
+    String(req.params.turnId || ''),
+    {
+      eventLimit: parseLimit(req.query.eventLimit, 50, 500)
+    }
+  );
+
+  if (!detail) {
+    return res.status(404).json({
+      success: false,
+      error: 'runtime turn not found'
+    });
+  }
+
+  return res.json({
+    success: true,
+    detail
+  });
+}
+
 export function handleListAssistantConversations(req, res) {
   const conversations = assistantObservationService.listConversations({
     limit: parseLimit(req.query.limit, 20, 100),
@@ -88,6 +110,7 @@ export default {
   handleGetAssistantWorkspaceContext,
   handleListAssistantRuntimeSessions,
   handleGetAssistantRuntimeSession,
+  handleGetAssistantRuntimeTurn,
   handleListAssistantConversations,
   handleGetAssistantConversationContext
 };

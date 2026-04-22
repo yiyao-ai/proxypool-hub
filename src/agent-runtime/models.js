@@ -23,6 +23,15 @@ export const AGENT_EVENT_TYPE = Object.freeze({
   FAILED: 'worker.failed'
 });
 
+export const AGENT_TURN_STATUS = Object.freeze({
+  RUNNING: 'running',
+  WAITING_APPROVAL: 'waiting_approval',
+  WAITING_USER: 'waiting_user',
+  READY: 'ready',
+  FAILED: 'failed',
+  CANCELLED: 'cancelled'
+});
+
 export function createAgentSession({
   provider,
   input,
@@ -54,10 +63,47 @@ export function createAgentSession({
 export function createAgentEvent(sessionId, seq, type, payload = {}) {
   return {
     sessionId,
+    turnId: payload?.turnId || null,
     seq,
     ts: new Date().toISOString(),
     type,
     payload
+  };
+}
+
+export function createAgentTurn({
+  sessionId,
+  turnId,
+  input = '',
+  status = AGENT_TURN_STATUS.RUNNING,
+  summary = '',
+  error = null,
+  eventCount = 0,
+  stats = {}
+} = {}) {
+  const now = new Date().toISOString();
+  return {
+    id: String(turnId || crypto.randomUUID()),
+    sessionId: String(sessionId || ''),
+    status,
+    input: String(input || ''),
+    summary: String(summary || ''),
+    error,
+    eventCount: Number(eventCount || 0),
+    stats: {
+      messageCount: Number(stats?.messageCount || 0),
+      commandCount: Number(stats?.commandCount || 0),
+      fileChangeCount: Number(stats?.fileChangeCount || 0),
+      approvalCount: Number(stats?.approvalCount || 0),
+      approvalResolvedCount: Number(stats?.approvalResolvedCount || 0),
+      questionCount: Number(stats?.questionCount || 0),
+      failureCount: Number(stats?.failureCount || 0),
+      lastMessage: String(stats?.lastMessage || '')
+    },
+    startedAt: now,
+    completedAt: null,
+    createdAt: now,
+    updatedAt: now
   };
 }
 

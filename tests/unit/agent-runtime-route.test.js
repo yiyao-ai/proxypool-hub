@@ -6,6 +6,7 @@ import {
   handleAnswerAgentRuntimeQuestion,
   handleCreateAgentRuntimeSession,
   handleGetAgentRuntimeSession,
+  handleGetAgentRuntimeTurn,
   handleListAgentRuntimeProviders,
   handleResolveAgentRuntimeApproval,
   handleSendAgentRuntimeInput,
@@ -121,6 +122,39 @@ test('agent runtime route returns 404 when session is missing', async () => {
     handleGetAgentRuntimeSession(mockReq({ params: { id: 'missing' } }), res);
     assert.equal(res._status, 404);
     assert.equal(res._body.error, 'session not found');
+  });
+});
+
+test('agent runtime route returns session turns in detail payload', async () => {
+  await withManagerOverrides({
+    getSession: () => ({ id: 'session-1', status: 'ready' }),
+    listTurns: () => [{ id: 'session-1:turn:1', input: 'inspect repo', status: 'ready' }]
+  }, async () => {
+    const res = mockRes();
+    handleGetAgentRuntimeSession(mockReq({ params: { id: 'session-1' }, query: { turnLimit: '5' } }), res);
+
+    assert.equal(res._status, 200);
+    assert.equal(res._body.success, true);
+    assert.equal(res._body.session.id, 'session-1');
+    assert.equal(res._body.turns.length, 1);
+    assert.equal(res._body.turns[0].id, 'session-1:turn:1');
+  });
+});
+
+test('agent runtime route returns turn detail and events payload', async () => {
+  await withManagerOverrides({
+    getSession: () => ({ id: 'session-1', status: 'ready' }),
+    getTurn: () => ({ id: 'session-1:turn:1', input: 'inspect repo', status: 'ready' }),
+    listTurnEvents: () => [{ sessionId: 'session-1', turnId: 'session-1:turn:1', seq: 2, type: 'worker.message', payload: { text: 'done' } }]
+  }, async () => {
+    const res = mockRes();
+    handleGetAgentRuntimeTurn(mockReq({ params: { id: 'session-1', turnId: 'session-1:turn:1' }, query: { eventLimit: '5' } }), res);
+
+    assert.equal(res._status, 200);
+    assert.equal(res._body.success, true);
+    assert.equal(res._body.turn.id, 'session-1:turn:1');
+    assert.equal(res._body.events.length, 1);
+    assert.equal(res._body.events[0].turnId, 'session-1:turn:1');
   });
 });
 

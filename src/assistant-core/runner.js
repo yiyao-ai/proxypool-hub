@@ -4,153 +4,11 @@ import assistantRunStore, { AssistantRunStore } from './run-store.js';
 import createDefaultAssistantToolRegistry from './tool-registry.js';
 import AssistantToolExecutor from './tool-executor.js';
 import { ASSISTANT_RUN_STATUS } from './models.js';
+import assistantPlanner, { AssistantPlanner } from './planner.js';
+import assistantTaskViewService from './task-view-service.js';
 
 function isChineseText(text) {
   return /[\u3400-\u9fff]/.test(String(text || ''));
-}
-
-function parseProvider(text) {
-  if (/(claude(?:\s|-)?code|claude code|claude)/i.test(text)) return 'claude-code';
-  if (/(codex)/i.test(text)) return 'codex';
-  return '';
-}
-
-function parseToolPlan({ text, conversation, defaultRuntimeProvider = 'codex', cwd = '', model = '' } = {}) {
-  const source = String(text || '').trim();
-  const normalized = source.toLowerCase();
-  const activeSessionId = conversation?.activeRuntimeSessionId || '';
-
-  const startMatch = source.match(/^(?:\/?cligate\s+)?(?:start|delegate(?:\s+to)?|run|启动|发起|委派)(?:\s+(codex|claude(?:\s|-)?code|claude))?[\s:：-]*(.+)$/i);
-  if (startMatch) {
-    const provider = parseProvider(startMatch[1] || '') || defaultRuntimeProvider || 'codex';
-    const task = String(startMatch[2] || '').trim();
-    return {
-      summaryIntent: 'runtime_start',
-      toolCalls: [
-        {
-          toolName: 'start_runtime_task',
-          input: {
-            provider,
-            task,
-            cwd,
-            model,
-            metadata: {
-              source: {
-                kind: 'assistant-runner',
-                conversationId: conversation?.id || ''
-              },
-              conversationId: conversation?.id || ''
-            }
-          }
-        }
-      ]
-    };
-  }
-
-  const continueMatch = source.match(/^(?:continue|follow up|继续|接着)(?:\s+session)?[\s:：-]*(.+)$/i);
-  if (continueMatch && activeSessionId) {
-    return {
-      summaryIntent: 'runtime_continue',
-      toolCalls: [
-        {
-          toolName: 'send_runtime_input',
-          input: {
-            sessionId: activeSessionId,
-            message: String(continueMatch[1] || '').trim()
-          }
-        }
-      ]
-    };
-  }
-
-  if (/^(?:cancel|stop|取消|停止)(?:\s+session)?$/i.test(source) && activeSessionId) {
-    return {
-      summaryIntent: 'runtime_cancel',
-      toolCalls: [
-        {
-          toolName: 'cancel_runtime_session',
-          input: {
-            sessionId: activeSessionId
-          }
-        }
-      ]
-    };
-  }
-
-  const runtimeIdMatch = source.match(/(?:runtime|session|会话)[\s#:：-]*([a-z0-9-]{8,})/i);
-  if (runtimeIdMatch) {
-    return {
-      summaryIntent: 'runtime_detail',
-      toolCalls: [
-        {
-          toolName: 'get_runtime_session',
-          input: {
-            sessionId: String(runtimeIdMatch[1] || '').trim()
-          }
-        }
-      ]
-    };
-  }
-
-  if (/(conversation|对话|聊天).*(list|recent|最近|列表|全部)?/i.test(source)) {
-    return {
-      summaryIntent: 'conversation_list',
-      toolCalls: [
-        {
-          toolName: 'list_conversations',
-          input: {
-            limit: 10
-          }
-        }
-      ]
-    };
-  }
-
-  if (/(runtime|session|状态|status|progress|进展|blocked|阻塞|approval|审批|question|问题)/i.test(source)) {
-    return {
-      summaryIntent: 'workspace_summary',
-      toolCalls: [
-        {
-          toolName: 'get_workspace_context',
-          input: {
-            runtimeLimit: 10,
-            conversationLimit: 10
-          }
-        },
-        ...(conversation?.id
-          ? [{
-              toolName: 'get_conversation_context',
-              input: {
-                conversationId: conversation.id,
-                deliveryLimit: 10
-              }
-            }]
-          : [])
-      ]
-    };
-  }
-
-  return {
-    summaryIntent: 'conversation_summary',
-    toolCalls: [
-      {
-        toolName: 'get_workspace_context',
-        input: {
-          runtimeLimit: 10,
-          conversationLimit: 10
-        }
-      },
-      ...(conversation?.id
-        ? [{
-            toolName: 'get_conversation_context',
-            input: {
-              conversationId: conversation.id,
-              deliveryLimit: 10
-            }
-          }]
-        : [])
-    ]
-  };
 }
 
 function providerLabel(providerId) {
@@ -166,34 +24,54 @@ function formatWorkspaceSummary(result, zh) {
     : `Workspace overview: ${summary.runtimeCount || 0} runtimes, ${summary.conversationCount || 0} conversations, ${summary.running || 0} running, ${summary.waitingApproval || 0} waiting approval, ${summary.waitingUser || 0} waiting user, ${summary.failed || 0} failed.`;
 }
 
+function formatTaskRecord(task, zh) {
+  if (!task?.id) {
+    return zh ? '当前没有可见任务。' : 'No visible task record.';
+  }
+  return [
+    `Task: ${task.id}`,
+    task.conversation?.title ? `Conversation: ${task.conversation.title}` : null,
+    task.runtimeSession?.providerLabel ? `Provider: ${task.runtimeSession.providerLabel}` : null,
+    task.state ? `State: ${task.state}` : null,
+    task.waitingReason ? `Waiting: ${task.waitingReason}` : null,
+    task.summary ? `Summary: ${task.summary}` : null,
+    task.resultPreview ? `Result: ${task.resultPreview}` : null
+  ].filter(Boolean).join('\n');
+}
+
 function buildRunnerReply({ text, plan, toolResults, conversation } = {}) {
   const zh = isChineseText(text);
   const first = toolResults[0]?.result || null;
+  const delegatedResult = toolResults.find((entry) => (
+    ['start_runtime_task', 'delegate_to_codex', 'delegate_to_claude_code', 'delegate_to_runtime', 'reuse_or_delegate'].includes(entry.toolName)
+  ))?.result || null;
+  const continuedResult = toolResults.find((entry) => entry.toolName === 'send_runtime_input')?.result || null;
+  const cancelledResult = toolResults.find((entry) => entry.toolName === 'cancel_runtime_session')?.result || null;
 
-  if (plan.summaryIntent === 'runtime_start' && first?.id) {
+  if (plan.summaryIntent === 'runtime_start' && delegatedResult?.id) {
     return {
       summary: zh ? 'assistant 通过工具发起了新的 runtime 任务。' : 'Started a new runtime task through assistant tools.',
       message: zh
-        ? `已通过 assistant tool 发起新任务。\nProvider: ${providerLabel(first.provider)}\nSession: ${first.id}\nTitle: ${first.title || ''}\nStatus: ${first.status || ''}`
-        : `Started a new task through assistant tools.\nProvider: ${providerLabel(first.provider)}\nSession: ${first.id}\nTitle: ${first.title || ''}\nStatus: ${first.status || ''}`
+        ? `已通过 assistant tool 发起新任务。\nProvider: ${providerLabel(delegatedResult.provider)}\nSession: ${delegatedResult.id}\nTitle: ${delegatedResult.title || ''}\nStatus: ${delegatedResult.status || ''}`
+        : `Started a new task through assistant tools.\nProvider: ${providerLabel(delegatedResult.provider)}\nSession: ${delegatedResult.id}\nTitle: ${delegatedResult.title || ''}\nStatus: ${delegatedResult.status || ''}`
     };
   }
 
-  if (plan.summaryIntent === 'runtime_continue' && first?.id) {
+  if (plan.summaryIntent === 'runtime_continue' && continuedResult?.id) {
     return {
       summary: zh ? 'assistant 已向现有 runtime 发送后续输入。' : 'Sent follow-up input to the active runtime.',
       message: zh
-        ? `已发送后续输入到 session ${first.id}。\nProvider: ${providerLabel(first.provider)}\nStatus: ${first.status || ''}`
-        : `Sent follow-up input to session ${first.id}.\nProvider: ${providerLabel(first.provider)}\nStatus: ${first.status || ''}`
+        ? `已发送后续输入到 session ${continuedResult.id}。\nProvider: ${providerLabel(continuedResult.provider)}\nStatus: ${continuedResult.status || ''}`
+        : `Sent follow-up input to session ${continuedResult.id}.\nProvider: ${providerLabel(continuedResult.provider)}\nStatus: ${continuedResult.status || ''}`
     };
   }
 
-  if (plan.summaryIntent === 'runtime_cancel' && first?.id) {
+  if (plan.summaryIntent === 'runtime_cancel' && cancelledResult?.id) {
     return {
       summary: zh ? 'assistant 已取消 runtime session。' : 'Cancelled the runtime session.',
       message: zh
-        ? `已取消 session ${first.id}。`
-        : `Cancelled session ${first.id}.`
+        ? `已取消 session ${cancelledResult.id}。`
+        : `Cancelled session ${cancelledResult.id}.`
     };
   }
 
@@ -232,13 +110,33 @@ function buildRunnerReply({ text, plan, toolResults, conversation } = {}) {
     };
   }
 
-  if (plan.summaryIntent === 'workspace_summary') {
-    const workspace = toolResults.find((entry) => entry.toolName === 'get_workspace_context')?.result || null;
+  if (plan.summaryIntent === 'task_list' && Array.isArray(first)) {
+    const lines = first.slice(0, 5).map((entry, index) => (
+      `${index + 1}. ${entry.summary || entry.conversation?.title || entry.id} / state=${entry.state}${entry.waitingReason ? ` / waiting=${entry.waitingReason}` : ''}`
+    ));
+    return {
+      summary: zh ? 'assistant 列出了统一任务视图。' : 'Listed unified assistant task records.',
+      message: lines.length > 0
+        ? lines.join('\n')
+        : (zh ? '当前没有可见任务。' : 'No visible tasks.')
+    };
+  }
+
+  if (plan.summaryIntent === 'task_detail') {
+    const task = Array.isArray(first) ? first[0] : first;
+    return {
+      summary: zh ? 'assistant 返回了当前任务详情。' : 'Returned the current task detail.',
+      message: formatTaskRecord(task, zh)
+    };
+  }
+
+  if (plan.summaryIntent === 'task_summary') {
+    const task = Array.isArray(first) ? first[0] : first;
     const conversationContext = toolResults.find((entry) => entry.toolName === 'get_conversation_context')?.result || null;
     return {
-      summary: zh ? 'assistant 汇总了当前工作区与 conversation 状态。' : 'Summarized workspace and conversation state.',
+      summary: zh ? 'assistant 汇总了当前任务与 conversation 状态。' : 'Summarized current task and conversation state.',
       message: [
-        workspace ? formatWorkspaceSummary(workspace, zh) : null,
+        task ? formatTaskRecord(task, zh) : null,
         conversationContext?.activeRuntime
           ? (zh
             ? `当前 conversation runtime: ${conversationContext.activeRuntime.providerLabel} / ${conversationContext.activeRuntime.status}${conversationContext.activeRuntime.title ? ` / ${conversationContext.activeRuntime.title}` : ''}`
@@ -250,12 +148,15 @@ function buildRunnerReply({ text, plan, toolResults, conversation } = {}) {
     };
   }
 
+  const task = toolResults.find((entry) => ['list_tasks', 'get_task'].includes(entry.toolName))?.result || null;
   const workspace = toolResults.find((entry) => entry.toolName === 'get_workspace_context')?.result || null;
   return {
     summary: zh ? 'assistant 通过工具返回了基础观测结果。' : 'Returned basic assistant observation using tools.',
-    message: workspace
+    message: task
+      ? formatTaskRecord(Array.isArray(task) ? task[0] : task, zh)
+      : (workspace
       ? formatWorkspaceSummary(workspace, zh)
-      : (zh ? 'assistant 已完成本次工具执行。' : 'The assistant tool run completed.')
+      : (zh ? 'assistant 已完成本次工具执行。' : 'The assistant tool run completed.'))
   };
 }
 
@@ -264,15 +165,20 @@ export class AssistantRunner {
     runStore = assistantRunStore,
     observationService = assistantObservationService,
     messageService = agentOrchestratorMessageService,
+    planner = assistantPlanner,
     toolRegistry = null,
-    toolExecutor = null
+    toolExecutor = null,
+    taskViewService = assistantTaskViewService
   } = {}) {
     this.runStore = runStore instanceof AssistantRunStore ? runStore : runStore;
     this.observationService = observationService;
     this.messageService = messageService;
+    this.planner = planner instanceof AssistantPlanner ? planner : planner;
+    this.taskViewService = taskViewService;
     this.toolRegistry = toolRegistry || createDefaultAssistantToolRegistry({
       observationService: this.observationService,
-      messageService: this.messageService
+      messageService: this.messageService,
+      taskViewService: this.taskViewService
     });
     this.toolExecutor = toolExecutor || new AssistantToolExecutor({
       toolRegistry: this.toolRegistry
@@ -287,7 +193,7 @@ export class AssistantRunner {
     cwd = '',
     model = ''
   } = {}) {
-    const plan = parseToolPlan({
+    const plan = this.planner.buildPlan({
       text,
       conversation,
       defaultRuntimeProvider,
@@ -300,28 +206,52 @@ export class AssistantRunner {
       status: ASSISTANT_RUN_STATUS.RUNNING,
       metadata: {
         ...(run.metadata || {}),
-        plan
+        plan,
+        executionBudget: plan.execution || null
       }
     });
 
     const toolResults = [];
     const steps = [];
     const relatedRuntimeSessionIds = new Set(currentRun.relatedRuntimeSessionIds || []);
+    const startedAt = Date.now();
+    const maxToolCalls = Number(plan?.execution?.maxToolCalls || 1);
+    const maxDurationMs = Number(plan?.execution?.maxDurationMs || 10_000);
 
     try {
-      for (const call of plan.toolCalls) {
-        const executed = await this.toolExecutor.executeToolCall(call, {
+      for (const step of plan.steps || []) {
+        if (toolResults.length >= maxToolCalls) {
+          throw new Error('Assistant run exceeded tool call budget');
+        }
+        if ((Date.now() - startedAt) > maxDurationMs) {
+          throw new Error('Assistant run exceeded time budget');
+        }
+
+        const executed = await this.toolExecutor.executeToolCall({
+          toolName: step.toolName,
+          input: step.input
+        }, {
           conversation,
-          run: currentRun
+          run: currentRun,
+          planStep: step
         });
         toolResults.push(executed);
-        if (executed.result?.id && ['start_runtime_task', 'send_runtime_input', 'cancel_runtime_session'].includes(executed.toolName)) {
+        if (executed.result?.id && [
+          'start_runtime_task',
+          'send_runtime_input',
+          'cancel_runtime_session',
+          'delegate_to_codex',
+          'delegate_to_claude_code',
+          'delegate_to_runtime',
+          'reuse_or_delegate'
+        ].includes(executed.toolName)) {
           relatedRuntimeSessionIds.add(executed.result.id);
         }
         steps.push({
-          kind: 'tool_call',
+          kind: step.kind || 'tool_call',
           status: 'completed',
           toolName: executed.toolName,
+          reason: step.reason || '',
           summary: executed.summary,
           startedAt: executed.startedAt,
           completedAt: executed.completedAt
@@ -350,9 +280,36 @@ export class AssistantRunner {
         conversation
       });
 
+      let finalStatus = ASSISTANT_RUN_STATUS.COMPLETED;
+      let runtimeDetail = toolResults.find((entry) => (
+        ['get_runtime_session', 'summarize_runtime_result'].includes(entry.toolName)
+        && entry.result
+      ))?.result || null;
+      const delegatedResult = toolResults.find((entry) => (
+        ['start_runtime_task', 'delegate_to_codex', 'delegate_to_claude_code', 'delegate_to_runtime', 'reuse_or_delegate', 'send_runtime_input'].includes(entry.toolName)
+        && entry.result
+      ))?.result || null;
+      if (!runtimeDetail && delegatedResult?.id) {
+        runtimeDetail = this.observationService.getRuntimeSessionDetail(delegatedResult.id, {
+          eventLimit: 20
+        });
+      }
+      const runtimeStatus = runtimeDetail?.session?.status || runtimeDetail?.status || delegatedResult?.status || '';
+      const pendingQuestions = Array.isArray(runtimeDetail?.pendingQuestions)
+        ? runtimeDetail.pendingQuestions.length
+        : Number(runtimeDetail?.pendingQuestions || 0);
+      const pendingApprovals = Array.isArray(runtimeDetail?.pendingApprovals)
+        ? runtimeDetail.pendingApprovals.length
+        : Number(runtimeDetail?.pendingApprovals || 0);
+      if (pendingQuestions > 0 || runtimeStatus === 'waiting_user') {
+        finalStatus = ASSISTANT_RUN_STATUS.WAITING_USER;
+      } else if (pendingApprovals > 0 || ['waiting_approval', 'starting', 'running'].includes(runtimeStatus)) {
+        finalStatus = ASSISTANT_RUN_STATUS.WAITING_RUNTIME;
+      }
+
       const completedRun = this.runStore.save({
         ...currentRun,
-        status: ASSISTANT_RUN_STATUS.COMPLETED,
+        status: finalStatus,
         summary: reply.summary,
         result: reply.message,
         steps,

@@ -7,6 +7,11 @@ import { syncTaskFromRuntimeResult } from '../agent-core/task-service.js';
 import { buildSupervisorBrief } from '../agent-orchestrator/supervisor-brief.js';
 import { CHANNEL_CONVERSATION_MODE } from './models.js';
 import AssistantModeService from '../assistant-core/mode-service.js';
+import { AssistantObservationService } from '../assistant-core/observation-service.js';
+import { AssistantTaskViewService } from '../assistant-core/task-view-service.js';
+import agentRuntimeSessionManager from '../agent-runtime/session-manager.js';
+import agentChannelRegistry from './registry.js';
+import assistantRunStore from '../assistant-core/run-store.js';
 
 function buildInboundKey(message) {
   return [
@@ -23,6 +28,7 @@ export class AgentChannelRouter {
     conversationStore = agentChannelConversationStore,
     deliveryStore = agentChannelDeliveryStore,
     pairingStore = agentChannelPairingStore,
+    registry = agentChannelRegistry,
     messageService = agentOrchestratorMessageService,
     taskStore = agentTaskStore,
     assistantModeService = null
@@ -30,10 +36,25 @@ export class AgentChannelRouter {
     this.conversationStore = conversationStore;
     this.deliveryStore = deliveryStore;
     this.pairingStore = pairingStore;
+    this.registry = registry;
     this.messageService = messageService;
     this.taskStore = taskStore;
     this.assistantModeService = assistantModeService || new AssistantModeService({
-      conversationStore: this.conversationStore
+      conversationStore: this.conversationStore,
+      messageService: this.messageService,
+      observationService: new AssistantObservationService({
+        conversationStore: this.conversationStore,
+        runtimeSessionManager: this.messageService?.runtimeSessionManager || agentRuntimeSessionManager,
+        taskStore: this.taskStore,
+        deliveryStore: this.deliveryStore
+      }),
+      taskViewService: new AssistantTaskViewService({
+        conversationStore: this.conversationStore,
+        runtimeSessionManager: this.messageService?.runtimeSessionManager || agentRuntimeSessionManager,
+        taskStore: this.taskStore,
+        deliveryStore: this.deliveryStore,
+        assistantRunStore
+      })
     });
   }
 
@@ -89,7 +110,36 @@ export class AgentChannelRouter {
     const previousSessionId = conversation.activeRuntimeSessionId || null;
     const assistantResult = await this.assistantModeService.maybeHandleMessage({
       conversation,
-      text: message.text
+      text: message.text,
+      defaultRuntimeProvider: options.defaultRuntimeProvider || 'codex',
+      cwd: options.cwd,
+      model: options.model,
+      executionMode: 'async',
+      onBackgroundResult: async (backgroundResult) => {
+        const provider = this.registry.get(message.channel, message.accountId);
+        const outboundText = String(backgroundResult?.message || '').trim();
+        if (!provider?.sendMessage || !outboundText) {
+          return;
+        }
+
+        const result = await provider.sendMessage({
+          conversation: backgroundResult.conversation || this.conversationStore.get(conversation.id),
+          text: outboundText
+        });
+
+        this.deliveryStore.saveOutbound({
+          channel: message.channel,
+          conversationId: conversation.id,
+          sessionId: backgroundResult?.assistantRun?.relatedRuntimeSessionIds?.[0] || null,
+          externalMessageId: result?.messageId || '',
+          status: 'sent',
+          payload: {
+            text: outboundText,
+            assistantRunId: backgroundResult?.assistantRun?.id || '',
+            kind: 'assistant-run-result'
+          }
+        });
+      }
     });
     if (assistantResult) {
       this.deliveryStore.saveInbound({

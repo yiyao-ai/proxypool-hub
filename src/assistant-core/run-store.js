@@ -49,6 +49,13 @@ export class AssistantRunStore {
       .slice(0, Math.max(1, limit));
   }
 
+  listByConversationId(conversationId, { limit = 100 } = {}) {
+    return this.records
+      .filter((entry) => entry.conversationId === String(conversationId || ''))
+      .sort((left, right) => String(right.updatedAt || '').localeCompare(String(left.updatedAt || '')))
+      .slice(0, Math.max(1, limit));
+  }
+
   get(runId) {
     return this.records.find((entry) => entry.id === String(runId || '')) || null;
   }

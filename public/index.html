@@ -181,6 +181,13 @@
                                 <span class="sidebar-label" x-text="t('conversationRecords')"></span>
                             </button>
                             <button class="nav-item flex items-center gap-3 px-6 py-3 text-sm font-medium text-gray-400 hover:text-white hover:bg-white/5"
+                                :class="{'active': activeTab === 'assistantTasks'}" @click="setActiveTab('assistantTasks')" :title="sidebarCollapsed ? t('assistantTasks') : ''">
+                                <svg class="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5h6M9 9h6M5 13h14M5 17h10M4 6a2 2 0 012-2h12a2 2 0 012 2v12a2 2 0 01-2 2H8l-4 4V6z" />
+                                </svg>
+                                <span class="sidebar-label" x-text="t('assistantTasks')"></span>
+                            </button>
+                            <button class="nav-item flex items-center gap-3 px-6 py-3 text-sm font-medium text-gray-400 hover:text-white hover:bg-white/5"
                                 :class="{'active': activeTab === 'accounts'}" @click="setActiveTab('accounts')" :title="sidebarCollapsed ? t('accounts') : ''">
                                 <svg class="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
@@ -2295,6 +2302,216 @@
                 </div>
             </div>
 
+            <div x-show="activeTab === 'assistantTasks'" x-transition class="view-container">
+                <div class="flex items-center justify-between gap-4 mb-6">
+                    <div class="flex flex-wrap items-center gap-4">
+                        <h1 class="text-2xl font-bold text-white tracking-tight" x-text="t('assistantTasks')"></h1>
+                        <div class="flex items-center h-6 px-3 rounded-full bg-space-800/80 border border-space-border/50 shadow-sm backdrop-blur-sm">
+                            <span class="text-[10px] font-mono text-gray-400 uppercase tracking-wider" x-text="t('assistantTaskBadge')"></span>
+                        </div>
+                    </div>
+                    <button class="btn btn-sm bg-space-800 hover:bg-space-700 border border-space-border text-gray-200"
+                        @click="loadAssistantTasks(); if (selectedAssistantTaskId) loadAssistantTaskDetail(selectedAssistantTaskId);"
+                        :disabled="assistantTasksLoading || assistantTaskLoading">
+                        <span x-text="(assistantTasksLoading || assistantTaskLoading) ? t('loading') : t('refresh')"></span>
+                    </button>
+                </div>
+
+                <div class="conversation-records-layout">
+                    <div class="view-card conversation-thread-panel">
+                        <div class="flex items-center justify-between gap-3 mb-4">
+                            <div class="flex items-center gap-2.5">
+                                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" class="w-4 h-4 text-neon-purple">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6M5 8h14M5 16V6a2 2 0 012-2h10a2 2 0 012 2v12a2 2 0 01-2 2H9l-4 4z"></path>
+                                </svg>
+                                <h3 class="text-xs font-mono text-gray-400 uppercase tracking-widest" x-text="t('assistantTaskListTitle')"></h3>
+                            </div>
+                            <div class="text-[11px] font-mono text-gray-500" x-text="filteredAssistantTasks.length + ' ' + t('assistantTaskCount')"></div>
+                        </div>
+                        <div class="grid grid-cols-1 gap-3 mb-4">
+                            <input type="text" class="input input-sm w-full bg-space-800 border-space-border text-white"
+                                x-model="assistantTaskQuery" :placeholder="t('assistantTaskSearch')">
+                            <label class="block">
+                                <span class="text-[11px] font-mono text-gray-500 uppercase tracking-wider block mb-1" x-text="t('assistantTaskFilterState')"></span>
+                                <select class="select select-sm w-full bg-space-800 border-space-border text-white" x-model="assistantTaskStateFilter" @change="loadAssistantTasks()">
+                                    <option value="all" x-text="t('allStates')"></option>
+                                    <option value="running" x-text="t('agentRuntimeStatusRunning')"></option>
+                                    <option value="waiting_runtime" x-text="t('agentRuntimeStatusWaitingApproval')"></option>
+                                    <option value="waiting_user" x-text="t('agentRuntimeStatusWaitingUser')"></option>
+                                    <option value="completed" x-text="t('agentRuntimeStatusReady')"></option>
+                                    <option value="failed" x-text="t('failedLabel')"></option>
+                                </select>
+                            </label>
+                        </div>
+                        <div class="space-y-3 conversation-thread-list overflow-y-auto custom-scrollbar pr-1">
+                            <div class="text-xs text-gray-500 font-mono" x-show="assistantTasksLoading" x-text="t('loading')"></div>
+                            <template x-for="task in filteredAssistantTasks" :key="task.id">
+                                <button type="button" class="w-full text-left rounded-2xl border p-4 transition-all"
+                                    :class="assistantTaskCardClass(task)"
+                                    @click="selectAssistantTask(task.id)">
+                                    <div class="flex items-start justify-between gap-3">
+                                        <div class="min-w-0">
+                                            <div class="text-sm text-white truncate" x-text="task.conversation?.title || task.id"></div>
+                                            <div class="text-[11px] text-gray-500 font-mono truncate mt-1">
+                                                <span x-text="task.runtimeSession?.providerLabel || '-'"></span>
+                                                <span class="mx-1">•</span>
+                                                <span x-text="task.latestTurn?.id || task.id"></span>
+                                            </div>
+                                        </div>
+                                        <span class="inline-flex items-center rounded-full border px-2.5 py-1 text-[11px] font-mono"
+                                            :class="assistantTaskStatePillClass(task)"
+                                            x-text="assistantTaskStateLabel(task)"></span>
+                                    </div>
+                                    <div class="mt-2 text-xs text-gray-400 conversation-thread-preview" x-show="assistantTaskPreview(task)"
+                                        x-text="assistantTaskPreview(task)"></div>
+                                    <div class="mt-2 text-[11px] text-gray-500 font-mono" x-show="task.updatedAt"
+                                        x-text="formatRelativeTime(task.updatedAt)"></div>
+                                </button>
+                            </template>
+                            <div class="text-xs text-gray-500 font-mono" x-show="!assistantTasksLoading && filteredAssistantTasks.length === 0" x-text="t('assistantTasksEmpty')"></div>
+                        </div>
+                    </div>
+
+                    <div class="view-card conversation-detail-panel">
+                        <div class="flex items-center justify-between gap-4 mb-4">
+                            <div>
+                                <div class="text-xs font-mono text-gray-400 uppercase tracking-widest" x-text="t('assistantTaskDetailTitle')"></div>
+                                <div class="text-sm text-white mt-2" x-text="selectedAssistantTask?.conversation?.title || t('assistantTaskDetailEmpty')"></div>
+                                <div class="text-[11px] text-gray-500 font-mono mt-1" x-show="selectedAssistantTask?.id">
+                                    <span x-text="selectedAssistantTask?.runtimeSession?.providerLabel || ''"></span>
+                                    <span class="mx-1">•</span>
+                                    <span x-text="selectedAssistantTask?.runtimeSession?.id || ''"></span>
+                                </div>
+                            </div>
+                            <div class="flex items-center gap-2">
+                                <button class="btn btn-xs btn-outline border-space-border text-gray-300"
+                                    x-show="selectedAssistantTask?.runtimeSession?.id"
+                                    @click="openAssistantTaskRuntime(selectedAssistantTask)"
+                                    x-text="t('assistantTaskOpenRuntime')"></button>
+                                <button class="btn btn-xs bg-space-800 hover:bg-space-700 border border-space-border text-white"
+                                    x-show="selectedAssistantTaskId"
+                                    @click="loadAssistantTaskDetail(selectedAssistantTaskId)"
+                                    x-text="assistantTaskLoading ? t('loading') : t('refresh')"></button>
+                            </div>
+                        </div>
+                        <div class="rounded-2xl border border-space-border/30 bg-space-950/40 p-4 conversation-detail-body overflow-y-auto custom-scrollbar">
+                            <template x-if="!selectedAssistantTaskId">
+                                <div class="h-full flex items-center justify-center text-sm text-gray-500" x-text="t('assistantTaskDetailEmpty')"></div>
+                            </template>
+                            <template x-if="selectedAssistantTaskId">
+                                <div class="space-y-4">
+                                    <div class="flex flex-wrap items-center gap-2">
+                                        <span class="inline-flex items-center rounded-full border px-2.5 py-1 text-[11px] font-mono"
+                                            :class="assistantTaskStatePillClass(selectedAssistantTask)"
+                                            x-text="assistantTaskStateLabel(selectedAssistantTask)"></span>
+                                        <span class="inline-flex items-center rounded-full border border-space-border/30 px-2.5 py-1 text-[11px] font-mono text-gray-400"
+                                            x-show="selectedAssistantTask?.assistantRun?.id"
+                                            x-text="selectedAssistantTask?.assistantRun?.id ? ('run ' + selectedAssistantTask.assistantRun.id.slice(0, 8)) : ''"></span>
+                                        <span class="inline-flex items-center rounded-full border border-space-border/30 px-2.5 py-1 text-[11px] font-mono text-gray-400"
+                                            x-show="selectedAssistantTask?.latestTurn?.id"
+                                            x-text="selectedAssistantTask?.latestTurn?.id ? ('turn ' + selectedAssistantTask.latestTurn.id.split(':').pop()) : ''"></span>
+                                    </div>
+
+                                    <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                                        <div class="view-card !p-4">
+                                            <div class="text-[11px] font-mono text-gray-500 uppercase tracking-wider mb-2" x-text="t('summary')"></div>
+                                            <div class="text-sm text-white whitespace-pre-wrap" x-text="selectedAssistantTask?.summary || '-'"></div>
+                                        </div>
+                                        <div class="view-card !p-4">
+                                            <div class="text-[11px] font-mono text-gray-500 uppercase tracking-wider mb-2" x-text="t('assistantTaskResultPreview')"></div>
+                                            <div class="text-sm text-white whitespace-pre-wrap" x-text="selectedAssistantTask?.resultPreview || '-'"></div>
+                                        </div>
+                                    </div>
+
+                                    <div class="view-card !p-4">
+                                        <div class="text-[11px] font-mono text-gray-500 uppercase tracking-wider mb-3" x-text="t('assistantTaskRuntimeDetail')"></div>
+                                        <div class="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
+                                            <div><span class="text-gray-500" x-text="t('status') + ': '"></span><span class="text-white" x-text="selectedAssistantTask?.state || '-'"></span></div>
+                                            <div><span class="text-gray-500">Provider: </span><span class="text-white" x-text="selectedAssistantTask?.runtimeSession?.providerLabel || '-'"></span></div>
+                                            <div><span class="text-gray-500">Waiting: </span><span class="text-white" x-text="selectedAssistantTask?.waitingReason || '-'"></span></div>
+                                            <div><span class="text-gray-500">Updated: </span><span class="text-white" x-text="selectedAssistantTask?.updatedAt ? formatRelativeTime(selectedAssistantTask.updatedAt) : '-'"></span></div>
+                                        </div>
+                                    </div>
+
+                                    <div class="view-card !p-4" x-show="assistantTaskIdentityEntries(selectedAssistantTask).length > 0">
+                                        <div class="text-[11px] font-mono text-gray-500 uppercase tracking-wider mb-3" x-text="t('assistantTaskIdentifiers')"></div>
+                                        <div class="flex flex-wrap gap-2">
+                                            <template x-for="entry in assistantTaskIdentityEntries(selectedAssistantTask)" :key="entry.label + entry.value">
+                                                <button type="button"
+                                                    class="inline-flex items-center gap-2 rounded-full border border-space-border/30 bg-space-900/40 px-3 py-1.5 text-[11px] font-mono text-gray-300 hover:bg-space-800/50"
+                                                    @click="copyAssistantTaskValue(entry.value)">
+                                                    <span class="text-gray-500" x-text="entry.label"></span>
+                                                    <span class="text-white" x-text="entry.value"></span>
+                                                </button>
+                                            </template>
+                                        </div>
+                                    </div>
+
+                                    <div class="view-card !p-4" x-show="selectedAssistantTask?.latestTurn">
+                                        <div class="flex items-center justify-between gap-3 mb-3">
+                                            <div class="text-[11px] font-mono text-gray-500 uppercase tracking-wider" x-text="t('assistantTaskLatestTurn')"></div>
+                                            <button class="btn btn-xs btn-outline border-space-border text-gray-300"
+                                                x-show="selectedAssistantTask?.latestTurn?.id"
+                                                @click="loadAssistantTaskTurnDetail(selectedAssistantTask)"
+                                                x-text="assistantTaskTurnLoading ? t('loading') : t('assistantTaskRefreshTurn')"></button>
+                                        </div>
+                                        <div class="space-y-2 text-sm">
+                                            <div><span class="text-gray-500">Input: </span><span class="text-white whitespace-pre-wrap" x-text="selectedAssistantTask?.latestTurn?.input || '-'"></span></div>
+                                            <div><span class="text-gray-500">Summary: </span><span class="text-white whitespace-pre-wrap" x-text="selectedAssistantTask?.latestTurn?.summary || '-'"></span></div>
+                                            <div class="grid grid-cols-2 md:grid-cols-4 gap-2 text-[11px] font-mono pt-2">
+                                                <div class="rounded-lg border border-space-border/30 px-3 py-2 text-gray-300">msg <span class="text-white" x-text="selectedAssistantTask?.latestTurn?.stats?.messageCount || 0"></span></div>
+                                                <div class="rounded-lg border border-space-border/30 px-3 py-2 text-gray-300">cmd <span class="text-white" x-text="selectedAssistantTask?.latestTurn?.stats?.commandCount || 0"></span></div>
+                                                <div class="rounded-lg border border-space-border/30 px-3 py-2 text-gray-300">files <span class="text-white" x-text="selectedAssistantTask?.latestTurn?.stats?.fileChangeCount || 0"></span></div>
+                                                <div class="rounded-lg border border-space-border/30 px-3 py-2 text-gray-300">ask <span class="text-white" x-text="selectedAssistantTask?.latestTurn?.stats?.questionCount || 0"></span></div>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <div class="view-card !p-4" x-show="assistantTaskPendingItems(selectedAssistantTask).length > 0">
+                                        <div class="text-[11px] font-mono text-gray-500 uppercase tracking-wider mb-3" x-text="t('assistantTaskPending')"></div>
+                                        <div class="space-y-2">
+                                            <template x-for="item in assistantTaskPendingItems(selectedAssistantTask)" :key="item.kind + item.id">
+                                                <div class="rounded-xl border border-space-border/30 bg-space-900/35 px-3 py-2">
+                                                    <div class="flex items-center justify-between gap-3">
+                                                        <span class="inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-mono"
+                                                            :class="item.kind === 'approval' ? 'border-yellow-500/30 bg-yellow-500/10 text-yellow-400' : 'border-blue-500/30 bg-blue-500/10 text-blue-400'"
+                                                            x-text="item.kind"></span>
+                                                        <span class="text-[10px] font-mono text-gray-500" x-text="item.id"></span>
+                                                    </div>
+                                                    <div class="mt-2 text-sm text-white whitespace-pre-wrap" x-text="item.text"></div>
+                                                </div>
+                                            </template>
+                                        </div>
+                                    </div>
+
+                                    <div class="view-card !p-4">
+                                        <div class="text-[11px] font-mono text-gray-500 uppercase tracking-wider mb-3" x-text="t('assistantTaskTurnTimeline')"></div>
+                                        <div class="space-y-3" x-show="assistantTaskRecentEvents().length > 0">
+                                            <template x-for="event in assistantTaskRecentEvents()" :key="event.seq">
+                                                <div class="rounded-xl border border-space-border/30 bg-space-900/35 p-3">
+                                                    <div class="flex flex-wrap items-center justify-between gap-2">
+                                                        <div class="flex items-center gap-2">
+                                                            <span class="inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-mono"
+                                                                :class="assistantTaskEventPillClass(event)"
+                                                                x-text="assistantTaskEventTypeLabel(event)"></span>
+                                                            <span class="text-[10px] font-mono text-gray-500" x-text="'#' + event.seq"></span>
+                                                        </div>
+                                                        <span class="text-[10px] font-mono text-gray-500" x-text="formatRelativeTime(event.ts)"></span>
+                                                    </div>
+                                                    <div class="mt-2 text-sm text-white whitespace-pre-wrap"
+                                                        x-text="assistantTaskEventSummary(event) || '-'"></div>
+                                                </div>
+                                            </template>
+                                        </div>
+                                        <div class="text-sm text-gray-500" x-show="assistantTaskRecentEvents().length === 0" x-text="t('assistantTaskNoEvents')"></div>
+                                    </div>
+                                </div>
+                            </template>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
             <div x-show="activeTab === 'localModels'" x-transition class="view-container">
                 <div class="flex items-center justify-between gap-4 mb-6">
                     <div class="flex flex-wrap items-center gap-4">
@@ -3878,9 +4095,7 @@
                 </template>
             </div>
         </div>
-    </div>
-
-    <script src="/js/i18n.js?v=20260417-session-records-4"></script>
-    <script src="/js/app.js?v=20260417-session-records-4"></script>
+    <script src="/js/i18n.js?v=20260422-assistant-tasks-2"></script>
+    <script src="/js/app.js?v=20260422-assistant-tasks-2"></script>
 </body>
 </html>

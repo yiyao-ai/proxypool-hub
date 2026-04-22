@@ -735,7 +735,7 @@ test('AgentOrchestratorMessageService accepts natural-language approval and can 
   assert.equal(resolved.type, 'approval_resolved');
   assert.equal(resolved.approval.status, 'approved');
   assert.ok(resolved.policy);
-  assert.equal(approvalPolicyStore.listPolicies({ scope: 'session', scopeRef: started.id }).length, 1);
+  assert.equal(approvalPolicyStore.listPolicies({ scope: 'runtime_session', scopeRef: started.id }).length, 1);
 });
 
 test('AgentOrchestratorMessageService can remember approval at conversation scope', async () => {
@@ -1333,8 +1333,8 @@ test('AgentChannelRouter supports /cligate mode switching and one-shot assistant
     text: 'status',
     messageType: 'text'
   });
-  assert.equal(replied.type, 'assistant_response');
-  assert.match(String(replied.message || ''), /runtime|conversation|Current|当前/i);
+  assert.equal(replied.type, 'assistant_run_accepted');
+  assert.match(String(replied.message || ''), /CliGate Assistant|后台|background/i);
 
   const exited = await router.routeInboundMessage({
     channel: 'telegram',
@@ -1381,10 +1381,9 @@ test('AgentChannelRouter runs Phase 4 assistant tool flow to start a runtime tas
     defaultRuntimeProvider: 'claude-code'
   });
 
-  assert.equal(result.type, 'assistant_response');
+  assert.equal(result.type, 'assistant_run_accepted');
   assert.ok(result.assistantRun?.id);
-  assert.equal(result.assistantRun.steps[0]?.toolName, 'start_runtime_task');
-  assert.equal(result.assistantRun.relatedRuntimeSessionIds.length, 1);
+  assert.equal(result.assistantRun.status, 'queued');
 });
 
 test('AgentOrchestratorMessageService starts the default remembered provider for return phrasing without special interception', async () => {

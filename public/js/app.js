@@ -91,6 +91,15 @@ document.addEventListener('alpine:init', () => {
         channelConversationQuery: '',
         channelConversationChannelFilter: 'all',
         channelConversationStateFilter: 'all',
+        assistantTasks: [],
+        assistantTasksLoading: false,
+        selectedAssistantTaskId: '',
+        selectedAssistantTask: null,
+        assistantTaskLoading: false,
+        assistantTaskTurnDetail: null,
+        assistantTaskTurnLoading: false,
+        assistantTaskQuery: '',
+        assistantTaskStateFilter: 'all',
 
         // Proxy status
         proxyStatus: {
@@ -339,6 +348,14 @@ document.addEventListener('alpine:init', () => {
                     }
                 }
             }, 5000);
+            setInterval(() => {
+                if (this.activeTab === 'assistantTasks') {
+                    this.loadAssistantTasks({ silent: true });
+                    if (this.selectedAssistantTaskId) {
+                        this.loadAssistantTaskDetail(this.selectedAssistantTaskId, { silent: true });
+                    }
+                }
+            }, 5000);
             this.startLogStream();
             this.loadHaikuModelSetting();
             this.loadAccountStrategySetting();
@@ -400,7 +417,7 @@ document.addEventListener('alpine:init', () => {
         },
 
         sectionForTab(tab) {
-            if (['dashboard', 'chat', 'channels', 'conversationRecords', 'accounts'].includes(tab)) return 'main';
+            if (['dashboard', 'chat', 'channels', 'conversationRecords', 'assistantTasks', 'accounts'].includes(tab)) return 'main';
             if (['apikeys', 'usage', 'pricing', 'apiExplorer', 'requestLogs'].includes(tab)) return 'api';
             if (['tools', 'localModels', 'logs', 'settings', 'resources'].includes(tab)) return 'system';
             return 'main';
@@ -472,6 +489,13 @@ document.addEventListener('alpine:init', () => {
                 this.loadChannelConversations().then(() => {
                     if (this.selectedChannelConversationId) {
                         this.loadChannelConversationDetail(this.selectedChannelConversationId, { silent: true });
+                    }
+                });
+            }
+            if (tab === 'assistantTasks') {
+                this.loadAssistantTasks().then(() => {
+                    if (this.selectedAssistantTaskId) {
+                        this.loadAssistantTaskDetail(this.selectedAssistantTaskId, { silent: true });
                     }
                 });
             }
@@ -3303,6 +3327,243 @@ document.addEventListener('alpine:init', () => {
             if (!conversation?.lastMessagePreview) return '';
             const prefix = conversation.lastMessageDirection === 'inbound' ? `${this.t('you')}: ` : `${this.t('assistant')}: `;
             return `${prefix}${conversation.lastMessagePreview}`;
+        },
+
+        get filteredAssistantTasks() {
+            const query = String(this.assistantTaskQuery || '').trim().toLowerCase();
+            const stateFilter = String(this.assistantTaskStateFilter || 'all');
+            return this.assistantTasks.filter((task) => {
+                if (stateFilter !== 'all' && String(task?.state || '') !== stateFilter) {
+                    return false;
+                }
+                if (!query) return true;
+                return [
+                    task?.id,
+                    task?.summary,
+                    task?.resultPreview,
+                    task?.waitingReason,
+                    task?.conversation?.title,
+                    task?.runtimeSession?.providerLabel,
+                    task?.latestTurn?.input
+                ].some((value) => String(value || '').toLowerCase().includes(query));
+            });
+        },
+
+        async loadAssistantTasks(options = {}) {
+            if (!options.silent) {
+                this.assistantTasksLoading = true;
+            }
+            const params = new URLSearchParams();
+            params.set('limit', '80');
+            if (this.assistantTaskStateFilter && this.assistantTaskStateFilter !== 'all') {
+                params.set('state', this.assistantTaskStateFilter);
+            }
+            const { ok, data } = await this.api(`/api/assistant/tasks?${params.toString()}`);
+            if (ok && Array.isArray(data?.tasks)) {
+                this.assistantTasks = data.tasks;
+                if (!this.selectedAssistantTaskId && this.assistantTasks.length > 0) {
+                    this.selectedAssistantTaskId = this.assistantTasks[0].id;
+                }
+                if (this.selectedAssistantTaskId) {
+                    const selected = this.assistantTasks.find((item) => item.id === this.selectedAssistantTaskId) || null;
+                    if (selected) {
+                        this.selectedAssistantTask = {
+                            ...(this.selectedAssistantTask || {}),
+                            ...selected
+                        };
+                    } else if (this.assistantTasks.length > 0) {
+                        this.selectedAssistantTaskId = this.assistantTasks[0].id;
+                        this.selectedAssistantTask = this.assistantTasks[0];
+                    } else {
+                        this.selectedAssistantTaskId = '';
+                        this.selectedAssistantTask = null;
+                    }
+                }
+            }
+            if (!options.silent) {
+                this.assistantTasksLoading = false;
+            }
+        },
+
+        async selectAssistantTask(taskId) {
+            if (!taskId) return;
+            this.selectedAssistantTaskId = taskId;
+            await this.loadAssistantTaskDetail(taskId);
+        },
+
+        async loadAssistantTaskDetail(taskId = this.selectedAssistantTaskId, options = {}) {
+            if (!taskId) return;
+            if (!options.silent) {
+                this.assistantTaskLoading = true;
+            }
+            const { ok, data } = await this.api(`/api/assistant/tasks/${encodeURIComponent(taskId)}`);
+            if (ok && data?.task) {
+                this.selectedAssistantTask = data.task;
+                await this.loadAssistantTaskTurnDetail(data.task, options);
+            }
+            if (!options.silent) {
+                this.assistantTaskLoading = false;
+            }
+        },
+
+        async loadAssistantTaskTurnDetail(task = this.selectedAssistantTask, options = {}) {
+            const runtimeSessionId = String(task?.runtimeSession?.id || '');
+            const turnId = String(task?.latestTurn?.id || '');
+            if (!runtimeSessionId || !turnId) {
+                this.assistantTaskTurnDetail = null;
+                return;
+            }
+            if (!options.silent) {
+                this.assistantTaskTurnLoading = true;
+            }
+            const { ok, data } = await this.api(`/api/assistant/runtime-sessions/${encodeURIComponent(runtimeSessionId)}/turns/${encodeURIComponent(turnId)}`);
+            if (ok && data?.detail) {
+                this.assistantTaskTurnDetail = data.detail;
+            }
+            if (!options.silent) {
+                this.assistantTaskTurnLoading = false;
+            }
+        },
+
+        assistantTaskCardClass(task) {
+            const isSelected = task?.id && task.id === this.selectedAssistantTaskId;
+            return isSelected
+                ? 'border-neon-purple/40 bg-neon-purple/10'
+                : 'border-space-border/30 bg-space-900/40 hover:bg-space-800/50';
+        },
+
+        assistantTaskStateLabel(task) {
+            const state = String(task?.state || 'idle');
+            if (state === 'waiting_approval' || state === 'waiting_runtime') return this.t('agentRuntimeStatusWaitingApproval');
+            if (state === 'waiting_user') return this.t('agentRuntimeStatusWaitingUser');
+            if (state === 'running' || state === 'starting') return this.t('agentRuntimeStatusRunning');
+            if (state === 'completed' || state === 'ready') return this.t('agentRuntimeStatusReady');
+            if (state === 'failed' || state === 'cancelled') return this.t('failedLabel');
+            return this.t('idleStatus');
+        },
+
+        assistantTaskStatePillClass(task) {
+            const state = String(task?.state || 'idle');
+            if (state === 'waiting_approval' || state === 'waiting_runtime') {
+                return 'border-yellow-500/30 bg-yellow-500/10 text-yellow-400';
+            }
+            if (state === 'waiting_user') {
+                return 'border-blue-500/30 bg-blue-500/10 text-blue-400';
+            }
+            if (state === 'running' || state === 'starting') {
+                return 'border-neon-green/30 bg-neon-green/10 text-neon-green';
+            }
+            if (state === 'completed' || state === 'ready') {
+                return 'border-neon-cyan/30 bg-neon-cyan/10 text-neon-cyan';
+            }
+            if (state === 'failed' || state === 'cancelled') {
+                return 'border-red-500/30 bg-red-500/10 text-red-300';
+            }
+            return 'border-space-border/40 bg-space-900/70 text-gray-400';
+        },
+
+        assistantTaskPreview(task) {
+            return task?.summary || task?.resultPreview || task?.waitingReason || '';
+        },
+
+        assistantTaskIdentityEntries(task = this.selectedAssistantTask) {
+            return [
+                { label: 'task', value: task?.id || '' },
+                { label: 'conversation', value: task?.conversation?.id || '' },
+                { label: 'run', value: task?.assistantRun?.id || '' },
+                { label: 'runtime', value: task?.runtimeSession?.id || '' },
+                { label: 'turn', value: task?.latestTurn?.id || '' }
+            ].filter((entry) => entry.value);
+        },
+
+        assistantTaskPendingItems(task = this.selectedAssistantTask, turnDetail = this.assistantTaskTurnDetail) {
+            const approvals = Array.isArray(turnDetail?.pendingApprovals) ? turnDetail.pendingApprovals : [];
+            const questions = Array.isArray(turnDetail?.pendingQuestions) ? turnDetail.pendingQuestions : [];
+            return [
+                ...approvals.map((entry) => ({
+                    kind: 'approval',
+                    id: entry.approvalId,
+                    text: entry.title || entry.summary || this.t('agentRuntimeStatusWaitingApproval')
+                })),
+                ...questions.map((entry) => ({
+                    kind: 'question',
+                    id: entry.questionId,
+                    text: entry.text || this.t('agentRuntimeStatusWaitingUser')
+                }))
+            ];
+        },
+
+        assistantTaskEventTypeLabel(event) {
+            const type = String(event?.type || '');
+            if (type === 'worker.started') return 'started';
+            if (type === 'worker.progress') return 'progress';
+            if (type === 'worker.message') return 'message';
+            if (type === 'worker.command') return 'command';
+            if (type === 'worker.file_change') return 'file change';
+            if (type === 'worker.question') return 'question';
+            if (type === 'worker.approval_request') return 'approval';
+            if (type === 'worker.approval_resolved') return 'approved';
+            if (type === 'worker.completed') return 'completed';
+            if (type === 'worker.failed') return 'failed';
+            return type || 'event';
+        },
+
+        assistantTaskEventPillClass(event) {
+            const type = String(event?.type || '');
+            if (type === 'worker.message') return 'border-neon-cyan/30 bg-neon-cyan/10 text-neon-cyan';
+            if (type === 'worker.command') return 'border-purple-500/30 bg-purple-500/10 text-purple-400';
+            if (type === 'worker.file_change') return 'border-neon-green/30 bg-neon-green/10 text-neon-green';
+            if (type === 'worker.question') return 'border-blue-500/30 bg-blue-500/10 text-blue-400';
+            if (type === 'worker.approval_request' || type === 'worker.approval_resolved') return 'border-yellow-500/30 bg-yellow-500/10 text-yellow-400';
+            if (type === 'worker.failed') return 'border-red-500/30 bg-red-500/10 text-red-300';
+            if (type === 'worker.completed') return 'border-neon-green/30 bg-neon-green/10 text-neon-green';
+            return 'border-space-border/40 bg-space-900/70 text-gray-400';
+        },
+
+        assistantTaskEventSummary(event) {
+            if (!event) return '';
+            const payload = event.payload || {};
+            return payload.text
+                || payload.message
+                || payload.command
+                || payload.path
+                || payload.title
+                || payload.summary
+                || payload.error
+                || '';
+        },
+
+        assistantTaskRecentEvents() {
+            return Array.isArray(this.assistantTaskTurnDetail?.recentEvents)
+                ? this.assistantTaskTurnDetail.recentEvents
+                : [];
+        },
+
+        openAssistantTaskRuntime(task = this.selectedAssistantTask) {
+            const runtimeSession = task?.runtimeSession;
+            if (!runtimeSession?.id) {
+                this.showToast(this.t('assistantTaskRuntimeMissing'), 'warning');
+                return;
+            }
+            this.setActiveTab('chat');
+            this.openAgentRuntimeMonitorSession({
+                id: runtimeSession.id,
+                provider: runtimeSession.provider,
+                model: task?.task?.provider || '',
+                status: runtimeSession.status,
+                title: task?.conversation?.title || runtimeSession.title || runtimeSession.id,
+                updatedAt: runtimeSession.updatedAt
+            });
+        },
+
+        async copyAssistantTaskValue(value) {
+            if (!value) return;
+            try {
+                await navigator.clipboard.writeText(String(value));
+                this.showToast(this.t('copiedToClipboard'), 'success');
+            } catch {
+                this.showToast(this.t('failedToCopy'), 'error');
+            }
         },
 
         resolveChannelConversationActionId(conversation) {

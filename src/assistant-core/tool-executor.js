@@ -1,4 +1,5 @@
 import createDefaultAssistantToolRegistry, { AssistantToolRegistry } from './tool-registry.js';
+import assistantPolicyService, { AssistantPolicyService } from './policy-service.js';
 
 function nowIso() {
   return new Date().toISOString();
@@ -18,17 +19,33 @@ function summarizeResult(result) {
 
 export class AssistantToolExecutor {
   constructor({
-    toolRegistry = createDefaultAssistantToolRegistry()
+    toolRegistry = createDefaultAssistantToolRegistry(),
+    policyService = assistantPolicyService
   } = {}) {
     this.toolRegistry = toolRegistry instanceof AssistantToolRegistry
       ? toolRegistry
       : toolRegistry;
+    this.policyService = policyService instanceof AssistantPolicyService
+      ? policyService
+      : policyService;
   }
 
   async executeToolCall(call = {}, context = {}) {
     const tool = this.toolRegistry.get(call.toolName);
     if (!tool) {
       throw new Error(`Unknown assistant tool: ${call.toolName}`);
+    }
+
+    const policy = this.policyService?.canExecuteToolCall?.({
+      toolName: call.toolName,
+      conversation: context.conversation || null,
+      runtimeSession: context.runtimeSession || null,
+      cwd: context.run?.metadata?.plan?.cwd || context.conversation?.metadata?.workspaceId || '',
+      metadata: context.run?.metadata || {},
+      input: call.input || {}
+    });
+    if (policy && policy.allowed === false) {
+      throw new Error(`Assistant policy blocked tool ${call.toolName}: ${policy.reason}`);
     }
 
     const startedAt = nowIso();
@@ -44,6 +61,7 @@ export class AssistantToolExecutor {
       startedAt,
       completedAt,
       success: true,
+      policy,
       summary: summarizeResult(result),
       result
     };
