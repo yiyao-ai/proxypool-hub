@@ -43,17 +43,19 @@ function buildRunnerReply({ text, plan, toolResults, conversation } = {}) {
   const zh = isChineseText(text);
   const first = toolResults[0]?.result || null;
   const delegatedResult = toolResults.find((entry) => (
-    ['start_runtime_task', 'delegate_to_codex', 'delegate_to_claude_code', 'delegate_to_runtime', 'reuse_or_delegate'].includes(entry.toolName)
+    ['start_runtime_task', 'delegate_to_codex', 'delegate_to_claude_code', 'delegate_to_runtime', 'delegate_task_execution', 'reuse_or_delegate'].includes(entry.toolName)
   ))?.result || null;
   const continuedResult = toolResults.find((entry) => entry.toolName === 'send_runtime_input')?.result || null;
   const cancelledResult = toolResults.find((entry) => entry.toolName === 'cancel_runtime_session')?.result || null;
 
-  if (plan.summaryIntent === 'runtime_start' && delegatedResult?.id) {
+  if (['runtime_start', 'task_execution_start'].includes(plan.summaryIntent) && delegatedResult?.id) {
     return {
-      summary: zh ? 'assistant 通过工具发起了新的 runtime 任务。' : 'Started a new runtime task through assistant tools.',
+      summary: zh
+        ? (plan.summaryIntent === 'task_execution_start' ? 'assistant 为当前 task 发起了新的 execution。' : 'assistant 通过工具发起了新的 runtime 任务。')
+        : (plan.summaryIntent === 'task_execution_start' ? 'Started a new execution for the current task.' : 'Started a new runtime task through assistant tools.'),
       message: zh
-        ? `已通过 assistant tool 发起新任务。\nProvider: ${providerLabel(delegatedResult.provider)}\nSession: ${delegatedResult.id}\nTitle: ${delegatedResult.title || ''}\nStatus: ${delegatedResult.status || ''}`
-        : `Started a new task through assistant tools.\nProvider: ${providerLabel(delegatedResult.provider)}\nSession: ${delegatedResult.id}\nTitle: ${delegatedResult.title || ''}\nStatus: ${delegatedResult.status || ''}`
+        ? `${plan.summaryIntent === 'task_execution_start' ? '已为当前 task 发起新的 execution。' : '已通过 assistant tool 发起新任务。'}\nProvider: ${providerLabel(delegatedResult.provider)}\nSession: ${delegatedResult.id}\nTitle: ${delegatedResult.title || ''}\nStatus: ${delegatedResult.status || ''}`
+        : `${plan.summaryIntent === 'task_execution_start' ? 'Started a new execution for the current task.' : 'Started a new task through assistant tools.'}\nProvider: ${providerLabel(delegatedResult.provider)}\nSession: ${delegatedResult.id}\nTitle: ${delegatedResult.title || ''}\nStatus: ${delegatedResult.status || ''}`
     };
   }
 
@@ -169,6 +171,49 @@ function buildRunnerReply({ text, plan, toolResults, conversation } = {}) {
   };
 }
 
+function buildWaitingSupervisorReply({ text, runtimeDetail = null, runtimeStatus = '', pendingQuestions = 0, pendingApprovals = 0 } = {}) {
+  const zh = isChineseText(text);
+  const firstQuestion = Array.isArray(runtimeDetail?.pendingQuestions) ? runtimeDetail.pendingQuestions[0] : null;
+  const firstApproval = Array.isArray(runtimeDetail?.pendingApprovals) ? runtimeDetail.pendingApprovals[0] : null;
+
+  if (pendingQuestions > 0 || runtimeStatus === 'waiting_user') {
+    return {
+      summary: zh ? '等待用户回复' : 'Waiting for user reply',
+      message: firstQuestion?.text
+        ? (zh
+          ? `当前有一个任务在等你回答：${firstQuestion.text}`
+          : `One task is waiting for your answer: ${firstQuestion.text}`)
+        : (zh
+          ? '当前有一个任务在等你补充回答，我收到后会继续推进。'
+          : 'One task is waiting for your answer before I can continue.')
+    };
+  }
+
+  if (pendingApprovals > 0 || runtimeStatus === 'waiting_approval') {
+    return {
+      summary: zh ? '等待批准' : 'Waiting for approval',
+      message: firstApproval?.title || firstApproval?.summary
+        ? (zh
+          ? `当前有一个任务在等待你的批准：${firstApproval.title || firstApproval.summary}`
+          : `One task is waiting for your approval: ${firstApproval.title || firstApproval.summary}`)
+        : (zh
+          ? '当前有一个任务在等待你的批准，我收到你的决定后会继续推进。'
+          : 'One task is waiting for your approval before I can continue.')
+    };
+  }
+
+  if (['starting', 'running'].includes(runtimeStatus)) {
+    return {
+      summary: zh ? '后台执行中' : 'Running in background',
+      message: zh
+        ? '我已经开始推进这个任务，后台完成后会继续汇总结果。'
+        : 'I have started the work and will continue once the runtime progresses.'
+    };
+  }
+
+  return null;
+}
+
 export class AssistantRunner {
   constructor({
     runStore = assistantRunStore,
@@ -267,6 +312,7 @@ export class AssistantRunner {
           'delegate_to_codex',
           'delegate_to_claude_code',
           'delegate_to_runtime',
+          'delegate_task_execution',
           'reuse_or_delegate'
         ].includes(executed.toolName)) {
           relatedRuntimeSessionIds.add(executed.result.id);
@@ -317,7 +363,7 @@ export class AssistantRunner {
         && entry.result
       ))?.result || null;
       const delegatedResult = toolResults.find((entry) => (
-        ['start_runtime_task', 'delegate_to_codex', 'delegate_to_claude_code', 'delegate_to_runtime', 'reuse_or_delegate', 'send_runtime_input'].includes(entry.toolName)
+        ['start_runtime_task', 'delegate_to_codex', 'delegate_to_claude_code', 'delegate_to_runtime', 'delegate_task_execution', 'reuse_or_delegate', 'send_runtime_input'].includes(entry.toolName)
         && entry.result
       ))?.result || null;
       if (!runtimeDetail && delegatedResult?.id) {
@@ -334,28 +380,39 @@ export class AssistantRunner {
         : Number(runtimeDetail?.pendingApprovals || 0);
       let closure = ASSISTANT_RUN_CLOSURE_STATE.EXECUTOR_DONE;
       let stopReason = 'tool_phase_finished';
+      const waitingReply = buildWaitingSupervisorReply({
+        text,
+        runtimeDetail,
+        runtimeStatus,
+        pendingQuestions,
+        pendingApprovals
+      });
       if (pendingQuestions > 0 || runtimeStatus === 'waiting_user') {
         finalStatus = ASSISTANT_RUN_STATUS.WAITING_USER;
         closure = ASSISTANT_RUN_CLOSURE_STATE.WAITING_USER;
-        stopReason = 'runtime_waiting_on_user';
+        stopReason = 'runtime_waiting_user_input';
       } else if (pendingApprovals > 0 || ['waiting_approval', 'starting', 'running'].includes(runtimeStatus)) {
-        finalStatus = ASSISTANT_RUN_STATUS.WAITING_RUNTIME;
+        finalStatus = runtimeStatus === 'waiting_approval'
+          ? ASSISTANT_RUN_STATUS.WAITING_USER
+          : ASSISTANT_RUN_STATUS.WAITING_RUNTIME;
         closure = runtimeStatus === 'waiting_approval'
           ? ASSISTANT_RUN_CLOSURE_STATE.WAITING_USER
           : ASSISTANT_RUN_CLOSURE_STATE.WAITING_RUNTIME;
         stopReason = runtimeStatus === 'waiting_approval'
-          ? 'runtime_waiting_on_approval'
+          ? 'runtime_waiting_approval'
           : 'runtime_running';
       } else if (reply.message) {
         closure = ASSISTANT_RUN_CLOSURE_STATE.ASSISTANT_DONE;
         stopReason = 'assistant_reply_completed';
       }
 
+      const finalReply = waitingReply || reply;
+
       const completedRun = this.runStore.save({
         ...currentRun,
         status: finalStatus,
-        summary: reply.summary,
-        result: reply.message,
+        summary: finalReply.summary,
+        result: finalReply.message,
         steps,
         relatedRuntimeSessionIds: [...relatedRuntimeSessionIds],
         metadata: {
@@ -378,7 +435,7 @@ export class AssistantRunner {
 
       return {
         run: completedRun,
-        reply,
+        reply: finalReply,
         toolResults
       };
     } catch (error) {

@@ -27,6 +27,15 @@ function buildObservationRequest({ conversation } = {}) {
   };
 }
 
+function getFocusTaskId(conversation = null) {
+  return String(
+    conversation?.metadata?.supervisor?.taskMemory?.activeTaskId
+    || conversation?.metadata?.supervisor?.taskMemory?.currentTask?.taskId
+    || conversation?.metadata?.supervisor?.taskMemory?.current?.taskId
+    || ''
+  ).trim();
+}
+
 function buildFallbackPlan({ zh, observation } = {}) {
   return {
     version: 'phase7-fallback-v1',
@@ -52,6 +61,7 @@ export class AssistantPlanner {
   } = {}) {
     const source = normalizeText(text);
     const activeSessionId = conversation?.activeRuntimeSessionId || '';
+    const focusTaskId = getFocusTaskId(conversation);
     const observation = buildObservationRequest({ conversation });
     const zh = isChineseText(source);
 
@@ -61,7 +71,7 @@ export class AssistantPlanner {
       const task = normalizeText(startMatch[2]);
       return {
         version: 'phase4-v2',
-        summaryIntent: 'runtime_start',
+        summaryIntent: focusTaskId ? 'task_execution_start' : 'runtime_start',
         language: zh ? 'zh' : 'en',
         observation,
         execution: {
@@ -78,21 +88,39 @@ export class AssistantPlanner {
           },
           {
             kind: 'act',
-            toolName: 'delegate_to_runtime',
-            input: {
-              provider,
-              task,
-              cwd,
-              model,
-              metadata: {
-                source: {
-                  kind: 'assistant-runner',
-                  conversationId: conversation?.id || ''
+            toolName: focusTaskId ? 'delegate_task_execution' : 'delegate_to_runtime',
+            input: focusTaskId
+              ? {
+                  taskId: focusTaskId,
+                  provider,
+                  role: 'secondary',
+                  task,
+                  cwd,
+                  model,
+                  metadata: {
+                    source: {
+                      kind: 'assistant-runner',
+                      conversationId: conversation?.id || ''
+                    },
+                    conversationId: conversation?.id || ''
+                  }
+                }
+              : {
+                  provider,
+                  task,
+                  cwd,
+                  model,
+                  metadata: {
+                    source: {
+                      kind: 'assistant-runner',
+                      conversationId: conversation?.id || ''
+                    },
+                    conversationId: conversation?.id || ''
+                  }
                 },
-                conversationId: conversation?.id || ''
-              }
-            },
-            reason: 'Delegate a new task to the selected runtime.'
+            reason: focusTaskId
+              ? 'Start a secondary execution for the current supervisor task.'
+              : 'Delegate a new task to the selected runtime.'
           }
         ]
       };

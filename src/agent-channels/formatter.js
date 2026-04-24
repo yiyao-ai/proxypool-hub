@@ -67,7 +67,7 @@ function buildCompletedMessage({ providerLabel, session, resultText, summaryText
 
 function buildApprovalMessage(providerLabel, payload = {}) {
   const lines = [];
-  lines.push(`${providerLabel} needs permission to continue.`);
+  lines.push(`${providerLabel} needs permission so this task can continue.`);
   if (payload?.title) {
     lines.push(`Request: ${payload.title}`);
   }
@@ -80,11 +80,12 @@ function buildApprovalMessage(providerLabel, payload = {}) {
 
 export function formatAgentRuntimeEventForChannel({ event, session } = {}) {
   const providerLabel = session?.provider || event?.payload?.provider || 'agent';
+  const taskTitle = event?.payload?.title || session?.title || 'Untitled task';
 
   switch (event?.type) {
     case AGENT_EVENT_TYPE.STARTED:
       return {
-        text: `${providerLabel} task started: ${event?.payload?.title || session?.title || 'Untitled task'}`,
+        text: `Task started: ${taskTitle} (${providerLabel})`,
         buttons: []
       };
     case AGENT_EVENT_TYPE.APPROVAL_REQUEST:
@@ -97,7 +98,7 @@ export function formatAgentRuntimeEventForChannel({ event, session } = {}) {
       };
     case AGENT_EVENT_TYPE.QUESTION:
       return {
-        text: `${providerLabel} asks: ${event?.payload?.text || ''}`.trim(),
+        text: `Task needs your reply: ${event?.payload?.text || ''}`.trim(),
         buttons: []
       };
     case AGENT_EVENT_TYPE.COMPLETED:
@@ -119,13 +120,13 @@ export function formatAgentRuntimeEventForChannel({ event, session } = {}) {
         }
       }
       return {
-        text: `${providerLabel} task completed.`,
-        fullText: `${providerLabel} task completed.`,
+        text: `Task completed: ${taskTitle}`,
+        fullText: `Task completed: ${taskTitle}`,
         buttons: []
       };
     case AGENT_EVENT_TYPE.FAILED:
       return {
-        text: `${providerLabel} task failed: ${event?.payload?.message || session?.error || 'Unknown error'}`,
+        text: `Task failed: ${taskTitle}${event?.payload?.message || session?.error ? `\n${event?.payload?.message || session?.error}` : ''}`,
         buttons: []
       };
     default:

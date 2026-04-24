@@ -180,6 +180,28 @@ test('AgentChannelConversationStore finds or creates conversations by external i
   assert.equal(store.list().length, 1);
 });
 
+test('AgentChannelConversationStore keeps tracked runtime session bindings beyond the active session', () => {
+  const store = new AgentChannelConversationStore({
+    configDir: createTempDir('cligate-agent-channels-conv-tracked-')
+  });
+
+  const conversation = store.findOrCreateByExternal({
+    channel: 'telegram',
+    externalConversationId: 'chat_tracked_1',
+    externalUserId: 'user_tracked_1',
+    title: 'tracked'
+  });
+
+  store.bindRuntimeSession(conversation.id, 'session_primary');
+  store.trackRuntimeSessions(conversation.id, ['session_secondary']);
+
+  const updated = store.get(conversation.id);
+  assert.equal(updated.activeRuntimeSessionId, 'session_primary');
+  assert.deepEqual(updated.trackedRuntimeSessionIds, ['session_primary', 'session_secondary']);
+  assert.equal(store.listByTrackedRuntimeSessionId('session_primary').length, 1);
+  assert.equal(store.listByTrackedRuntimeSessionId('session_secondary').length, 1);
+});
+
 test('AgentChannelDeliveryStore tracks processed inbound keys and outbound deliveries', () => {
   const store = new AgentChannelDeliveryStore({
     configDir: createTempDir('cligate-agent-channels-delivery-')
@@ -575,6 +597,147 @@ test('completed runtime events keep channel conversations attached to the same s
   assert.equal(followUp.session.id, started.session.id);
 });
 
+test('outbound dispatcher still routes completion for an older tracked session after a newer session becomes active', async () => {
+  const runtimeSessionManager = createRuntimeManager();
+  const conversationStore = new AgentChannelConversationStore({
+    configDir: createTempDir('cligate-agent-channels-tracked-dispatch-conv-')
+  });
+  const deliveryStore = new AgentChannelDeliveryStore({
+    configDir: createTempDir('cligate-agent-channels-tracked-dispatch-delivery-')
+  });
+  const router = new AgentChannelRouter({
+    conversationStore,
+    deliveryStore,
+    pairingStore: new AgentChannelPairingStore({
+      configDir: createTempDir('cligate-agent-channels-tracked-dispatch-pairing-')
+    }),
+    messageService: new AgentOrchestratorMessageService({ runtimeSessionManager })
+  });
+
+  const sent = [];
+  const dispatcher = new AgentChannelOutboundDispatcher({
+    runtimeSessionManager,
+    conversationStore,
+    deliveryStore,
+    registry: {
+      get() {
+        return {
+          async sendMessage({ text }) {
+            sent.push(text);
+            return { messageId: `outbound_${sent.length}` };
+          }
+        };
+      }
+    }
+  });
+
+  const first = await router.routeInboundMessage({
+    channel: 'telegram',
+    accountId: 'default',
+    externalMessageId: 'tracked_1',
+    externalConversationId: 'chat_tracked_dispatch_1',
+    externalUserId: 'user_tracked_dispatch_1',
+    externalUserName: 'alice',
+    text: '/agent codex inspect repo',
+    messageType: 'text'
+  });
+
+  const second = await router.routeInboundMessage({
+    channel: 'telegram',
+    accountId: 'default',
+    externalMessageId: 'tracked_2',
+    externalConversationId: 'chat_tracked_dispatch_1',
+    externalUserId: 'user_tracked_dispatch_1',
+    externalUserName: 'alice',
+    text: '/new codex build dashboard',
+    messageType: 'text'
+  });
+
+  const conversation = conversationStore.get(second.conversation.id);
+  assert.equal(conversation.activeRuntimeSessionId, second.session.id);
+  assert.ok(conversation.trackedRuntimeSessionIds.includes(first.session.id));
+  assert.ok(conversation.trackedRuntimeSessionIds.includes(second.session.id));
+
+  await dispatcher.handleRuntimeEvent({
+    sessionId: first.session.id,
+    seq: 500,
+    type: AGENT_EVENT_TYPE.COMPLETED,
+    ts: new Date().toISOString(),
+    payload: {
+      result: 'first task done',
+      summary: 'first summary'
+    }
+  });
+
+  assert.equal(sent.length, 1);
+  assert.equal(sent[0], 'first task done');
+  const deliveries = deliveryStore.listBySession(first.session.id, { limit: 5 });
+  assert.ok(deliveries.some((entry) => String(entry.payload?.fullText || '').includes('first task done')));
+});
+
+test('outbound dispatcher can recover conversation routing from runtime session metadata before tracked binding is present', async () => {
+  const runtimeSessionManager = createRuntimeManager();
+  const conversationStore = new AgentChannelConversationStore({
+    configDir: createTempDir('cligate-agent-channels-fallback-routing-conv-')
+  });
+  const deliveryStore = new AgentChannelDeliveryStore({
+    configDir: createTempDir('cligate-agent-channels-fallback-routing-delivery-')
+  });
+  const conversation = conversationStore.findOrCreateByExternal({
+    channel: 'telegram',
+    accountId: 'default',
+    externalConversationId: 'chat_fallback_routing_1',
+    externalUserId: 'user_fallback_routing_1',
+    title: 'fallback routing'
+  });
+  const session = await runtimeSessionManager.createSession({
+    provider: 'codex',
+    input: 'inspect repo',
+    cwd: process.cwd(),
+    model: '',
+    metadata: {
+      conversationId: conversation.id,
+      source: {
+        kind: 'assistant',
+        conversationId: conversation.id
+      }
+    }
+  });
+
+  const sent = [];
+  const dispatcher = new AgentChannelOutboundDispatcher({
+    runtimeSessionManager,
+    conversationStore,
+    deliveryStore,
+    registry: {
+      get() {
+        return {
+          async sendMessage({ text }) {
+            sent.push(text);
+            return { messageId: 'fallback_out_1' };
+          }
+        };
+      }
+    }
+  });
+
+  await dispatcher.handleRuntimeEvent({
+    sessionId: session.id,
+    seq: 1000,
+    type: AGENT_EVENT_TYPE.COMPLETED,
+    ts: new Date().toISOString(),
+    payload: {
+      result: 'fallback metadata done',
+      summary: 'finished'
+    }
+  });
+
+  assert.equal(sent.length, 1);
+  assert.equal(sent[0], 'fallback metadata done');
+  const updatedConversation = conversationStore.get(conversation.id);
+  assert.ok(updatedConversation.trackedRuntimeSessionIds.includes(session.id));
+});
+
 test('outbound dispatcher sends full completed result text to channel providers', async () => {
   const runtimeSessionManager = createRuntimeManager();
   const conversationStore = new AgentChannelConversationStore({
@@ -711,6 +874,85 @@ test('AgentOrchestratorMessageService resolves approvals and answers pending que
   assert.equal(questionResult.question.status, 'answered');
 });
 
+test('AgentOrchestratorMessageService resolves approvals against current task session before the conversation active session', async () => {
+  const runtimeSessionManager = createInteractiveRuntimeManager();
+  const service = new AgentOrchestratorMessageService({ runtimeSessionManager });
+
+  const interactive = await service.startRuntimeTask({
+    provider: 'claude-code',
+    input: 'interactive task'
+  });
+  const other = await service.startRuntimeTask({
+    provider: 'claude-code',
+    input: 'other interactive task'
+  });
+  const pendingApproval = runtimeSessionManager.approvalService.listPending(interactive.id)[0];
+
+  const resolved = await service.routeUserMessage({
+    message: { text: '/approve' },
+    conversation: {
+      activeRuntimeSessionId: other.id,
+      lastPendingApprovalId: pendingApproval.approvalId,
+      metadata: {
+        supervisor: {
+          taskMemory: {
+            activeTaskId: interactive.id,
+            currentTask: {
+              taskId: interactive.id,
+              sessionId: interactive.id,
+              provider: 'claude-code',
+              title: 'interactive task',
+              status: 'waiting_approval'
+            }
+          }
+        }
+      }
+    }
+  });
+
+  assert.equal(resolved.type, 'approval_resolved');
+  assert.equal(resolved.approval.status, 'approved');
+});
+
+test('AgentOrchestratorMessageService answers pending questions against current task session before the conversation active session', async () => {
+  const runtimeSessionManager = createInteractiveRuntimeManager();
+  const service = new AgentOrchestratorMessageService({ runtimeSessionManager });
+
+  const interactive = await service.startRuntimeTask({
+    provider: 'claude-code',
+    input: 'interactive task'
+  });
+  const other = await service.startRuntimeTask({
+    provider: 'claude-code',
+    input: 'other interactive task'
+  });
+
+  const answered = await service.routeUserMessage({
+    message: { text: 'yes' },
+    conversation: {
+      activeRuntimeSessionId: other.id,
+      lastPendingQuestionId: 'question-1',
+      metadata: {
+        supervisor: {
+          taskMemory: {
+            activeTaskId: interactive.id,
+            currentTask: {
+              taskId: interactive.id,
+              sessionId: interactive.id,
+              provider: 'claude-code',
+              title: 'interactive task',
+              status: 'waiting_user'
+            }
+          }
+        }
+      }
+    }
+  });
+
+  assert.equal(answered.type, 'question_answered');
+  assert.equal(answered.question.status, 'answered');
+});
+
 test('AgentOrchestratorMessageService accepts natural-language approval and can remember session policy', async () => {
   const runtimeSessionManager = createInteractiveRuntimeManager();
   const approvalPolicyStore = new AgentRuntimeApprovalPolicyStore({
@@ -838,8 +1080,143 @@ test('AgentOrchestratorMessageService keeps explicit /status handling for struct
     }
   });
 
-  assert.equal(result.type, 'runtime_status');
-  assert.equal(result.session, null);
+  assert.equal(result.type, 'supervisor_status');
+  assert.match(String(result.message || ''), /Build settings page/);
+});
+
+test('AgentOrchestratorMessageService falls back to supervisor status when current task exists but its runtime session is unavailable', async () => {
+  const runtimeSessionManager = createRuntimeManager();
+  const service = new AgentOrchestratorMessageService({ runtimeSessionManager });
+
+  const result = await service.routeUserMessage({
+    message: { text: '/status' },
+    conversation: {
+      metadata: {
+        supervisor: {
+          taskMemory: {
+            activeTaskId: 'missing-session-1',
+            currentTask: {
+              taskId: 'missing-session-1',
+              sessionId: 'missing-session-1',
+              provider: 'codex',
+              title: 'Rebuild settings page',
+              status: 'running',
+              summary: 'still working'
+            }
+          },
+          brief: {
+            kind: 'current',
+            taskId: 'missing-session-1',
+            sessionId: 'missing-session-1',
+            title: 'Rebuild settings page',
+            provider: 'codex',
+            providerLabel: 'Codex',
+            status: 'running',
+            summary: 'still working',
+            result: '',
+            error: '',
+            waitingReason: '',
+            nextSuggestion: 'Wait for completion.'
+          }
+        }
+      }
+    }
+  });
+
+  assert.equal(result.type, 'supervisor_status');
+  assert.match(String(result.message || ''), /Task ID: missing-session-1/);
+});
+
+test('AgentOrchestratorMessageService asks for clarification when multiple active tasks exist and the follow-up is ambiguous', async () => {
+  const runtimeSessionManager = createRuntimeManager();
+  const service = new AgentOrchestratorMessageService({ runtimeSessionManager });
+
+  const result = await service.routeUserMessage({
+    message: { text: '继续刚才那个' },
+    conversation: {
+      id: 'conv_multi_1',
+      activeRuntimeSessionId: 'session_a',
+      metadata: {
+        supervisor: {
+          taskMemory: {
+            activeTaskId: 'task_a',
+            byTask: {
+              task_a: {
+                taskId: 'task_a',
+                sessionId: 'session_a',
+                provider: 'codex',
+                title: 'Build dashboard',
+                status: 'running'
+              },
+              task_b: {
+                taskId: 'task_b',
+                sessionId: 'session_b',
+                provider: 'claude-code',
+                title: 'Review API',
+                status: 'waiting_user',
+                pendingQuestion: 'Need database schema'
+              }
+            }
+          }
+        }
+      }
+    }
+  });
+
+  assert.equal(result.type, 'supervisor_clarification');
+  assert.match(String(result.message || ''), /multiple active tasks/i);
+  assert.match(String(result.message || ''), /Build dashboard/);
+  assert.match(String(result.message || ''), /Review API/);
+});
+
+test('AgentOrchestratorMessageService auto-targets the only waiting task for natural-language approval replies', async () => {
+  const runtimeSessionManager = createInteractiveRuntimeManager();
+  const service = new AgentOrchestratorMessageService({ runtimeSessionManager });
+
+  const waiting = await service.startRuntimeTask({
+    provider: 'claude-code',
+    input: 'interactive task'
+  });
+  await service.startRuntimeTask({
+    provider: 'claude-code',
+    input: 'other interactive task'
+  });
+  const pendingApproval = runtimeSessionManager.approvalService.listPending(waiting.id)[0];
+
+  const resolved = await service.routeUserMessage({
+    message: { text: '同意' },
+    conversation: {
+      id: 'conv_wait_1',
+      activeRuntimeSessionId: 'other-session',
+      lastPendingApprovalId: pendingApproval.approvalId,
+      metadata: {
+        supervisor: {
+          taskMemory: {
+            byTask: {
+              waiting_task: {
+                taskId: 'waiting_task',
+                sessionId: waiting.id,
+                provider: 'claude-code',
+                title: 'interactive task',
+                status: 'waiting_approval',
+                pendingApprovalTitle: pendingApproval.title
+              },
+              done_task: {
+                taskId: 'done_task',
+                sessionId: 'done-session',
+                provider: 'claude-code',
+                title: 'finished task',
+                status: 'completed'
+              }
+            }
+          }
+        }
+      }
+    }
+  });
+
+  assert.equal(resolved.type, 'approval_resolved');
+  assert.equal(resolved.approval.status, 'approved');
 });
 
 test('AgentOrchestratorMessageService keeps explicit /status available without starting a runtime', async () => {
@@ -1228,7 +1605,7 @@ test('AgentChannelRouter keeps related-task phrasing as direct runtime input in 
   assert.equal(result.conversation.metadata?.supervisor?.taskMemory?.current?.originKind, 'direct');
 });
 
-test('AgentOrchestratorMessageService starts a runtime instead of intercepting remembered-failure status phrasing', async () => {
+test('AgentOrchestratorMessageService returns supervisor status for remembered-failure status phrasing', async () => {
   const runtimeSessionManager = createRuntimeManager();
   const service = new AgentOrchestratorMessageService({ runtimeSessionManager });
 
@@ -1254,8 +1631,9 @@ test('AgentOrchestratorMessageService starts a runtime instead of intercepting r
     }
   });
 
-  assert.equal(result.type, 'runtime_started');
-  assert.equal(result.provider, 'claude-code');
+  assert.equal(result.type, 'supervisor_status');
+  assert.match(String(result.message || ''), /Polish login page/);
+  assert.match(String(result.message || ''), /failed/i);
 });
 
 test('AgentOrchestratorMessageService starts the preferred provider for retry phrasing without special interception', async () => {
@@ -1462,9 +1840,99 @@ test('AgentChannelRouter binds assistant-started runtime sessions back to the ch
 
   const conversation = conversationStore.findByExternal('telegram', 'default', 'assistant-bind-chat-1', 'user-1', '');
   assert.ok(conversation?.activeRuntimeSessionId);
+  assert.ok(conversation?.activeTaskId);
+  assert.ok(Array.isArray(conversation?.trackedTaskIds));
+  assert.ok(conversation?.trackedTaskIds.includes(conversation.activeTaskId));
   const boundSession = runtimeSessionManager.getSession(conversation.activeRuntimeSessionId);
   assert.equal(boundSession?.provider, 'claude-code');
   assert.ok(sent.includes('started in background'));
+});
+
+test('AgentChannelRouter keeps aggregated assistant background results when multiple runtime sessions are related', async () => {
+  const runtimeSessionManager = createHybridRuntimeManager();
+  const conversationStore = new AgentChannelConversationStore({
+    configDir: createTempDir('cligate-agent-channels-assistant-fanin-conv-')
+  });
+  const deliveryStore = new AgentChannelDeliveryStore({
+    configDir: createTempDir('cligate-agent-channels-assistant-fanin-delivery-')
+  });
+  const pairingStore = new AgentChannelPairingStore({
+    configDir: createTempDir('cligate-agent-channels-assistant-fanin-pairing-')
+  });
+  const sent = [];
+  const router = new AgentChannelRouter({
+    conversationStore,
+    deliveryStore,
+    pairingStore,
+    messageService: new AgentOrchestratorMessageService({ runtimeSessionManager }),
+    assistantModeService: {
+      async maybeHandleMessage({ conversation, onBackgroundResult }) {
+        const codexSession = await runtimeSessionManager.createSession({
+          provider: 'codex',
+          input: 'remove welcome text',
+          cwd: process.cwd(),
+          model: ''
+        });
+        const claudeSession = await runtimeSessionManager.createSession({
+          provider: 'claude-code',
+          input: 'summarize skills repo',
+          cwd: process.cwd(),
+          model: ''
+        });
+        await onBackgroundResult({
+          type: 'assistant_response',
+          message: '并发任务已全部结束，汇总如下：\n1. Codex: done\n2. Claude Code: done',
+          assistantRun: {
+            id: 'assistant-run-fanin-1',
+            relatedRuntimeSessionIds: [codexSession.id, claudeSession.id],
+            status: 'completed'
+          },
+          conversation
+        });
+        return {
+          type: 'assistant_run_accepted',
+          message: 'accepted',
+          assistantRun: {
+            id: 'assistant-run-fanin-1',
+            status: 'queued'
+          },
+          conversation
+        };
+      }
+    }
+  });
+  router.registry = {
+    get() {
+      return {
+        async sendMessage({ text }) {
+          sent.push(text);
+          return { messageId: 'out_fanin_1' };
+        }
+      };
+    }
+  };
+
+  const result = await router.routeInboundMessage({
+    channel: 'telegram',
+    accountId: 'default',
+    externalConversationId: 'assistant-fanin-chat-1',
+    externalUserId: 'user-1',
+    externalUserName: 'tester',
+    externalMessageId: 'msg-start-fanin',
+    text: '/cligate 并发跑两个任务',
+    messageType: 'text'
+  }, {
+    defaultRuntimeProvider: 'codex'
+  });
+
+  assert.equal(result.type, 'assistant_run_accepted');
+  await new Promise((resolve) => setTimeout(resolve, 10));
+
+  assert.equal(sent.length, 1);
+  assert.match(sent[0], /Codex/);
+  assert.match(sent[0], /Claude Code/);
+  const deliveries = deliveryStore.listByConversation(result.conversation.id);
+  assert.ok(deliveries.some((entry) => String(entry.payload?.text || '').includes('Claude Code')));
 });
 
 test('AgentOrchestratorMessageService starts the default remembered provider for return phrasing without special interception', async () => {
@@ -2295,6 +2763,48 @@ test('channel formatter prefers completed result text over generic completion la
   });
 
   assert.equal(formatted.text, 'Today in New York it is 18C and cloudy.');
+});
+
+test('channel formatter uses task-aware wording for waiting and terminal runtime events', () => {
+  const started = formatAgentRuntimeEventForChannel({
+    event: {
+      type: AGENT_EVENT_TYPE.STARTED,
+      payload: {
+        title: 'Review login flow'
+      }
+    },
+    session: {
+      provider: 'codex'
+    }
+  });
+  const questioned = formatAgentRuntimeEventForChannel({
+    event: {
+      type: AGENT_EVENT_TYPE.QUESTION,
+      payload: {
+        text: 'Use REST or GraphQL?'
+      }
+    },
+    session: {
+      provider: 'claude-code',
+      title: 'Review login flow'
+    }
+  });
+  const failed = formatAgentRuntimeEventForChannel({
+    event: {
+      type: AGENT_EVENT_TYPE.FAILED,
+      payload: {
+        message: 'Write was blocked.'
+      }
+    },
+    session: {
+      provider: 'codex',
+      title: 'Review login flow'
+    }
+  });
+
+  assert.equal(started.text, 'Task started: Review login flow (codex)');
+  assert.equal(questioned.text, 'Task needs your reply: Use REST or GraphQL?');
+  assert.match(String(failed.text || ''), /Task failed: Review login flow/);
 });
 
 test('channel formatter keeps oversized completed results as full text', () => {

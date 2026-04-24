@@ -85,6 +85,7 @@ export class AssistantReactEngine {
     conversation,
     text,
     taskRecord = null,
+    taskSpace = null,
     conversationContext = null,
     workspaceContext = null,
     defaultRuntimeProvider = 'codex',
@@ -97,6 +98,7 @@ export class AssistantReactEngine {
       conversation,
       text,
       taskRecord,
+      taskSpace,
       conversationContext,
       workspaceContext,
       defaultRuntimeProvider,
@@ -212,7 +214,8 @@ export class AssistantReactEngine {
       language,
       assistantText: finalText,
       toolResults,
-      finalStatus
+      finalStatus,
+      stopReason: stopState.reason
     });
 
     workingRun = {

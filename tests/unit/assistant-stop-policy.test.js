@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { deriveAssistantRunStopState } from '../../src/assistant-agent/stop-policy.js';
+import { composeAssistantReply } from '../../src/assistant-agent/response-composer.js';
 
 test('stop policy marks assistant_done when assistant reply is complete without runtime wait', () => {
   const stopState = deriveAssistantRunStopState({
@@ -87,6 +88,48 @@ test('stop policy maps waiting approvals and questions to waiting_user', () => {
 
   assert.equal(approvalState.status, 'waiting_user');
   assert.equal(approvalState.closure, 'waiting_user');
+  assert.equal(approvalState.reason, 'runtime_waiting_approval');
   assert.equal(questionState.status, 'waiting_user');
   assert.equal(questionState.closure, 'waiting_user');
+  assert.equal(questionState.reason, 'runtime_waiting_user_input');
+});
+
+test('response composer generates supervisor-style approval and question replies', () => {
+  const approvalReply = composeAssistantReply({
+    language: 'en',
+    assistantText: '',
+    finalStatus: 'waiting_user',
+    stopReason: 'runtime_waiting_approval',
+    toolResults: [{
+      toolName: 'get_runtime_session',
+      result: {
+        title: 'Edit config',
+        pendingApprovals: [{
+          approvalId: 'approval-1',
+          title: 'Write package.json'
+        }]
+      }
+    }]
+  });
+  const questionReply = composeAssistantReply({
+    language: 'en',
+    assistantText: '',
+    finalStatus: 'waiting_user',
+    stopReason: 'runtime_waiting_user_input',
+    toolResults: [{
+      toolName: 'get_runtime_session',
+      result: {
+        title: 'Investigate bug',
+        pendingQuestions: [{
+          questionId: 'question-1',
+          text: 'Which environment should I use?'
+        }]
+      }
+    }]
+  });
+
+  assert.match(approvalReply.message, /waiting for your approval/i);
+  assert.match(approvalReply.message, /Write package\.json/);
+  assert.match(questionReply.message, /waiting for your answer/i);
+  assert.match(questionReply.message, /Which environment should I use\?/);
 });

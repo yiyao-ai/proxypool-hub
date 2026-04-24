@@ -5,6 +5,7 @@ import agentOrchestratorMessageService from '../agent-orchestrator/message-servi
 import agentTaskStore from '../agent-core/task-store.js';
 import { syncTaskFromRuntimeResult } from '../agent-core/task-service.js';
 import { buildSupervisorBrief } from '../agent-orchestrator/supervisor-brief.js';
+import { syncSupervisorTaskForRuntimeStart } from '../agent-orchestrator/supervisor-task-sync.js';
 import { CHANNEL_CONVERSATION_MODE } from './models.js';
 import AssistantModeService from '../assistant-core/mode-service.js';
 import { AssistantObservationService } from '../assistant-core/observation-service.js';
@@ -39,6 +40,7 @@ export class AgentChannelRouter {
     this.registry = registry;
     this.messageService = messageService;
     this.taskStore = taskStore;
+    this.supervisorTaskStore = this.messageService?.supervisorTaskStore;
     this.assistantModeService = assistantModeService || new AssistantModeService({
       conversationStore: this.conversationStore,
       messageService: this.messageService,
@@ -118,17 +120,25 @@ export class AgentChannelRouter {
       onBackgroundResult: async (backgroundResult) => {
         const provider = this.registry.get(message.channel, message.accountId);
         const outboundText = String(backgroundResult?.message || '').trim();
-        const relatedRuntimeSessionId = backgroundResult?.assistantRun?.relatedRuntimeSessionIds?.[0] || null;
-        if (relatedRuntimeSessionId) {
-          const runtimeSession = this.messageService.getRuntimeSession(relatedRuntimeSessionId);
-          const pendingApproval = this.messageService.listPendingApprovals(relatedRuntimeSessionId)[0] || null;
-          const pendingQuestion = this.messageService.listPendingQuestions(relatedRuntimeSessionId)
+        const relatedRuntimeSessionIds = Array.isArray(backgroundResult?.assistantRun?.relatedRuntimeSessionIds)
+          ? backgroundResult.assistantRun.relatedRuntimeSessionIds.filter(Boolean)
+          : [];
+        const primaryRuntimeSessionId = relatedRuntimeSessionIds[0] || null;
+        if (relatedRuntimeSessionIds.length > 0) {
+          this.conversationStore.trackRuntimeSessions(conversation.id, relatedRuntimeSessionIds);
+        }
+        if (primaryRuntimeSessionId) {
+          const runtimeSession = this.messageService.getRuntimeSession(primaryRuntimeSessionId);
+          const pendingApproval = this.messageService.listPendingApprovals(primaryRuntimeSessionId)[0] || null;
+          const pendingQuestion = this.messageService.listPendingQuestions(primaryRuntimeSessionId)
             .find((entry) => entry.status === 'pending') || null;
           const latestConversation = this.conversationStore.get(conversation.id) || conversation;
-          this.conversationStore.bindRuntimeSession(conversation.id, relatedRuntimeSessionId, {
+          this.conversationStore.bindRuntimeSession(conversation.id, primaryRuntimeSessionId, {
             mode: CHANNEL_CONVERSATION_MODE.AGENT_RUNTIME,
             lastPendingApprovalId: pendingApproval?.approvalId || null,
             lastPendingQuestionId: pendingQuestion?.questionId || null,
+            activeTaskId: latestConversation.metadata?.supervisor?.taskMemory?.activeTaskId || latestConversation.activeTaskId || null,
+            trackedTaskIds: latestConversation.metadata?.supervisor?.taskMemory?.taskOrder || latestConversation.trackedTaskIds || [],
             metadata: {
               ...(latestConversation.metadata || {}),
               assistantCore: {
@@ -160,7 +170,7 @@ export class AgentChannelRouter {
         this.deliveryStore.saveOutbound({
           channel: message.channel,
           conversationId: conversation.id,
-          sessionId: relatedRuntimeSessionId,
+          sessionId: primaryRuntimeSessionId,
           externalMessageId: result?.messageId || '',
           status: 'sent',
           payload: {
@@ -242,44 +252,32 @@ export class AgentChannelRouter {
       const pendingApproval = this.messageService.listPendingApprovals(result.session.id)[0] || null;
       const pendingQuestion = this.messageService.listPendingQuestions(result.session.id)
         .find((entry) => entry.status === 'pending') || null;
-      const taskMemory = {
-        ...((conversation.metadata?.supervisor?.taskMemory && typeof conversation.metadata.supervisor.taskMemory === 'object')
-          ? conversation.metadata.supervisor.taskMemory
-          : {}),
-        current: {
-          sessionId: result.session.id,
-          provider: result.session.provider,
-          title: supervisorContext.title || result.session.title || message.text || '',
-          status: pendingQuestion
-            ? 'waiting_user'
-            : (pendingApproval ? 'waiting_approval' : (result.session.status || 'starting')),
-          startedAt: result.session.createdAt || new Date().toISOString(),
-          lastUpdateAt: result.session.updatedAt || new Date().toISOString(),
-          summary: String(supervisorContext.summary || '').trim(),
-          result: '',
-          originKind: String(supervisorContext.kind || '').trim() || 'direct',
-          sourceTitle: String(supervisorContext.sourceTitle || '').trim(),
-          sourceProvider: String(supervisorContext.sourceProvider || '').trim(),
-          sourceStatus: String(supervisorContext.sourceStatus || '').trim(),
-          pendingApprovalTitle: String(pendingApproval?.title || '').trim(),
-          pendingQuestion: String(pendingQuestion?.text || '').trim()
-        }
-      };
+      const synced = syncSupervisorTaskForRuntimeStart({
+        conversation,
+        session: result.session,
+        supervisorContext,
+        taskMemory: conversation.metadata?.supervisor?.taskMemory || null,
+        pendingApproval,
+        pendingQuestion,
+        userInput: message.text,
+        originKind: String(supervisorContext.kind || '').trim() || 'direct',
+        activate: true,
+        store: this.supervisorTaskStore
+      });
       this.conversationStore.bindRuntimeSession(conversation.id, result.session.id, {
         mode: CHANNEL_CONVERSATION_MODE.AGENT_RUNTIME,
         lastPendingApprovalId: pendingApproval?.approvalId || null,
         lastPendingQuestionId: pendingQuestion?.questionId || null,
+        activeTaskId: synced.taskMemory?.activeTaskId || conversation.activeTaskId || null,
+        trackedTaskIds: synced.taskMemory?.taskOrder || conversation.trackedTaskIds || [],
         metadata: {
           ...(conversation.metadata || {}),
           supervisor: {
             ...((conversation.metadata?.supervisor && typeof conversation.metadata.supervisor === 'object')
               ? conversation.metadata.supervisor
               : {}),
-            taskMemory,
-            brief: buildSupervisorBrief({
-              taskMemory,
-              session: result.session
-            })
+            taskMemory: synced.taskMemory,
+            brief: synced.brief
           }
         }
       });

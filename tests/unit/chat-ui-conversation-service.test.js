@@ -421,6 +421,7 @@ test('ChatUiConversationService marks assistant run as waiting_user when delegat
   assert.equal(result.type, 'assistant_response');
   assert.equal(result.assistantRun.status, 'waiting_user');
   assert.equal(result.assistantRun.relatedRuntimeSessionIds.length, 1);
+  assert.match(String(result.message || ''), /waiting for your answer|等你回答|waiting for your approval|等待你的批准/i);
 });
 
 test('ChatUiConversationService can accept assistant runs for background execution', async () => {
@@ -466,6 +467,9 @@ test('ChatUiConversationService can accept assistant runs for background executi
     return current?.activeRuntimeSessionId ? current : null;
   });
   assert.ok(updatedConversation?.activeRuntimeSessionId);
+  assert.ok(updatedConversation?.activeTaskId);
+  assert.ok(Array.isArray(updatedConversation?.trackedTaskIds));
+  assert.ok(updatedConversation?.trackedTaskIds.includes(updatedConversation.activeTaskId));
   assert.equal(updatedConversation?.mode, 'agent-runtime');
 });
 

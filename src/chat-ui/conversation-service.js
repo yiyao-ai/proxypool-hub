@@ -3,6 +3,7 @@ import agentTaskStore from '../agent-core/task-store.js';
 import { syncTaskFromRuntimeResult } from '../agent-core/task-service.js';
 import { buildSupervisorBrief } from '../agent-orchestrator/supervisor-brief.js';
 import { CHANNEL_CONVERSATION_MODE } from '../agent-channels/models.js';
+import { syncSupervisorTaskForRuntimeStart } from '../agent-orchestrator/supervisor-task-sync.js';
 import chatUiConversationStore from './conversation-store.js';
 import assistantRunStore from '../assistant-core/run-store.js';
 import AssistantModeService from '../assistant-core/mode-service.js';
@@ -21,6 +22,7 @@ export class ChatUiConversationService {
     this.conversationStore = conversationStore;
     this.messageService = messageService;
     this.taskStore = taskStore;
+    this.supervisorTaskStore = this.messageService?.supervisorTaskStore;
     this.assistantModeService = assistantModeService || new AssistantModeService({
       conversationStore: this.conversationStore,
       messageService: this.messageService,
@@ -104,45 +106,33 @@ export class ChatUiConversationService {
       const pendingApproval = this.messageService.listPendingApprovals(result.session.id)[0] || null;
       const pendingQuestion = this.messageService.listPendingQuestions(result.session.id)
         .find((entry) => entry.status === 'pending') || null;
-      const taskMemory = {
-        ...((conversation.metadata?.supervisor?.taskMemory && typeof conversation.metadata.supervisor.taskMemory === 'object')
-          ? conversation.metadata.supervisor.taskMemory
-          : {}),
-        current: {
-          sessionId: result.session.id,
-          provider: result.session.provider,
-          title: supervisorContext.title || result.session.title || text || '',
-          status: pendingQuestion
-            ? 'waiting_user'
-            : (pendingApproval ? 'waiting_approval' : (result.session.status || 'starting')),
-          startedAt: result.session.createdAt || new Date().toISOString(),
-          lastUpdateAt: result.session.updatedAt || new Date().toISOString(),
-          summary: String(supervisorContext.summary || '').trim(),
-          result: '',
-          originKind: String(supervisorContext.kind || '').trim() || 'direct',
-          sourceTitle: String(supervisorContext.sourceTitle || '').trim(),
-          sourceProvider: String(supervisorContext.sourceProvider || '').trim(),
-          sourceStatus: String(supervisorContext.sourceStatus || '').trim(),
-          pendingApprovalTitle: String(pendingApproval?.title || '').trim(),
-          pendingQuestion: String(pendingQuestion?.text || '').trim()
-        }
-      };
+      const synced = syncSupervisorTaskForRuntimeStart({
+        conversation,
+        session: result.session,
+        supervisorContext,
+        taskMemory: conversation.metadata?.supervisor?.taskMemory || null,
+        pendingApproval,
+        pendingQuestion,
+        userInput: text,
+        originKind: String(supervisorContext.kind || '').trim() || 'direct',
+        activate: true,
+        store: this.supervisorTaskStore
+      });
 
       this.conversationStore.bindRuntimeSession(conversation.id, result.session.id, {
         mode: CHANNEL_CONVERSATION_MODE.AGENT_RUNTIME,
         lastPendingApprovalId: pendingApproval?.approvalId || null,
         lastPendingQuestionId: pendingQuestion?.questionId || null,
+        activeTaskId: synced.taskMemory?.activeTaskId || conversation.activeTaskId || null,
+        trackedTaskIds: synced.taskMemory?.taskOrder || conversation.trackedTaskIds || [],
         metadata: {
           ...(conversation.metadata || {}),
           supervisor: {
             ...((conversation.metadata?.supervisor && typeof conversation.metadata.supervisor === 'object')
               ? conversation.metadata.supervisor
               : {}),
-            taskMemory,
-            brief: buildSupervisorBrief({
-              taskMemory,
-              session: result.session
-            })
+            taskMemory: synced.taskMemory,
+            brief: synced.brief
           }
         }
       });

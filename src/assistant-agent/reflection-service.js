@@ -1,7 +1,7 @@
 export class AssistantReflectionService {
   async expandToolResults({ toolCall, toolResult, toolExecutor, context } = {}) {
     const toolName = String(toolCall?.toolName || '');
-    if (!['delegate_to_codex', 'delegate_to_claude_code', 'delegate_to_runtime', 'reuse_or_delegate', 'send_runtime_input'].includes(toolName)) {
+    if (!['delegate_to_codex', 'delegate_to_claude_code', 'delegate_to_runtime', 'reuse_or_delegate', 'send_runtime_input', 'continue_task'].includes(toolName)) {
       return [];
     }
 

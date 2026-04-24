@@ -6,6 +6,8 @@ import assistantMemoryService from './memory-service.js';
 import assistantPolicyService from './policy-service.js';
 import assistantWorkspaceStore from './workspace-store.js';
 import { resolveWorkspaceScopeRef, buildWorkspaceMetadata } from './scope-resolver.js';
+import { buildTrackedSupervisorSessionIds, buildTrackedSupervisorTaskIds } from '../agent-orchestrator/supervisor-task-memory.js';
+import supervisorTaskStore from '../agent-orchestrator/supervisor-task-store.js';
 
 function providerLabel(providerId) {
   if (providerId === 'claude-code') return 'Claude Code';
@@ -67,16 +69,22 @@ function aggregateTurnStats(turns = []) {
 function summarizeConversation(conversation = {}) {
   const brief = conversation?.metadata?.supervisor?.brief || {};
   const assistantState = conversation?.metadata?.assistantCore || {};
+  const trackedRuntimeSessionIds = buildTrackedSupervisorSessionIds(conversation?.metadata?.supervisor?.taskMemory || null);
+  const trackedTaskIds = buildTrackedSupervisorTaskIds(conversation?.metadata?.supervisor?.taskMemory || null);
   return {
     id: conversation.id,
     channel: conversation.channel || '',
     title: conversation.title || '',
     activeRuntimeSessionId: conversation.activeRuntimeSessionId || null,
+    activeTaskId: conversation?.metadata?.supervisor?.taskMemory?.activeTaskId || brief.taskId || null,
+    trackedRuntimeSessionIds,
+    trackedTaskIds,
     assistantMode: assistantState.mode || 'direct-runtime',
     assistantSessionId: assistantState.assistantSessionId || null,
     assistantLastRunId: assistantState.lastRunId || null,
     runtimeStatus: brief.status || '',
     runtimeTitle: brief.title || '',
+    runtimeTaskId: brief.taskId || '',
     runtimeProvider: brief.provider || '',
     runtimeProviderLabel: brief.providerLabel || providerLabel(brief.provider),
     runtimeSummary: brief.summary || '',
@@ -84,11 +92,57 @@ function summarizeConversation(conversation = {}) {
   };
 }
 
+function projectTaskRecord(task = null) {
+  if (!task?.id) return null;
+  return {
+    id: task.id,
+    conversationId: task.conversationId || '',
+    runtimeSessionId: task.runtimeSessionId || task.primaryExecutionId || '',
+    provider: task.provider || task.executorStrategy || task.metadata?.provider || '',
+    title: task.title || '',
+    status: task.status || '',
+    summary: task.summary || '',
+    result: task.result || '',
+    error: task.error || '',
+    updatedAt: task.updatedAt || task.lastUpdateAt || ''
+  };
+}
+
+function chooseTaskFromConversation(conversation = null, taskStore = null, supervisorTaskStoreArg = null) {
+  if (!conversation?.id) return null;
+  const supervisorTasks = supervisorTaskStoreArg?.listByConversationId?.(conversation.id, { limit: 50 }) || [];
+  const tasks = supervisorTasks.length > 0
+    ? supervisorTasks.map(projectTaskRecord).filter(Boolean)
+    : (taskStore ? taskStore.list({ conversationId: conversation.id, limit: 50 }) : []);
+  const currentTask = conversation?.metadata?.supervisor?.taskMemory?.currentTask
+    || conversation?.metadata?.supervisor?.taskMemory?.current
+    || null;
+  if (currentTask?.sessionId) {
+    const matched = tasks.find((entry) => entry.runtimeSessionId === currentTask.sessionId);
+    if (matched) return matched;
+  }
+  if (currentTask?.taskId || currentTask?.sessionId) {
+    return {
+      id: currentTask.taskId || currentTask.sessionId,
+      runtimeSessionId: currentTask.sessionId || '',
+      provider: currentTask.provider || '',
+      title: currentTask.title || '',
+      status: currentTask.status || '',
+      summary: currentTask.summary || '',
+      result: currentTask.result || '',
+      error: currentTask.error || '',
+      updatedAt: currentTask.lastUpdateAt || ''
+    };
+  }
+  return tasks[0] || null;
+}
+
 export class AssistantObservationService {
   constructor({
     conversationStore = chatUiConversationStore,
     runtimeSessionManager = agentRuntimeSessionManager,
     taskStore = agentTaskStore,
+    supervisorTaskStore: supervisorTaskStoreArg = supervisorTaskStore,
     deliveryStore = agentChannelDeliveryStore,
     memoryService = assistantMemoryService,
     policyService = assistantPolicyService,
@@ -97,6 +151,7 @@ export class AssistantObservationService {
     this.conversationStore = conversationStore;
     this.runtimeSessionManager = runtimeSessionManager;
     this.taskStore = taskStore;
+    this.supervisorTaskStore = supervisorTaskStoreArg;
     this.deliveryStore = deliveryStore;
     this.memoryService = memoryService;
     this.policyService = policyService;
@@ -107,9 +162,7 @@ export class AssistantObservationService {
     const activeRuntime = conversation?.activeRuntimeSessionId
       ? this.runtimeSessionManager.getSession(conversation.activeRuntimeSessionId)
       : null;
-    const latestTask = conversation?.id
-      ? this.taskStore.findLatestByConversation(conversation.id)
-      : null;
+    const latestTask = chooseTaskFromConversation(conversation, this.taskStore, this.supervisorTaskStore);
     const sessions = this.runtimeSessionManager.listSessions({ limit: 10 });
     const conversations = this.conversationStore.list({ limit: 10 });
 
@@ -171,7 +224,7 @@ export class AssistantObservationService {
       .filter(Boolean);
   }
 
-  getRuntimeSessionDetail(sessionId, { eventLimit = 50 } = {}) {
+  getRuntimeSessionDetail(sessionId, { eventLimit = 50, rememberMemory = true } = {}) {
     const session = this.runtimeSessionManager.getSession(String(sessionId || ''));
     if (!session) return null;
 
@@ -182,7 +235,7 @@ export class AssistantObservationService {
       afterSeq: 0,
       limit: Math.max(1, eventLimit)
     });
-    const task = this.taskStore.findByRuntimeSessionId(session.id);
+    const task = this.supervisorTaskStore.findByRuntimeSessionId(session.id) || this.taskStore.findByRuntimeSessionId(session.id);
     const deliveries = this.deliveryStore.listBySession(session.id, { limit: 20 });
     const turns = this.runtimeSessionManager.listTurns(session.id, { limit: 20 });
 
@@ -230,14 +283,21 @@ export class AssistantObservationService {
         updatedAt: entry.updatedAt || ''
       }))
     };
-    const runtimeSessionMemory = this.memoryService.rememberRuntimeSessionState({
-      runtimeSession: session,
-      detail,
-      metadata: {
-        workspaceRef: session.cwd || '',
-        conversationId: session?.metadata?.conversationId || session?.metadata?.source?.conversationId || ''
+    let runtimeSessionMemory = [];
+    if (rememberMemory) {
+      try {
+        runtimeSessionMemory = this.memoryService.rememberRuntimeSessionState({
+          runtimeSession: session,
+          detail,
+          metadata: {
+            workspaceRef: session.cwd || '',
+            conversationId: session?.metadata?.conversationId || session?.metadata?.source?.conversationId || ''
+          }
+        });
+      } catch {
+        runtimeSessionMemory = [];
       }
-    });
+    }
     return {
       ...detail,
       runtimeSessionMemory
@@ -297,7 +357,7 @@ export class AssistantObservationService {
     const activeRuntime = conversation.activeRuntimeSessionId
       ? this.runtimeSessionManager.getSession(conversation.activeRuntimeSessionId)
       : null;
-    const latestTask = this.taskStore.findLatestByConversation(conversation.id);
+    const latestTask = chooseTaskFromConversation(conversation, this.taskStore, this.supervisorTaskStore);
     const deliveries = this.deliveryStore.listByConversation(conversation.id, {
       limit: Math.max(1, deliveryLimit)
     });
@@ -378,6 +438,7 @@ export class AssistantObservationService {
         updatedAt: entry.updatedAt || ''
       })),
       supervisor: conversation?.metadata?.supervisor || null,
+      currentTask: conversation?.metadata?.supervisor?.taskMemory?.currentTask || conversation?.metadata?.supervisor?.taskMemory?.current || null,
       assistantState: conversation?.metadata?.assistantCore || null,
       workspace: buildWorkspaceMetadata({ workspace, workspaceRef }),
       memory,
@@ -438,7 +499,10 @@ export class AssistantObservationService {
 
   searchProjectMemory({ query = '', limit = 10 } = {}) {
     const source = String(query || '').trim().toLowerCase();
-    const taskMatches = this.taskStore.list({ limit: Math.max(limit * 5, limit) })
+    const sourceTasks = this.supervisorTaskStore.list({ limit: Math.max(limit * 5, limit) }).length > 0
+      ? this.supervisorTaskStore.list({ limit: Math.max(limit * 5, limit) }).map(projectTaskRecord).filter(Boolean)
+      : this.taskStore.list({ limit: Math.max(limit * 5, limit) });
+    const taskMatches = sourceTasks
       .filter((entry) => {
         if (!source) return true;
         return [
@@ -454,7 +518,7 @@ export class AssistantObservationService {
         kind: 'task',
         id: entry.id,
         conversationId: entry.conversationId || '',
-        runtimeSessionId: entry.runtimeSessionId || '',
+        runtimeSessionId: entry.runtimeSessionId || entry.primaryExecutionId || '',
         provider: entry.provider || '',
         title: entry.title || '',
         status: entry.status || '',

@@ -24,6 +24,22 @@ function hasPendingContent(toolResults = []) {
   });
 }
 
+function deriveWaitingReason(toolResults = []) {
+  for (const entry of [...toolResults].reverse()) {
+    const result = entry?.result;
+    const status = normalizeStatus(result?.session?.status || result?.status);
+    const approvals = Array.isArray(result?.pendingApprovals) ? result.pendingApprovals.length : Number(result?.pendingApprovals || 0);
+    const questions = Array.isArray(result?.pendingQuestions) ? result.pendingQuestions.length : Number(result?.pendingQuestions || 0);
+    if (status === 'waiting_approval' || approvals > 0) {
+      return 'runtime_waiting_approval';
+    }
+    if (status === 'waiting_user' || questions > 0) {
+      return 'runtime_waiting_user_input';
+    }
+  }
+  return 'runtime_waiting_on_user';
+}
+
 export function deriveAssistantRunStopState({
   toolResults = [],
   assistantText = '',
@@ -47,7 +63,7 @@ export function deriveAssistantRunStopState({
     return {
       status: ASSISTANT_RUN_STATUS.WAITING_USER,
       closure: ASSISTANT_RUN_CLOSURE_STATE.WAITING_USER,
-      reason: 'runtime_waiting_on_user'
+      reason: deriveWaitingReason(toolResults)
     };
   }
 

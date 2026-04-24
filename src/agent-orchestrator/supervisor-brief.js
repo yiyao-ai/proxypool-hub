@@ -1,3 +1,5 @@
+import { countOtherActiveSupervisorTasks, pickCurrentSupervisorTask } from './supervisor-task-memory.js';
+
 function providerLabel(providerId) {
   if (providerId === 'claude-code') return 'Claude Code';
   if (providerId === 'codex') return 'Codex';
@@ -56,10 +58,32 @@ function buildCurrentNextSuggestion(current) {
   return '';
 }
 
+function buildTaskHeadline(current) {
+  const title = String(current?.title || '').trim() || 'Untitled task';
+  if (current?.status === 'waiting_approval') {
+    return `Task "${title}" is waiting for approval.`;
+  }
+  if (current?.status === 'waiting_user') {
+    return `Task "${title}" is waiting for your reply.`;
+  }
+  if (current?.status === 'starting' || current?.status === 'running') {
+    return `Task "${title}" is in progress.`;
+  }
+  if (current?.status === 'completed') {
+    return `Task "${title}" is completed.`;
+  }
+  if (current?.status === 'failed') {
+    return `Task "${title}" failed.`;
+  }
+  return '';
+}
+
 export function buildSupervisorBrief({ taskMemory, session = null } = {}) {
-  const current = taskMemory?.current || null;
-  const lastCompleted = taskMemory?.lastCompleted || null;
-  const lastFailed = taskMemory?.lastFailed || null;
+  const current = pickCurrentSupervisorTask(taskMemory);
+  const normalizedTaskMemory = taskMemory && typeof taskMemory === 'object' ? taskMemory : {};
+  const lastCompleted = normalizedTaskMemory?.lastCompletedTask || normalizedTaskMemory?.lastCompleted || null;
+  const lastFailed = normalizedTaskMemory?.lastFailedTask || normalizedTaskMemory?.lastFailed || null;
+  const otherActiveCount = countOtherActiveSupervisorTasks(taskMemory, current?.taskId || current?.sessionId || '');
 
   if (current) {
     const originSummary = current.sourceTitle
@@ -78,8 +102,15 @@ export function buildSupervisorBrief({ taskMemory, session = null } = {}) {
       title: current.title || 'Untitled task',
       provider: current.provider || session?.provider || '',
       providerLabel: providerLabel(current.provider || session?.provider || ''),
+      taskId: current.taskId || current.sessionId || '',
+      sessionId: current.sessionId || '',
       status: current.status || session?.status || 'unknown',
-      summary: [String(current.summary || '').trim(), originSummary].filter(Boolean).join(' '),
+      summary: [
+        buildTaskHeadline(current),
+        String(current.summary || '').trim(),
+        originSummary,
+        otherActiveCount > 0 ? `${otherActiveCount} other active task(s) are still in flight in this conversation.` : ''
+      ].filter(Boolean).join(' '),
       result: String(current.result || '').trim(),
       error: String(current.error || '').trim(),
       waitingReason: current.pendingApprovalTitle
@@ -95,6 +126,8 @@ export function buildSupervisorBrief({ taskMemory, session = null } = {}) {
       title: lastCompleted.title || 'Untitled task',
       provider: lastCompleted.provider || '',
       providerLabel: providerLabel(lastCompleted.provider || ''),
+      taskId: lastCompleted.taskId || lastCompleted.sessionId || '',
+      sessionId: lastCompleted.sessionId || '',
       status: 'completed',
       summary: String(lastCompleted.summary || '').trim(),
       result: String(lastCompleted.result || '').trim(),
@@ -110,6 +143,8 @@ export function buildSupervisorBrief({ taskMemory, session = null } = {}) {
       title: lastFailed.title || 'Untitled task',
       provider: lastFailed.provider || '',
       providerLabel: providerLabel(lastFailed.provider || ''),
+      taskId: lastFailed.taskId || lastFailed.sessionId || '',
+      sessionId: lastFailed.sessionId || '',
       status: 'failed',
       summary: '',
       result: '',
@@ -124,6 +159,8 @@ export function buildSupervisorBrief({ taskMemory, session = null } = {}) {
     title: '',
     provider: '',
     providerLabel: 'agent',
+    taskId: '',
+    sessionId: '',
     status: 'idle',
     summary: '',
     result: '',

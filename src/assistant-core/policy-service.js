@@ -179,9 +179,11 @@ export class AssistantPolicyService {
       'get_runtime_session',
       'list_conversations',
       'get_conversation_context',
+      'get_conversation_task_space',
       'summarize_runtime_result',
       'list_tasks',
       'get_task',
+      'get_task_by_runtime_session',
       'list_project_artifacts',
       'search_task_and_conversation_memory',
       'search_project_memory'
@@ -202,7 +204,7 @@ export class AssistantPolicyService {
       });
     }
 
-    if (['delegate_to_codex', 'delegate_to_claude_code', 'delegate_to_runtime', 'start_runtime_task', 'reuse_or_delegate'].includes(normalizedTool)) {
+    if (['delegate_to_codex', 'delegate_to_claude_code', 'delegate_to_runtime', 'delegate_task_execution', 'start_runtime_task', 'reuse_or_delegate'].includes(normalizedTool)) {
       const scopeExpanded = this.canAssistantExpandScope({
         conversation,
         runtimeSession,
@@ -225,6 +227,15 @@ export class AssistantPolicyService {
         allowed: Boolean(runtimeSession?.id || input.sessionId),
         reason: runtimeSession?.id || input.sessionId ? 'runtime_scope_available' : 'runtime_scope_required',
         riskLevel: normalizedTool === 'cancel_runtime_session' ? 'medium' : 'low'
+      });
+    }
+
+    if (normalizedTool === 'continue_task') {
+      const allowed = Boolean(runtimeSession?.id || input.sessionId || input.taskId);
+      return buildPolicyDecision({
+        allowed,
+        reason: allowed ? 'task_or_runtime_scope_available' : 'task_or_runtime_scope_required',
+        riskLevel: 'low'
       });
     }
 

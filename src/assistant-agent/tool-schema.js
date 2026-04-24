@@ -36,6 +36,16 @@ const TOOL_SCHEMAS = Object.freeze({
     },
     required: ['conversationId']
   },
+  get_conversation_task_space: {
+    type: 'object',
+    properties: {
+      conversationId: { type: 'string' },
+      activeLimit: { type: 'integer', minimum: 1, maximum: 20 },
+      waitingLimit: { type: 'integer', minimum: 1, maximum: 20 },
+      recentLimit: { type: 'integer', minimum: 1, maximum: 20 }
+    },
+    required: ['conversationId']
+  },
   list_tasks: {
     type: 'object',
     properties: {
@@ -50,6 +60,15 @@ const TOOL_SCHEMAS = Object.freeze({
       taskId: { type: 'string' }
     },
     required: ['taskId']
+  },
+  get_task_by_runtime_session: {
+    type: 'object',
+    properties: {
+      sessionId: { type: 'string' },
+      conversationId: { type: 'string' },
+      limit: { type: 'integer', minimum: 1, maximum: 100 }
+    },
+    required: ['sessionId']
   },
   search_task_and_conversation_memory: {
     type: 'object',
@@ -95,6 +114,18 @@ const TOOL_SCHEMAS = Object.freeze({
     },
     required: ['provider', 'task']
   },
+  delegate_task_execution: {
+    type: 'object',
+    properties: {
+      taskId: { type: 'string' },
+      provider: { type: 'string', enum: ['codex', 'claude-code'] },
+      role: { type: 'string', enum: ['primary', 'secondary'] },
+      task: { type: 'string' },
+      cwd: { type: 'string' },
+      model: { type: 'string' }
+    },
+    required: ['taskId', 'provider', 'task']
+  },
   reuse_or_delegate: {
     type: 'object',
     properties: {
@@ -113,6 +144,15 @@ const TOOL_SCHEMAS = Object.freeze({
       message: { type: 'string' }
     },
     required: ['sessionId', 'message']
+  },
+  continue_task: {
+    type: 'object',
+    properties: {
+      taskId: { type: 'string' },
+      sessionId: { type: 'string' },
+      message: { type: 'string' }
+    },
+    required: ['message']
   },
   cancel_runtime_session: {
     type: 'object',

@@ -9,6 +9,14 @@ import AssistantDialogueService from '../assistant-agent/dialogue-service.js';
 import { CHANNEL_CONVERSATION_MODE } from '../agent-channels/models.js';
 import { buildSupervisorBrief } from '../agent-orchestrator/supervisor-brief.js';
 import { syncTaskFromRuntimeResult } from '../agent-core/task-service.js';
+import agentTaskStore from '../agent-core/task-store.js';
+import { finalizeSupervisorTaskMemory, normalizeSupervisorTaskMemory, upsertSupervisorTaskRecord } from '../agent-orchestrator/supervisor-task-memory.js';
+import { AGENT_SESSION_STATUS } from '../agent-runtime/models.js';
+import supervisorTaskStore from '../agent-orchestrator/supervisor-task-store.js';
+import {
+  syncSupervisorTaskForRuntimeStart,
+  syncSupervisorTaskForRuntimeTerminal
+} from '../agent-orchestrator/supervisor-task-sync.js';
 
 // CliGate Assistant mainline entry.
 // /cligate, assistant runs, async closure, and observability should converge on assistant-core + assistant-agent.
@@ -117,6 +125,91 @@ function getDelegatedRuntimeResult(executed = {}) {
   ))?.result || null;
 }
 
+function getDelegatedRuntimeResults(executed = {}) {
+  const toolResults = Array.isArray(executed?.toolResults) ? executed.toolResults : [];
+  const seen = new Set();
+  const results = [];
+  for (const entry of toolResults) {
+    if (![
+      'start_runtime_task',
+      'delegate_to_codex',
+      'delegate_to_claude_code',
+      'delegate_to_runtime',
+      'reuse_or_delegate',
+      'send_runtime_input'
+    ].includes(entry?.toolName)) {
+      continue;
+    }
+    const result = entry?.result;
+    const sessionId = String(result?.id || result?.session?.id || '').trim();
+    if (!sessionId || seen.has(sessionId)) continue;
+    seen.add(sessionId);
+    results.push(result);
+  }
+  return results;
+}
+
+function getPrimaryRuntimeResult(executed = {}) {
+  return getDelegatedRuntimeResults(executed)[0] || getDelegatedRuntimeResult(executed);
+}
+
+function isTerminalRuntimeStatus(status) {
+  return [
+    AGENT_SESSION_STATUS.READY,
+    AGENT_SESSION_STATUS.FAILED,
+    AGENT_SESSION_STATUS.CANCELLED
+  ].includes(String(status || ''));
+}
+
+function runtimeStatusToTaskStatus(session, { pendingApproval = null, pendingQuestion = null } = {}) {
+  if (pendingQuestion) return 'waiting_user';
+  if (pendingApproval) return 'waiting_approval';
+  const status = String(session?.status || '');
+  if (status === AGENT_SESSION_STATUS.READY) return 'completed';
+  if (status === AGENT_SESSION_STATUS.FAILED) return 'failed';
+  if (status === AGENT_SESSION_STATUS.CANCELLED) return 'cancelled';
+  return status || 'starting';
+}
+
+function shouldDeferBackgroundCallback(result = null) {
+  const sessionIds = Array.isArray(result?.assistantRun?.relatedRuntimeSessionIds)
+    ? result.assistantRun.relatedRuntimeSessionIds.filter(Boolean)
+    : [];
+  return result?.assistantRun?.status === ASSISTANT_RUN_STATUS.WAITING_RUNTIME
+    && sessionIds.length > 0;
+}
+
+function buildAggregatedRuntimeMessage({ sessions = [], runText = '' } = {}) {
+  const zh = /[\u3400-\u9fff]/.test(String(runText || ''));
+  const lines = sessions.map((session, index) => {
+    const label = session?.provider === 'claude-code' ? 'Claude Code' : (session?.provider === 'codex' ? 'Codex' : String(session?.provider || 'runtime'));
+    const status = String(session?.status || '').trim();
+    const summary = String(session?.summary || '').trim();
+    const result = String(session?.result || '').trim();
+    const error = String(session?.error || '').trim();
+    const detail = result || summary || error || status || (zh ? '已结束' : 'finished');
+    return `${index + 1}. ${label}: ${detail}`;
+  });
+
+  if (lines.length === 1) {
+    return lines[0].replace(/^1\.\s*/, '');
+  }
+
+  if (zh) {
+    return lines.length > 0
+      ? `并发任务已全部结束，汇总如下：\n${lines.join('\n')}`
+      : '并发任务已全部结束。';
+  }
+
+  return lines.length > 0
+    ? `All parallel runtime tasks finished:\n${lines.join('\n')}`
+    : 'All parallel runtime tasks finished.';
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 export class AssistantModeService {
   constructor({
     conversationStore,
@@ -125,6 +218,8 @@ export class AssistantModeService {
     observationService = assistantObservationService,
     messageService = agentOrchestratorMessageService,
     taskViewService = assistantTaskViewService,
+    taskStore = null,
+    supervisorTaskStore: supervisorTaskStoreArg = supervisorTaskStore,
     runner = null,
     dialogueService = null
   } = {}) {
@@ -140,6 +235,11 @@ export class AssistantModeService {
       : observationService;
     this.messageService = messageService;
     this.taskViewService = taskViewService;
+    this.taskStore = taskStore
+      || this.taskViewService?.taskStore
+      || this.observationService?.taskStore
+      || agentTaskStore;
+    this.supervisorTaskStore = supervisorTaskStoreArg;
     this.runner = runner || new AssistantRunner({
       runStore: this.assistantRunStore,
       observationService: this.observationService,
@@ -197,7 +297,8 @@ export class AssistantModeService {
       lastAssistantSummary: executed.reply.summary
     });
 
-    const delegatedRuntime = getDelegatedRuntimeResult(executed);
+    const delegatedRuntimes = getDelegatedRuntimeResults(executed);
+    const delegatedRuntime = delegatedRuntimes[0] || null;
     const nextAssistantMetadata = {
       assistantCore: buildAssistantMetadata(this.getConversationAssistantState(conversation), {
         mode: assistantModeActive ? ASSISTANT_CONTROL_MODE.ASSISTANT : ASSISTANT_CONTROL_MODE.DIRECT_RUNTIME,
@@ -211,56 +312,84 @@ export class AssistantModeService {
     });
 
     if (delegatedRuntime?.id) {
-      const pendingApproval = this.messageService.listPendingApprovals(delegatedRuntime.id)[0] || null;
-      const pendingQuestion = this.messageService.listPendingQuestions(delegatedRuntime.id)
-        .find((entry) => entry.status === 'pending') || null;
-      const taskRecord = syncTaskFromRuntimeResult({
-        conversation: nextConversation,
-        result: {
-          type: delegatedRuntime?.turnCount > 1 ? 'runtime_continued' : 'runtime_started',
-          provider: delegatedRuntime.provider,
-          session: delegatedRuntime,
-          supervisorContext: persistedRun?.metadata?.plan?.summaryIntent === 'runtime_start'
+      const sourceContext = persistedRun?.metadata?.plan?.summaryIntent === 'runtime_start'
+        ? {
+            kind: 'assistant',
+            sourceTitle: conversation?.metadata?.supervisor?.brief?.title || '',
+            sourceProvider: conversation?.metadata?.supervisor?.brief?.provider || '',
+            sourceStatus: conversation?.metadata?.supervisor?.brief?.status || ''
+          }
+        : null;
+
+      for (const runtime of delegatedRuntimes) {
+        const pendingApproval = this.messageService.listPendingApprovals(runtime.id)[0] || null;
+        const pendingQuestion = this.messageService.listPendingQuestions(runtime.id)
+          .find((entry) => entry.status === 'pending') || null;
+        const taskRecord = syncTaskFromRuntimeResult({
+          conversation: nextConversation,
+          result: {
+            type: runtime?.turnCount > 1 ? 'runtime_continued' : 'runtime_started',
+            provider: runtime.provider,
+            session: runtime,
+            supervisorContext: sourceContext
+              ? {
+                  ...sourceContext,
+                  title: runtime.title || runText,
+                  summary: executed.reply.summary || ''
+                }
+              : null
+          },
+          userInput: runText,
+          store: this.taskStore
+        });
+        const synced = syncSupervisorTaskForRuntimeStart({
+          conversation: nextConversation,
+          session: runtime,
+          supervisorContext: sourceContext
             ? {
-                kind: 'assistant',
-                title: delegatedRuntime.title || runText,
-                summary: executed.reply.summary || '',
-                sourceTitle: conversation?.metadata?.supervisor?.brief?.title || '',
-                sourceProvider: conversation?.metadata?.supervisor?.brief?.provider || '',
-                sourceStatus: conversation?.metadata?.supervisor?.brief?.status || ''
+                ...sourceContext,
+                title: runtime.title || taskRecord?.title || runText || '',
+                summary: String(executed.reply.summary || runtime.summary || '').trim()
               }
-            : null
-        },
-        userInput: runText
-      });
-      const taskMemory = {
-        ...((conversation.metadata?.supervisor?.taskMemory && typeof conversation.metadata.supervisor.taskMemory === 'object')
-          ? conversation.metadata.supervisor.taskMemory
-          : {}),
-        current: {
-          sessionId: delegatedRuntime.id,
-          provider: delegatedRuntime.provider,
-          title: delegatedRuntime.title || taskRecord?.title || runText || '',
-          status: pendingQuestion
-            ? 'waiting_user'
-            : (pendingApproval ? 'waiting_approval' : (delegatedRuntime.status || 'starting')),
-          startedAt: delegatedRuntime.createdAt || new Date().toISOString(),
-          lastUpdateAt: delegatedRuntime.updatedAt || new Date().toISOString(),
-          summary: String(executed.reply.summary || delegatedRuntime.summary || '').trim(),
-          result: '',
+            : {
+                kind: 'assistant',
+                title: runtime.title || taskRecord?.title || runText || '',
+                summary: String(executed.reply.summary || runtime.summary || '').trim()
+              },
+          taskMemory: nextConversation?.metadata?.supervisor?.taskMemory || conversation.metadata?.supervisor?.taskMemory || null,
+          pendingApproval,
+          pendingQuestion,
+          userInput: runText,
           originKind: 'assistant',
-          sourceTitle: String(conversation?.metadata?.supervisor?.brief?.title || '').trim(),
-          sourceProvider: String(conversation?.metadata?.supervisor?.brief?.provider || '').trim(),
-          sourceStatus: String(conversation?.metadata?.supervisor?.brief?.status || '').trim(),
-          pendingApprovalTitle: String(pendingApproval?.title || '').trim(),
-          pendingQuestion: String(pendingQuestion?.text || '').trim()
-        }
-      };
+          activate: runtime.id === delegatedRuntime.id,
+          store: this.supervisorTaskStore
+        });
+        const taskMemory = synced.taskMemory;
+        nextConversation = this.conversationStore.patch(conversation.id, {
+          activeTaskId: taskMemory?.activeTaskId || nextConversation?.activeTaskId || conversation?.activeTaskId || null,
+          trackedTaskIds: taskMemory?.taskOrder || nextConversation?.trackedTaskIds || conversation?.trackedTaskIds || [],
+          metadata: {
+            ...(nextConversation?.metadata || conversation?.metadata || {}),
+            assistantCore: nextAssistantMetadata.assistantCore,
+            supervisor: {
+              ...(((nextConversation?.metadata || conversation?.metadata || {})?.supervisor
+                && typeof ((nextConversation?.metadata || conversation?.metadata || {})?.supervisor) === 'object')
+                ? ((nextConversation?.metadata || conversation?.metadata || {})?.supervisor)
+                : {}),
+              taskMemory,
+              brief: synced.brief
+            }
+          }
+        });
+      }
 
       nextConversation = this.conversationStore.bindRuntimeSession(conversation.id, delegatedRuntime.id, {
         mode: CHANNEL_CONVERSATION_MODE.AGENT_RUNTIME,
-        lastPendingApprovalId: pendingApproval?.approvalId || null,
-        lastPendingQuestionId: pendingQuestion?.questionId || null,
+        lastPendingApprovalId: this.messageService.listPendingApprovals(delegatedRuntime.id)[0]?.approvalId || null,
+        lastPendingQuestionId: this.messageService.listPendingQuestions(delegatedRuntime.id)
+          .find((entry) => entry.status === 'pending')?.questionId || null,
+        activeTaskId: nextConversation?.metadata?.supervisor?.taskMemory?.activeTaskId || nextConversation?.activeTaskId || conversation?.activeTaskId || null,
+        trackedTaskIds: nextConversation?.metadata?.supervisor?.taskMemory?.taskOrder || nextConversation?.trackedTaskIds || conversation?.trackedTaskIds || [],
         metadata: {
           ...(nextConversation?.metadata || conversation?.metadata || {}),
           assistantCore: nextAssistantMetadata.assistantCore,
@@ -268,10 +397,10 @@ export class AssistantModeService {
             ...(((nextConversation?.metadata || conversation?.metadata || {})?.supervisor
               && typeof ((nextConversation?.metadata || conversation?.metadata || {})?.supervisor) === 'object')
               ? ((nextConversation?.metadata || conversation?.metadata || {})?.supervisor)
-              : {}),
-            taskMemory,
+                : {}),
+            taskMemory: nextConversation?.metadata?.supervisor?.taskMemory || null,
             brief: buildSupervisorBrief({
-              taskMemory,
+              taskMemory: nextConversation?.metadata?.supervisor?.taskMemory || null,
               session: delegatedRuntime
             })
           }
@@ -291,6 +420,159 @@ export class AssistantModeService {
       assistantRun: persistedRun,
       observability: buildAssistantRunObservability(persistedRun),
       toolResults: executed.toolResults,
+      conversation: nextConversation
+    };
+  }
+
+  async waitForRelatedRuntimeAggregation({ conversationId, assistantSession, runText, assistantModeActive, runId } = {}) {
+    const currentRun = this.assistantRunStore.get(runId);
+    const sessionIds = Array.isArray(currentRun?.relatedRuntimeSessionIds)
+      ? [...new Set(currentRun.relatedRuntimeSessionIds.filter(Boolean))]
+      : [];
+    if (sessionIds.length === 0) {
+      return null;
+    }
+
+    const readSessions = () => sessionIds.map((sessionId) => this.messageService.getRuntimeSession(sessionId)).filter(Boolean);
+    const sessionsReady = () => {
+      const sessions = readSessions();
+      return sessions.length === sessionIds.length && sessions.every((session) => isTerminalRuntimeStatus(session.status))
+        ? sessions
+        : null;
+    };
+
+    const immediate = sessionsReady();
+    const sessions = immediate || await new Promise((resolve) => {
+      let settled = false;
+      const finish = (terminal) => {
+        if (settled || !terminal) return;
+        settled = true;
+        for (const unsubscribe of unsubscribers) {
+          unsubscribe();
+        }
+        clearInterval(pollTimer);
+        clearTimeout(timeoutTimer);
+        resolve(terminal);
+      };
+      const unsubscribers = sessionIds.map((sessionId) => this.messageService.runtimeSessionManager.subscribe(sessionId, () => {
+        finish(sessionsReady());
+      }));
+      const pollTimer = setInterval(() => {
+        finish(sessionsReady());
+      }, 25);
+      const timeoutTimer = setTimeout(async () => {
+        for (let attempt = 0; attempt < 10; attempt += 1) {
+          const terminal = sessionsReady();
+          if (terminal) {
+            finish(terminal);
+            return;
+          }
+          await sleep(25);
+        }
+        finish(readSessions());
+      }, 250);
+    });
+
+    const latestConversation = this.conversationStore.get(conversationId);
+    let taskMemory = normalizeSupervisorTaskMemory(latestConversation?.metadata?.supervisor?.taskMemory);
+    const runtimeSummaries = [];
+    for (const session of sessions) {
+      const task = this.taskStore?.findByRuntimeSessionId?.(session.id) || null;
+      const summary = task?.summary || session.summary || '';
+      const result = task?.result || '';
+      const error = task?.error || session.error || '';
+      const title = task?.title || session.title || '';
+      runtimeSummaries.push({
+        id: session.id,
+        provider: session.provider,
+        status: session.status,
+        title,
+        summary,
+        result,
+        error
+      });
+      const synced = syncSupervisorTaskForRuntimeTerminal({
+        conversationId,
+        session,
+        taskMemory,
+        patch: session.status === AGENT_SESSION_STATUS.READY
+          ? {
+              status: 'completed',
+              lastUpdateAt: session.updatedAt || new Date().toISOString(),
+              summary,
+              result,
+              pendingApprovalTitle: '',
+              pendingQuestion: ''
+            }
+          : {
+              status: session.status === AGENT_SESSION_STATUS.CANCELLED ? 'cancelled' : 'failed',
+              lastUpdateAt: session.updatedAt || new Date().toISOString(),
+              error,
+              pendingApprovalTitle: '',
+              pendingQuestion: ''
+            },
+        terminalKind: session.status === AGENT_SESSION_STATUS.READY ? 'completed' : 'failed',
+        store: this.supervisorTaskStore
+      });
+      taskMemory = synced.taskMemory;
+    }
+
+    const nextConversation = this.conversationStore.patch(conversationId, {
+      activeTaskId: taskMemory?.activeTaskId || latestConversation?.activeTaskId || null,
+      trackedTaskIds: taskMemory?.taskOrder || latestConversation?.trackedTaskIds || [],
+      metadata: {
+        ...((latestConversation?.metadata || {})),
+        assistantCore: buildAssistantMetadata(this.getConversationAssistantState(latestConversation), {
+          mode: assistantModeActive ? ASSISTANT_CONTROL_MODE.ASSISTANT : ASSISTANT_CONTROL_MODE.DIRECT_RUNTIME,
+          assistantSessionId: assistantSession.id
+        }),
+        supervisor: {
+          ...(((latestConversation?.metadata || {})?.supervisor && typeof ((latestConversation?.metadata || {})?.supervisor) === 'object')
+            ? ((latestConversation?.metadata || {})?.supervisor)
+            : {}),
+          taskMemory,
+          brief: buildSupervisorBrief({
+            taskMemory,
+            session: sessions[0] || null
+          })
+        }
+      }
+    });
+
+    const failed = sessions.some((session) => session.status === AGENT_SESSION_STATUS.FAILED || session.status === AGENT_SESSION_STATUS.CANCELLED);
+    const finalRun = this.assistantRunStore.save({
+      ...currentRun,
+      status: failed ? ASSISTANT_RUN_STATUS.FAILED : ASSISTANT_RUN_STATUS.COMPLETED,
+      summary: failed ? 'Parallel runtime tasks finished with at least one failure.' : 'Parallel runtime tasks finished.',
+      result: buildAggregatedRuntimeMessage({ sessions: runtimeSummaries, runText }),
+      metadata: {
+        ...(currentRun?.metadata || {}),
+        runtimeAggregation: {
+          done: true,
+          sessionIds,
+          runtimeSummaries
+        },
+        stopPolicy: {
+          status: failed ? ASSISTANT_RUN_STATUS.FAILED : ASSISTANT_RUN_STATUS.COMPLETED,
+          closure: failed ? 'failed' : 'assistant_done',
+          reason: failed ? 'parallel_runtime_failed' : 'parallel_runtime_completed'
+        }
+      }
+    });
+
+    this.assistantSessionStore.save({
+      ...assistantSession,
+      lastRunId: finalRun.id,
+      lastUserMessage: runText,
+      lastAssistantSummary: finalRun.summary
+    });
+
+    return {
+      type: 'assistant_response',
+      message: finalRun.result,
+      assistantSession,
+      assistantRun: finalRun,
+      observability: buildAssistantRunObservability(finalRun),
       conversation: nextConversation
     };
   }
@@ -431,7 +713,18 @@ export class AssistantModeService {
             executed,
             assistantModeActive
           });
-          if (typeof onBackgroundResult === 'function') {
+          if (shouldDeferBackgroundCallback(result)) {
+            const aggregated = await this.waitForRelatedRuntimeAggregation({
+              conversationId: conversation.id,
+              assistantSession,
+              runText,
+              assistantModeActive,
+              runId: result?.assistantRun?.id
+            });
+            if (aggregated && typeof onBackgroundResult === 'function') {
+              await onBackgroundResult(aggregated);
+            }
+          } else if (typeof onBackgroundResult === 'function') {
             await onBackgroundResult(result);
           }
         } catch (error) {

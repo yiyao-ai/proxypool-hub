@@ -147,6 +147,7 @@ test('AssistantObservationService returns summary-first workspace and drill-down
   assert.equal(workspace.runtimeSessions[0].latestTurn.input, 'inspect repo');
   assert.equal(workspace.runtimeSessions[0].turnStats.turnCount, 1);
   assert.equal(workspace.conversations[0].assistantMode, 'assistant');
+  assert.ok(Array.isArray(workspace.conversations[0].trackedTaskIds));
 
   const runtimeDetail = observationService.getRuntimeSessionDetail(session.id);
   assert.equal(runtimeDetail.session.id, session.id);
@@ -169,6 +170,7 @@ test('AssistantObservationService returns summary-first workspace and drill-down
   assert.equal(conversationDetail.conversation.id, conversation.id);
   assert.equal(conversationDetail.activeRuntime.id, session.id);
   assert.equal(conversationDetail.latestTask.title, 'inspect repo');
+  assert.ok('currentTask' in conversationDetail);
   assert.ok(conversationDetail.workspace);
   assert.ok(typeof conversationDetail.workspace.workspaceRef === 'string');
   assert.equal(conversationDetail.deliveries.length, 1);

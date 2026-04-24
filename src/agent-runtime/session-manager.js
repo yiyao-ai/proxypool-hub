@@ -594,6 +594,10 @@ export class AgentRuntimeSessionManager {
           summary: terminalSummary,
           completedAt: nowIso()
         });
+        this._emitEvent(sessionId, AGENT_EVENT_TYPE.COMPLETED, {
+          summary: terminalSummary,
+          turnId
+        });
       },
       onTurnFailed: (error) => {
         turnState.settled = true;

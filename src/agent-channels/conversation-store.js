@@ -3,9 +3,40 @@ import { join } from 'path';
 
 import { CONFIG_DIR } from '../account-manager.js';
 import { CHANNEL_CONVERSATION_MODE, createChannelConversation } from './models.js';
+import { buildTrackedSupervisorTaskIds, normalizeSupervisorTaskMemory } from '../agent-orchestrator/supervisor-task-memory.js';
 
 function nowIso() {
   return new Date().toISOString();
+}
+
+function normalizeTrackedRuntimeSessionIds(value) {
+  const list = Array.isArray(value) ? value : [];
+  return [...new Set(list.map((entry) => String(entry || '').trim()).filter(Boolean))];
+}
+
+function normalizeTrackedTaskIds(value) {
+  const list = Array.isArray(value) ? value : [];
+  return [...new Set(list.map((entry) => String(entry || '').trim()).filter(Boolean))];
+}
+
+function resolveConversationTaskBindings(conversation = {}) {
+  const supervisor = conversation?.metadata?.supervisor;
+  const taskMemory = normalizeSupervisorTaskMemory(supervisor?.taskMemory || null);
+  const activeTaskId = String(
+    taskMemory?.activeTaskId
+    || conversation?.activeTaskId
+    || ''
+  ).trim() || null;
+  const trackedTaskIds = normalizeTrackedTaskIds([
+    ...(Array.isArray(conversation?.trackedTaskIds) ? conversation.trackedTaskIds : []),
+    ...buildTrackedSupervisorTaskIds(taskMemory),
+    activeTaskId || ''
+  ]);
+
+  return {
+    activeTaskId,
+    trackedTaskIds
+  };
 }
 
 export class AgentChannelConversationStore {
@@ -54,8 +85,15 @@ export class AgentChannelConversationStore {
 
   save(conversation) {
     const index = this.conversations.findIndex((entry) => entry.id === conversation.id);
+    const taskBindings = resolveConversationTaskBindings(conversation);
     const updated = {
       ...conversation,
+      trackedRuntimeSessionIds: normalizeTrackedRuntimeSessionIds([
+        ...(Array.isArray(conversation?.trackedRuntimeSessionIds) ? conversation.trackedRuntimeSessionIds : []),
+        conversation?.activeRuntimeSessionId || ''
+      ]),
+      activeTaskId: taskBindings.activeTaskId,
+      trackedTaskIds: taskBindings.trackedTaskIds,
       updatedAt: nowIso()
     };
 
@@ -126,20 +164,105 @@ export class AgentChannelConversationStore {
   }
 
   listByRuntimeSessionId(sessionId) {
-    return this.conversations.filter((entry) => entry.activeRuntimeSessionId === sessionId);
+    return this.listByTrackedRuntimeSessionId(sessionId);
+  }
+
+  listByTrackedTaskId(taskId) {
+    const normalized = String(taskId || '').trim();
+    if (!normalized) return [];
+    return this.conversations.filter((entry) => {
+      const trackedTaskIds = normalizeTrackedTaskIds([
+        ...(Array.isArray(entry?.trackedTaskIds) ? entry.trackedTaskIds : []),
+        entry?.activeTaskId || ''
+      ]);
+      return trackedTaskIds.includes(normalized);
+    });
+  }
+
+  listByTrackedRuntimeSessionId(sessionId) {
+    const normalized = String(sessionId || '').trim();
+    if (!normalized) return [];
+    return this.conversations.filter((entry) => {
+      const tracked = normalizeTrackedRuntimeSessionIds([
+        ...(Array.isArray(entry?.trackedRuntimeSessionIds) ? entry.trackedRuntimeSessionIds : []),
+        entry?.activeRuntimeSessionId || ''
+      ]);
+      return tracked.includes(normalized);
+    });
   }
 
   bindRuntimeSession(conversationId, sessionId, patch = {}) {
     return this.patch(conversationId, {
       activeRuntimeSessionId: sessionId,
+      trackedRuntimeSessionIds: normalizeTrackedRuntimeSessionIds([
+        ...(Array.isArray(this.get(conversationId)?.trackedRuntimeSessionIds)
+          ? this.get(conversationId).trackedRuntimeSessionIds
+          : []),
+        sessionId,
+        ...(Array.isArray(patch?.trackedRuntimeSessionIds) ? patch.trackedRuntimeSessionIds : [])
+      ]),
+      ...patch
+    });
+  }
+
+  bindSupervisorTask(conversationId, taskId, patch = {}) {
+    const current = this.get(conversationId);
+    if (!current) return null;
+    return this.patch(conversationId, {
+      activeTaskId: String(taskId || '').trim() || null,
+      trackedTaskIds: normalizeTrackedTaskIds([
+        ...(Array.isArray(current?.trackedTaskIds) ? current.trackedTaskIds : []),
+        current?.activeTaskId || '',
+        taskId
+      ]),
+      ...patch
+    });
+  }
+
+  trackSupervisorTasks(conversationId, taskIds = [], patch = {}) {
+    const current = this.get(conversationId);
+    if (!current) return null;
+    return this.patch(conversationId, {
+      trackedTaskIds: normalizeTrackedTaskIds([
+        ...(Array.isArray(current?.trackedTaskIds) ? current.trackedTaskIds : []),
+        current?.activeTaskId || '',
+        ...(Array.isArray(taskIds) ? taskIds : [])
+      ]),
+      ...patch
+    });
+  }
+
+  trackRuntimeSessions(conversationId, sessionIds = [], patch = {}) {
+    const current = this.get(conversationId);
+    if (!current) return null;
+    return this.patch(conversationId, {
+      trackedRuntimeSessionIds: normalizeTrackedRuntimeSessionIds([
+        ...(Array.isArray(current?.trackedRuntimeSessionIds) ? current.trackedRuntimeSessionIds : []),
+        current?.activeRuntimeSessionId || '',
+        ...(Array.isArray(sessionIds) ? sessionIds : [])
+      ]),
+      ...patch
+    });
+  }
+
+  untrackRuntimeSession(conversationId, sessionId, patch = {}) {
+    const current = this.get(conversationId);
+    if (!current) return null;
+    const normalized = String(sessionId || '').trim();
+    const tracked = normalizeTrackedRuntimeSessionIds(current?.trackedRuntimeSessionIds)
+      .filter((entry) => entry !== normalized);
+    return this.patch(conversationId, {
+      trackedRuntimeSessionIds: tracked,
       ...patch
     });
   }
 
   clearActiveRuntimeSession(conversationId) {
+    const current = this.get(conversationId);
     return this.patch(conversationId, {
       mode: CHANNEL_CONVERSATION_MODE.ASSISTANT,
       activeRuntimeSessionId: null,
+      trackedRuntimeSessionIds: normalizeTrackedRuntimeSessionIds(current?.trackedRuntimeSessionIds),
       lastPendingApprovalId: null,
       lastPendingQuestionId: null
     });

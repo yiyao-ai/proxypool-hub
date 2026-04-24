@@ -3,6 +3,8 @@ import { AGENT_EVENT_TYPE } from '../agent-runtime/models.js';
 import agentTaskStore from '../agent-core/task-store.js';
 import { syncTaskTerminalState } from '../agent-core/task-service.js';
 import { buildConversationSupervisorPatch } from '../agent-orchestrator/conversation-supervisor-state.js';
+import supervisorTaskStore from '../agent-orchestrator/supervisor-task-store.js';
+import { syncSupervisorTaskForRuntimeEvent } from '../agent-orchestrator/supervisor-task-sync.js';
 import chatUiConversationStore from './conversation-store.js';
 
 const OBSERVED_EVENT_TYPES = new Set([
@@ -17,11 +19,13 @@ export class ChatUiRuntimeObserver {
   constructor({
     runtimeSessionManager = agentRuntimeSessionManager,
     conversationStore = chatUiConversationStore,
-    taskStore = agentTaskStore
+    taskStore = agentTaskStore,
+    supervisorTaskStore: supervisorTaskStoreArg = supervisorTaskStore
   } = {}) {
     this.runtimeSessionManager = runtimeSessionManager;
     this.conversationStore = conversationStore;
     this.taskStore = taskStore;
+    this.supervisorTaskStore = supervisorTaskStoreArg;
     this.unsubscribe = null;
   }
 
@@ -58,8 +62,26 @@ export class ChatUiRuntimeObserver {
     });
 
     for (const conversation of conversations) {
+      const supervisorPatch = buildConversationSupervisorPatch({ conversation, session, event });
+      const synced = syncSupervisorTaskForRuntimeEvent({
+        conversation,
+        session,
+        event,
+        taskMemory: supervisorPatch?.metadata?.supervisor?.taskMemory || conversation?.metadata?.supervisor?.taskMemory || null,
+        store: this.supervisorTaskStore
+      });
       const patch = {
-        ...buildConversationSupervisorPatch({ conversation, session, event })
+        ...supervisorPatch,
+        metadata: {
+          ...(supervisorPatch?.metadata || {}),
+          supervisor: {
+            ...((supervisorPatch?.metadata?.supervisor && typeof supervisorPatch.metadata.supervisor === 'object')
+              ? supervisorPatch.metadata.supervisor
+              : {}),
+            taskMemory: synced.taskMemory,
+            brief: synced.brief
+          }
+        }
       };
 
       if (event.type === AGENT_EVENT_TYPE.APPROVAL_REQUEST) {

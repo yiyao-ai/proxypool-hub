@@ -22,6 +22,9 @@ import { AssistantRunStore } from '../../src/assistant-core/run-store.js';
 import { AssistantSessionStore } from '../../src/assistant-core/session-store.js';
 import AssistantModeService from '../../src/assistant-core/mode-service.js';
 import AssistantDialogueService from '../../src/assistant-agent/dialogue-service.js';
+import { SupervisorTaskStore } from '../../src/agent-orchestrator/supervisor-task-store.js';
+import createDefaultAssistantToolRegistry from '../../src/assistant-core/tool-registry.js';
+import { buildAnthropicToolDefinitions } from '../../src/assistant-agent/tool-schema.js';
 
 function createTempDir(prefix) {
   return mkdtempSync(join(tmpdir(), prefix));
@@ -46,9 +49,31 @@ class FakeProvider {
   }
 }
 
+class DelayedClaudeProvider {
+  constructor() {
+    this.id = 'claude-code';
+    this.capabilities = {};
+  }
+
+  async startTurn({ input, onProviderEvent, onTurnFinished }) {
+    onProviderEvent({
+      type: AGENT_EVENT_TYPE.MESSAGE,
+      payload: { text: `claude:${input}` }
+    });
+    setTimeout(() => {
+      onTurnFinished({
+        status: 'ready',
+        summary: `claude-done:${input}`
+      });
+    }, 15);
+    return { pid: 2002 };
+  }
+}
+
 function createFixture() {
   const runtimeRegistry = new AgentRuntimeRegistry();
   runtimeRegistry.register(new FakeProvider());
+  runtimeRegistry.register(new DelayedClaudeProvider());
   const runtimeSessionManager = new AgentRuntimeSessionManager({
     registry: runtimeRegistry,
     store: new AgentRuntimeSessionStore({
@@ -75,19 +100,25 @@ function createFixture() {
   const sessionStore = new AssistantSessionStore({
     configDir: createTempDir('cligate-assistant-react-session-')
   });
+  const supervisorTaskStore = new SupervisorTaskStore({
+    configDir: createTempDir('cligate-assistant-react-supervisor-')
+  });
   const messageService = new AgentOrchestratorMessageService({
-    runtimeSessionManager
+    runtimeSessionManager,
+    supervisorTaskStore
   });
   const observationService = new AssistantObservationService({
     conversationStore,
     runtimeSessionManager,
     taskStore,
+    supervisorTaskStore,
     deliveryStore
   });
   const taskViewService = new AssistantTaskViewService({
     conversationStore,
     runtimeSessionManager,
     taskStore,
+    supervisorTaskStore,
     deliveryStore,
     assistantRunStore: runStore
   });
@@ -99,6 +130,7 @@ function createFixture() {
     deliveryStore,
     runStore,
     sessionStore,
+    supervisorTaskStore,
     messageService,
     observationService,
     taskViewService
@@ -373,4 +405,338 @@ test('Assistant ReAct tool registry supports the task-and-conversation memory al
 
   assert.equal(result.type, 'assistant_response');
   assert.ok(result.assistantRun.steps.some((entry) => entry.toolName === 'search_task_and_conversation_memory'));
+});
+
+test('Assistant ReAct prompt includes task-space-first context', async () => {
+  const service = createAssistantService({
+    llmResponses: [{
+      text: 'There is one waiting task.'
+    }]
+  });
+
+  const conversation = service.conversationStore.findOrCreateBySessionId('assistant-react-task-space-1', {
+    supervisor: {
+      taskMemory: {
+        activeTaskId: 'task-waiting'
+      }
+    }
+  });
+  const waitingSession = await service.runtimeSessionManager.createSession({
+    provider: 'codex',
+    input: 'need approval'
+  });
+  service.runtimeSessionManager.getSession(waitingSession.id).status = 'waiting_approval';
+  service.supervisorTaskStore.create({
+    id: 'task-waiting',
+    conversationId: conversation.id,
+    title: 'Need approval',
+    goal: 'need approval',
+    status: 'waiting_approval',
+    executorStrategy: 'codex',
+    primaryExecutionId: waitingSession.id,
+    metadata: {
+      runtimeSessionId: waitingSession.id,
+      provider: 'codex'
+    }
+  });
+
+  const run = service.runStore.create({
+    assistantSessionId: 'assistant-session-task-space',
+    conversationId: conversation.id,
+    triggerText: '/cligate status',
+    status: 'running'
+  });
+  await service.dialogueService.run({
+    run,
+    conversation,
+    text: 'What is waiting?'
+  });
+
+  const promptText = String(service.llmClient.calls[0]?.messages?.[0]?.content?.[0]?.text || '');
+  assert.match(promptText, /<task_space>/);
+  assert.match(promptText, /"focusTask"/);
+  assert.match(promptText, /"waitingTasks"/);
+  assert.match(String(service.llmClient.calls[0]?.system || ''), /Use continue_task|优先继续该 task/);
+  assert.match(String(service.llmClient.calls[0]?.system || ''), /clarification|澄清/);
+  assert.match(String(service.llmClient.calls[0]?.system || ''), /Decision example|决策示例/);
+});
+
+test('Assistant ReAct can continue a task by task id instead of activeRuntimeSessionId', async () => {
+  const service = createAssistantService({
+    llmResponses: [
+      {
+        toolCalls: [{
+          id: 'tool_continue_task_1',
+          name: 'continue_task',
+          input: {
+            taskId: 'task-target',
+            message: 'please continue target task'
+          }
+        }]
+      },
+      {
+        text: 'I continued the target task.'
+      }
+    ]
+  });
+
+  const targetSession = await service.runtimeSessionManager.createSession({
+    provider: 'codex',
+    input: 'target task'
+  });
+  const otherSession = await service.runtimeSessionManager.createSession({
+    provider: 'codex',
+    input: 'other task'
+  });
+  const conversation = service.conversationStore.findOrCreateBySessionId('assistant-react-continue-task-1', {
+    supervisor: {
+      taskMemory: {
+        activeTaskId: 'task-target'
+      }
+    }
+  });
+  service.conversationStore.bindRuntimeSession(conversation.id, otherSession.id, {
+    metadata: {
+      ...(conversation.metadata || {}),
+      supervisor: {
+        ...((conversation.metadata?.supervisor && typeof conversation.metadata.supervisor === 'object')
+          ? conversation.metadata.supervisor
+          : {}),
+        taskMemory: {
+          activeTaskId: 'task-target'
+        }
+      }
+    }
+  });
+  service.supervisorTaskStore.create({
+    id: 'task-target',
+    conversationId: conversation.id,
+    title: 'Target task',
+    goal: 'target task',
+    status: 'completed',
+    executorStrategy: 'codex',
+    primaryExecutionId: targetSession.id,
+    metadata: {
+      runtimeSessionId: targetSession.id,
+      provider: 'codex'
+    }
+  });
+
+  const run = service.runStore.create({
+    assistantSessionId: 'assistant-session-continue-task',
+    conversationId: conversation.id,
+    triggerText: '/cligate continue target',
+    status: 'running'
+  });
+  const result = await service.dialogueService.run({
+    run,
+    conversation,
+    text: 'Continue the target task'
+  });
+
+  const targetTurns = service.runtimeSessionManager.listTurns(targetSession.id, { limit: 10 });
+  const otherTurns = service.runtimeSessionManager.listTurns(otherSession.id, { limit: 10 });
+  assert.equal(targetTurns[0]?.input, 'please continue target task');
+  assert.notEqual(otherTurns[0]?.input, 'please continue target task');
+});
+
+test('Assistant reflection summarizes continue_task results when the runtime turn finishes', async () => {
+  const service = createAssistantService({
+    llmResponses: [
+      {
+        toolCalls: [{
+          id: 'tool_continue_task_2',
+          name: 'continue_task',
+          input: {
+            taskId: 'task-target-2',
+            message: 'continue and summarize'
+          }
+        }]
+      },
+      {
+        text: 'Target task continued and I summarized the result.'
+      }
+    ]
+  });
+
+  const targetSession = await service.runtimeSessionManager.createSession({
+    provider: 'codex',
+    input: 'target task 2'
+  });
+  const conversation = service.conversationStore.findOrCreateBySessionId('assistant-react-continue-task-2', {
+    supervisor: {
+      taskMemory: {
+        activeTaskId: 'task-target-2'
+      }
+    }
+  });
+  service.supervisorTaskStore.create({
+    id: 'task-target-2',
+    conversationId: conversation.id,
+    title: 'Target task 2',
+    goal: 'target task 2',
+    status: 'completed',
+    executorStrategy: 'codex',
+    primaryExecutionId: targetSession.id,
+    metadata: {
+      runtimeSessionId: targetSession.id,
+      provider: 'codex'
+    }
+  });
+
+  const run = service.runStore.create({
+    assistantSessionId: 'assistant-session-continue-task-2',
+    conversationId: conversation.id,
+    triggerText: '/cligate continue target 2',
+    status: 'running'
+  });
+  const result = await service.dialogueService.run({
+    run,
+    conversation,
+    text: 'Continue task 2'
+  });
+
+  assert.ok(result.run.steps.some((entry) => entry.toolName === 'continue_task'));
+  assert.ok(result.run.steps.some((entry) => entry.toolName === 'summarize_runtime_result'));
+});
+
+test('Assistant can start a secondary execution for the current supervisor task', async () => {
+  const service = createAssistantService({
+    llmResponses: [
+      {
+        toolCalls: [{
+          id: 'tool_delegate_secondary_1',
+          name: 'delegate_task_execution',
+          input: {
+            taskId: 'task-secondary',
+            provider: 'claude-code',
+            role: 'secondary',
+            task: 'review the current task'
+          }
+        }]
+      },
+      {
+        text: 'I started a secondary execution for the current task.'
+      }
+    ]
+  });
+
+  const primary = await service.messageService.startRuntimeTask({
+    provider: 'codex',
+    input: 'build login page',
+    metadata: {
+      taskId: 'task-secondary',
+      conversationId: 'conv-secondary'
+    }
+  });
+  service.supervisorTaskStore.upsertForRuntime({
+    taskId: 'task-secondary',
+    conversationId: 'conv-secondary',
+    runtimeSessionId: primary.id,
+    provider: 'codex',
+    title: 'build login page',
+    goal: 'build login page',
+    status: 'completed'
+  });
+  const conversation = service.conversationStore.findOrCreateBySessionId('assistant-react-secondary-execution-1', {
+    supervisor: {
+      taskMemory: {
+        activeTaskId: 'task-secondary',
+        byTask: {
+          task_secondary: {
+            taskId: 'task-secondary',
+            sessionId: primary.id,
+            provider: 'codex',
+            title: 'build login page',
+            status: 'completed'
+          }
+        }
+      }
+    }
+  });
+
+  const run = service.runStore.create({
+    assistantSessionId: 'assistant-session-secondary-execution',
+    conversationId: conversation.id,
+    triggerText: '/cligate review this task with claude',
+    status: 'running'
+  });
+  const result = await service.dialogueService.run({
+    run,
+    conversation,
+    text: 'Review this task with claude'
+  });
+
+  const task = service.supervisorTaskStore.get('task-secondary');
+  assert.ok(result.run.steps.some((entry) => entry.toolName === 'delegate_task_execution'));
+  assert.equal(task.primaryExecutionId, primary.id);
+  assert.equal(task.executionIds.length, 2);
+});
+
+test('Assistant tool definitions distinguish continue-task vs fresh delegation intent', () => {
+  const service = createFixture();
+  const registry = createDefaultAssistantToolRegistry({
+    observationService: service.observationService,
+    messageService: service.messageService,
+    taskViewService: service.taskViewService
+  });
+  const tools = buildAnthropicToolDefinitions(registry);
+  const continueTask = tools.find((entry) => entry.name === 'continue_task');
+  const delegateRuntime = tools.find((entry) => entry.name === 'delegate_to_runtime');
+  const delegateTaskExecution = tools.find((entry) => entry.name === 'delegate_task_execution');
+  const taskSpace = tools.find((entry) => entry.name === 'get_conversation_task_space');
+
+  assert.match(String(continueTask?.description || ''), /preferred tool|优先/);
+  assert.match(String(delegateRuntime?.description || ''), /brand-new|new runtime|新/);
+  assert.match(String(delegateTaskExecution?.description || ''), /task identity|task|execution/i);
+  assert.match(String(taskSpace?.description || ''), /before deciding|优先|Prefer this/);
+});
+
+test('Assistant async background fan-in waits for codex and claude-code before notifying', async () => {
+  const service = createAssistantService({
+    llmResponses: [
+      {
+        toolCalls: [
+          {
+            id: 'tool_delegate_cx',
+            name: 'delegate_to_codex',
+            input: {
+              task: 'remove welcome text'
+            }
+          },
+          {
+            id: 'tool_delegate_cc',
+            name: 'delegate_to_claude_code',
+            input: {
+              task: 'summarize skills repo'
+            }
+          }
+        ]
+      },
+      {
+        text: '我已经同时发起两个并行任务，等它们都完成后统一汇总。'
+      }
+    ]
+  });
+
+  let backgroundResult = null;
+  const accepted = await service.chatService.routeMessage({
+    sessionId: 'assistant-react-fanin-1',
+    text: '/cligate 同时发起 codex 和 claude-code',
+    assistantExecutionMode: 'async',
+    onBackgroundResult: async (result) => {
+      backgroundResult = result;
+    }
+  });
+
+  assert.equal(accepted.type, 'assistant_run_accepted');
+
+  await new Promise((resolve) => setTimeout(resolve, 80));
+
+  assert.ok(backgroundResult);
+  assert.equal(backgroundResult.assistantRun.status, 'completed');
+  assert.equal(backgroundResult.assistantRun.relatedRuntimeSessionIds.length, 2);
+  assert.match(String(backgroundResult.message || ''), /并发任务已全部结束|All parallel runtime tasks finished/);
+  assert.match(String(backgroundResult.message || ''), /Codex/);
+  assert.match(String(backgroundResult.message || ''), /Claude Code/);
 });

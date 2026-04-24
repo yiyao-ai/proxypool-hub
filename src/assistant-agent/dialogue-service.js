@@ -77,6 +77,13 @@ export class AssistantDialogueService {
           limit: 1
         })[0] || null
       : null;
+    const taskSpace = conversation?.id
+      ? this.taskViewService.getConversationTaskSpace(conversation.id, {
+          activeLimit: 5,
+          waitingLimit: 5,
+          recentLimit: 5
+        })
+      : null;
     const conversationContext = conversation?.id
       ? this.observationService.getConversationContext(conversation.id, {
           deliveryLimit: 8
@@ -93,6 +100,7 @@ export class AssistantDialogueService {
         conversation,
         text,
         taskRecord,
+        taskSpace,
         conversationContext,
         workspaceContext,
         defaultRuntimeProvider,
