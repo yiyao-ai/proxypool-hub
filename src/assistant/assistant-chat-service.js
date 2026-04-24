@@ -10,6 +10,9 @@ import {
   saveScopedPreferences
 } from '../agent-core/preference-service.js';
 
+// Chat assistant compatibility layer only.
+// Keep manual QA and chat preference injection here; do not add /cligate supervisor logic.
+
 function isPreferenceMemoryIntent(text) {
   const normalized = String(text || '').trim();
   if (!normalized) return false;

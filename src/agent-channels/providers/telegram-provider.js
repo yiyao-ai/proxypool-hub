@@ -66,6 +66,11 @@ function buildRouterResultText(result) {
   }
 }
 
+function buildRouterFailureText(error) {
+  const message = String(error?.message || '').trim() || 'Unknown error';
+  return `Task failed before the runtime session could be established.\n${message}`;
+}
+
 function splitTelegramText(text, maxLength = TELEGRAM_SAFE_MESSAGE_LIMIT) {
   const source = String(text || '').replace(/\r\n/g, '\n').trim();
   if (!source) {
@@ -129,7 +134,6 @@ export class TelegramChannelProvider {
       { key: 'botToken', type: 'password', labelKey: 'channelBotToken', placeholderKey: 'channelBotTokenPlaceholder', section: 'auth' },
       { key: 'pollingIntervalMs', type: 'number', labelKey: 'channelPollInterval', section: 'transport' },
       { key: 'defaultRuntimeProvider', type: 'runtime-provider', labelKey: 'channelDefaultRuntime', section: 'runtime' },
-      { key: 'model', type: 'text', labelKey: 'chatModel', placeholderKey: 'chatModelPlaceholder', section: 'runtime' },
       { key: 'cwd', type: 'text', labelKey: 'channelWorkingDirectory', section: 'runtime' },
       { key: 'requirePairing', type: 'boolean', labelKey: 'channelRequirePairing', section: 'security' }
     ];
@@ -280,14 +284,22 @@ export class TelegramChannelProvider {
           continue;
         }
 
-        const result = await this.router.routeInboundMessage(inbound, {
-          defaultRuntimeProvider: this.settings?.defaultRuntimeProvider || 'codex',
-          requirePairing: this.settings?.requirePairing === true,
-          cwd: this.settings?.cwd || '',
-          model: this.settings?.model || ''
-        });
+        try {
+          const result = await this.router.routeInboundMessage(inbound, {
+            defaultRuntimeProvider: this.settings?.defaultRuntimeProvider || 'codex',
+            requirePairing: this.settings?.requirePairing === true,
+            cwd: this.settings?.cwd || ''
+          });
 
-        await this.handleRouterResult(inbound, result);
+          await this.handleRouterResult(inbound, result);
+        } catch (error) {
+          await this.sendMessage({
+            conversation: {
+              externalConversationId: inbound.externalConversationId
+            },
+            text: buildRouterFailureText(error)
+          });
+        }
         if (inbound.action?.type === 'callback_query') {
           await this.answerCallback({
             callbackQueryId: inbound.action.callbackQueryId,

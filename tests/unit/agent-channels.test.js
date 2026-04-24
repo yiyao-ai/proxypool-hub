@@ -1386,6 +1386,87 @@ test('AgentChannelRouter runs Phase 4 assistant tool flow to start a runtime tas
   assert.equal(result.assistantRun.status, 'queued');
 });
 
+test('AgentChannelRouter binds assistant-started runtime sessions back to the channel conversation', async () => {
+  const runtimeSessionManager = createHybridRuntimeManager();
+  const conversationStore = new AgentChannelConversationStore({
+    configDir: createTempDir('cligate-agent-channels-assistant-bind-conv-')
+  });
+  const deliveryStore = new AgentChannelDeliveryStore({
+    configDir: createTempDir('cligate-agent-channels-assistant-bind-delivery-')
+  });
+  const pairingStore = new AgentChannelPairingStore({
+    configDir: createTempDir('cligate-agent-channels-assistant-bind-pairing-')
+  });
+  const sent = [];
+  const router = new AgentChannelRouter({
+    conversationStore,
+    deliveryStore,
+    pairingStore,
+    messageService: new AgentOrchestratorMessageService({ runtimeSessionManager }),
+    assistantModeService: {
+      async maybeHandleMessage({ conversation, onBackgroundResult }) {
+        const session = await runtimeSessionManager.createSession({
+          provider: 'claude-code',
+          input: 'inspect repo',
+          cwd: process.cwd(),
+          model: ''
+        });
+        const backgroundResult = {
+          type: 'assistant_response',
+          message: 'started in background',
+          assistantRun: {
+            id: 'assistant-run-1',
+            relatedRuntimeSessionIds: [session.id]
+          },
+          conversation
+        };
+        await onBackgroundResult(backgroundResult);
+        return {
+          type: 'assistant_run_accepted',
+          message: 'accepted',
+          assistantRun: {
+            id: 'assistant-run-1',
+            status: 'queued'
+          },
+          conversation
+        };
+      }
+    }
+  });
+  router.registry = {
+    get() {
+      return {
+        async sendMessage({ text }) {
+          sent.push(text);
+          return { messageId: 'out_1' };
+        }
+      };
+    }
+  };
+
+  const result = await router.routeInboundMessage({
+    channel: 'telegram',
+    accountId: 'default',
+    externalConversationId: 'assistant-bind-chat-1',
+    externalUserId: 'user-1',
+    externalUserName: 'tester',
+    externalMessageId: 'msg-start-bind',
+    text: '/cligate start claude inspect repo',
+    messageType: 'text'
+  }, {
+    defaultRuntimeProvider: 'claude-code'
+  });
+
+  assert.equal(result.type, 'assistant_run_accepted');
+  await new Promise((resolve) => setTimeout(resolve, 10));
+
+  const conversation = conversationStore.findByExternal('telegram', 'default', 'assistant-bind-chat-1', 'user-1', '');
+  assert.ok(conversation?.activeRuntimeSessionId);
+  const boundSession = runtimeSessionManager.getSession(conversation.activeRuntimeSessionId);
+  assert.equal(boundSession?.provider, 'claude-code');
+  assert.ok(sent.includes('started in background'));
+});
+
 test('AgentOrchestratorMessageService starts the default remembered provider for return phrasing without special interception', async () => {
   const runtimeSessionManager = createHybridRuntimeManager();
   const service = new AgentOrchestratorMessageService({ runtimeSessionManager });
@@ -1725,6 +1806,133 @@ test('FeishuChannelProvider handles webhook challenge and replies to router resu
   assert.equal(calls[1].body.receive_id, 'oc_1');
 });
 
+test('channel providers do not expose a runtime model config field', () => {
+  const telegram = new TelegramChannelProvider();
+  const feishu = new FeishuChannelProvider();
+  const dingtalk = new DingTalkChannelProvider();
+
+  assert.equal(telegram.configFields.some((field) => field.key === 'model'), false);
+  assert.equal(feishu.configFields.some((field) => field.key === 'model'), false);
+  assert.equal(dingtalk.configFields.some((field) => field.key === 'model'), false);
+});
+
+test('FeishuChannelProvider does not pass a channel model into router options', async () => {
+  const fetchImpl = async (url, options = {}) => {
+    if (String(url).includes('tenant_access_token')) {
+      return {
+        ok: true,
+        json: async () => ({
+          code: 0,
+          tenant_access_token: 'tenant_token',
+          expire: 7200
+        })
+      };
+    }
+    return {
+      ok: true,
+      json: async () => ({
+        code: 0,
+        data: {
+          message_id: 'msg_1'
+        }
+      })
+    };
+  };
+
+  const provider = new FeishuChannelProvider({ fetchImpl });
+  provider.router = {
+    routeInboundMessage: async (_message, options = {}) => {
+      assert.equal('model' in options, false);
+      return {
+        type: 'runtime_status',
+        session: { id: 'session_1', status: 'ready', summary: 'done' }
+      };
+    }
+  };
+  provider.settings = {
+    appId: 'app_id',
+    appSecret: 'secret',
+    defaultRuntimeProvider: 'codex'
+  };
+
+  const result = await provider.handleWebhook({
+    header: { event_type: 'im.message.receive_v1' },
+    event: {
+      sender: {
+        sender_id: { open_id: 'ou_123' },
+        sender_type: 'user'
+      },
+      message: {
+        message_id: 'om_1',
+        chat_id: 'oc_1',
+        message_type: 'text',
+        content: JSON.stringify({ text: '/status' })
+      }
+    }
+  });
+
+  assert.equal(result.status, 200);
+});
+
+test('FeishuChannelProvider sends failure text when router throws before runtime session starts', async () => {
+  const calls = [];
+  const fetchImpl = async (url, options = {}) => {
+    calls.push({ url, body: JSON.parse(options.body || '{}') });
+    if (String(url).includes('tenant_access_token')) {
+      return {
+        ok: true,
+        json: async () => ({
+          code: 0,
+          tenant_access_token: 'tenant_token',
+          expire: 7200
+        })
+      };
+    }
+    return {
+      ok: true,
+      json: async () => ({
+        code: 0,
+        data: {
+          message_id: 'msg_fail_1'
+        }
+      })
+    };
+  };
+
+  const provider = new FeishuChannelProvider({ fetchImpl });
+  provider.router = {
+    routeInboundMessage: async () => {
+      throw new Error('runtime bootstrap failed');
+    }
+  };
+  provider.settings = {
+    appId: 'app_id',
+    appSecret: 'secret',
+    defaultRuntimeProvider: 'codex'
+  };
+
+  const result = await provider.handleWebhook({
+    header: { event_type: 'im.message.receive_v1' },
+    event: {
+      sender: {
+        sender_id: { open_id: 'ou_fail_1' },
+        sender_type: 'user'
+      },
+      message: {
+        message_id: 'om_fail_1',
+        chat_id: 'oc_fail_1',
+        message_type: 'text',
+        content: JSON.stringify({ text: '/cc inspect repo' })
+      }
+    }
+  });
+
+  assert.equal(result.status, 200);
+  assert.equal(calls.length, 2);
+  assert.match(String(calls[1].body.content || ''), /Task failed before the runtime session could be established/);
+  assert.match(String(calls[1].body.content || ''), /runtime bootstrap failed/);
+});
+
 test('DingTalkChannelProvider normalizes text events and routes webhook messages', async () => {
   const calls = [];
   const provider = new DingTalkChannelProvider({
@@ -1767,10 +1975,13 @@ test('DingTalkChannelProvider normalizes text events and routes webhook messages
   assert.equal(normalized.text, '/status');
 
   provider.router = {
-    routeInboundMessage: async () => ({
-      type: 'runtime_status',
-      session: { id: 'session_dt_1', status: 'ready', summary: 'done' }
-    })
+    routeInboundMessage: async (_message, options = {}) => {
+      assert.equal('model' in options, false);
+      return {
+        type: 'runtime_status',
+        session: { id: 'session_dt_1', status: 'ready', summary: 'done' }
+      };
+    }
   };
   provider.settings = {
     mode: 'webhook',
@@ -1795,6 +2006,46 @@ test('DingTalkChannelProvider normalizes text events and routes webhook messages
   assert.equal(calls.length, 1);
   assert.equal(calls[0].url, 'https://example.invalid/dingtalk/session-webhook');
   assert.equal(calls[0].body.msgtype, 'text');
+});
+
+test('DingTalkChannelProvider sends failure text when router throws before runtime session starts', async () => {
+  const calls = [];
+  const provider = new DingTalkChannelProvider({
+    fetchImpl: async (url, options = {}) => {
+      calls.push({
+        url,
+        body: options.body ? JSON.parse(options.body) : null
+      });
+      return {
+        ok: true,
+        json: async () => ({})
+      };
+    }
+  });
+
+  provider.router = {
+    routeInboundMessage: async () => {
+      throw new Error('CLAUDE_API_ERROR: 404 - {"type":"error","error":{"type":"not_found_error","message":"model: gpt-5.4"}}');
+    }
+  };
+
+  const result = await provider.handleWebhook({
+    msgId: 'dt_msg_fail_1',
+    conversationId: 'cid_fail_1',
+    senderId: 'uid_fail_1',
+    senderNick: 'bob',
+    sessionWebhook: 'https://example.invalid/dingtalk/session-webhook',
+    sessionWebhookExpiredTime: String(Date.now() + 60_000),
+    text: {
+      content: '/cc inspect the repo'
+    }
+  });
+
+  assert.equal(result.status, 200);
+  assert.equal(result.body.success, true);
+  assert.equal(calls.length, 1);
+  assert.match(calls[0].body.text.content, /Task failed before the runtime session could be established/);
+  assert.match(calls[0].body.text.content, /CLAUDE_API_ERROR: 404/);
 });
 
 test('DingTalkChannelProvider starts stream mode and routes callback frames', async () => {

@@ -36,6 +36,7 @@ import {
   handleChatWithSource,
   handleStreamChatWithSource,
   handleConfirmAssistantToolAction,
+  handleGetChatAgentSession,
   handleRouteChatAgentMessage
 } from './chat-ui-route.js';
 import { handleGetRuntimeCredentials, handleGetRoutingDecisions, handleGetRoutingPreview, handleGetLocalRoutingStatus } from './runtime-route.js';
@@ -408,6 +409,7 @@ export function registerApiRoutes(app, { port }) {
   app.get('/api/chat/sources', handleListChatSources);
   app.post('/api/chat/complete', handleChatWithSource);
   app.post('/api/chat/stream', handleStreamChatWithSource);
+  app.get('/api/chat/sessions/:sessionId', handleGetChatAgentSession);
   app.post('/api/chat/agent-message', handleRouteChatAgentMessage);
   app.post('/api/chat/tool-confirm', handleConfirmAssistantToolAction);
 }

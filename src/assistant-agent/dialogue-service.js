@@ -6,6 +6,9 @@ import assistantObservationService from '../assistant-core/observation-service.j
 import assistantLlmClient, { AssistantLlmClient } from './llm-client.js';
 import AssistantReactEngine from './react-engine.js';
 
+// CliGate Assistant mainline dialogue path.
+// When available, /cligate should prefer this agent path; runner fallback is only a safety rail.
+
 export class AssistantDialogueService {
   constructor({
     runStore,

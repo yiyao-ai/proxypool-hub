@@ -36,7 +36,6 @@ const DEFAULT_SETTINGS = {
             botToken: '',
             pollingIntervalMs: 2000,
             defaultRuntimeProvider: 'codex',
-            model: '',
             cwd: '',
             requirePairing: false
         },
@@ -48,7 +47,6 @@ const DEFAULT_SETTINGS = {
             encryptKey: '',
             verificationToken: '',
             defaultRuntimeProvider: 'codex',
-            model: '',
             cwd: '',
             requirePairing: false
         },
@@ -62,7 +60,6 @@ const DEFAULT_SETTINGS = {
             robotCode: '',
             signingSecret: '',
             defaultRuntimeProvider: 'codex',
-            model: '',
             cwd: '',
             requirePairing: false
         }
@@ -82,12 +79,20 @@ function clone(value) {
     return JSON.parse(JSON.stringify(value));
 }
 
+function sanitizeLegacyChannelInstance(instance = {}) {
+    if (!instance || typeof instance !== 'object') {
+        return {};
+    }
+    const { model: _legacyModel, ...sanitized } = instance;
+    return sanitized;
+}
+
 function buildDefaultChannelInstance(channelId, overrides = {}, index = 0) {
     const base = {
         id: index === 0 ? 'default' : `${slugifyChannelInstanceId(channelId, channelId)}-${index + 1}`,
         label: index === 0 ? 'Default' : `Instance ${index + 1}`,
         ...clone(DEFAULT_SETTINGS.channels[channelId] || {}),
-        ...(overrides || {})
+        ...sanitizeLegacyChannelInstance(overrides || {})
     };
 
     return {
@@ -99,7 +104,9 @@ function buildDefaultChannelInstance(channelId, overrides = {}, index = 0) {
 
 function normalizeChannelProviderConfig(channelId, config = {}) {
     const base = clone(DEFAULT_SETTINGS.channels[channelId] || {});
-    const current = config && typeof config === 'object' ? config : {};
+    const current = config && typeof config === 'object'
+        ? sanitizeLegacyChannelInstance(config)
+        : {};
     const instancesSource = Array.isArray(current.instances)
         ? current.instances
         : [current];
@@ -107,7 +114,7 @@ function normalizeChannelProviderConfig(channelId, config = {}) {
     const normalizedInstances = instancesSource.map((instance, index) =>
         buildDefaultChannelInstance(channelId, {
             ...base,
-            ...(instance || {})
+            ...sanitizeLegacyChannelInstance(instance || {})
         }, index)
     );
 
@@ -192,9 +199,11 @@ export function setServerSettings(patch = {}) {
 }
 
 export { SETTINGS_FILE };
+export { normalizeChannelsConfig };
 
 export default {
     getServerSettings,
     setServerSettings,
-    SETTINGS_FILE
+    SETTINGS_FILE,
+    normalizeChannelsConfig
 };

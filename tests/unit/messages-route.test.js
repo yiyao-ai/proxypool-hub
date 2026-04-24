@@ -280,20 +280,31 @@ test('_resolveClaudeCodeMaxOutputTokens falls back to 64000 by default', () => {
 });
 
 test('_applyAnthropicBridgeTokenCap caps Claude Code bridge requests for Azure/OpenAI-style providers only', () => {
-  const capped = _applyAnthropicBridgeTokenCap(
-    { model: 'gpt-5.4-pro-2026-03-05', max_tokens: 120000 },
-    { appId: 'claude-code', providerType: 'azure-openai' }
-  );
-  const untouchedClaude = _applyAnthropicBridgeTokenCap(
-    { model: 'claude-opus-4-6', max_tokens: 120000 },
-    { appId: 'claude-code', providerType: 'claude-account' }
-  );
-  const untouchedOtherApp = _applyAnthropicBridgeTokenCap(
-    { model: 'gpt-5.4-pro-2026-03-05', max_tokens: 120000 },
-    { appId: 'codex', providerType: 'azure-openai' }
-  );
+  const original = process.env.CLAUDE_CODE_MAX_OUTPUT_TOKENS;
+  delete process.env.CLAUDE_CODE_MAX_OUTPUT_TOKENS;
 
-  assert.equal(capped.max_tokens, 64000);
-  assert.equal(untouchedClaude.max_tokens, 120000);
-  assert.equal(untouchedOtherApp.max_tokens, 120000);
+  try {
+    const capped = _applyAnthropicBridgeTokenCap(
+      { model: 'gpt-5.4-pro-2026-03-05', max_tokens: 120000 },
+      { appId: 'claude-code', providerType: 'azure-openai' }
+    );
+    const untouchedClaude = _applyAnthropicBridgeTokenCap(
+      { model: 'claude-opus-4-6', max_tokens: 120000 },
+      { appId: 'claude-code', providerType: 'claude-account' }
+    );
+    const untouchedOtherApp = _applyAnthropicBridgeTokenCap(
+      { model: 'gpt-5.4-pro-2026-03-05', max_tokens: 120000 },
+      { appId: 'codex', providerType: 'azure-openai' }
+    );
+
+    assert.equal(capped.max_tokens, 64000);
+    assert.equal(untouchedClaude.max_tokens, 120000);
+    assert.equal(untouchedOtherApp.max_tokens, 120000);
+  } finally {
+    if (original === undefined) {
+      delete process.env.CLAUDE_CODE_MAX_OUTPUT_TOKENS;
+    } else {
+      process.env.CLAUDE_CODE_MAX_OUTPUT_TOKENS = original;
+    }
+  }
 });

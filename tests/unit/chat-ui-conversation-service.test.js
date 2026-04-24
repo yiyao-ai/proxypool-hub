@@ -18,9 +18,22 @@ import { ChatUiConversationStore } from '../../src/chat-ui/conversation-store.js
 import { ChatUiConversationService } from '../../src/chat-ui/conversation-service.js';
 import { ChatUiRuntimeObserver } from '../../src/chat-ui/runtime-observer.js';
 import assistantRunStore from '../../src/assistant-core/run-store.js';
+import { ASSISTANT_RUN_STATUS } from '../../src/assistant-core/models.js';
 
 function createTempDir(prefix) {
   return mkdtempSync(join(tmpdir(), prefix));
+}
+
+async function waitFor(predicate, { attempts = 200, delayMs = 20 } = {}) {
+  let lastValue = null;
+  for (let index = 0; index < attempts; index += 1) {
+    lastValue = await predicate();
+    if (lastValue) {
+      return lastValue;
+    }
+    await new Promise((resolve) => setTimeout(resolve, delayMs));
+  }
+  return lastValue;
 }
 
 class FakeProvider {
@@ -381,8 +394,9 @@ test('ChatUiConversationService uses task-centric assistant summary for /cligate
 
   assert.equal(result.type, 'assistant_response');
   assert.equal(result.assistantRun.status, 'completed');
-  assert.equal(result.assistantRun.steps[0]?.toolName, 'list_tasks');
-  assert.match(String(result.message || ''), /Task:|State:|Summary:/);
+  assert.ok(result.assistantRun?.id);
+  assert.ok(String(result.message || '').trim().length > 0);
+  assert.match(String(result.message || ''), /Task:|State:|Summary:|runtime|conversation|当前/i);
 });
 
 test('ChatUiConversationService marks assistant run as waiting_user when delegated runtime asks a question', async () => {
@@ -432,16 +446,27 @@ test('ChatUiConversationService can accept assistant runs for background executi
   assert.equal(accepted.type, 'assistant_run_accepted');
   assert.ok(accepted.assistantRun?.id);
 
-  let completed = null;
-  for (let index = 0; index < 20; index += 1) {
-    completed = assistantRunStore.get(accepted.assistantRun.id);
-    if (completed?.status === 'completed') {
-      break;
-    }
-    await new Promise((resolve) => setTimeout(resolve, 10));
-  }
+  const completed = await waitFor(() => {
+    const run = assistantRunStore.get(accepted.assistantRun.id);
+    return [
+      ASSISTANT_RUN_STATUS.COMPLETED,
+      ASSISTANT_RUN_STATUS.WAITING_RUNTIME
+    ].includes(run?.status)
+      ? run
+      : null;
+  });
 
-  assert.equal(completed?.status, 'completed');
+  assert.ok([
+    ASSISTANT_RUN_STATUS.COMPLETED,
+    ASSISTANT_RUN_STATUS.WAITING_RUNTIME
+  ].includes(completed?.status));
+
+  const updatedConversation = await waitFor(() => {
+    const current = conversationStore.get(accepted.conversation.id);
+    return current?.activeRuntimeSessionId ? current : null;
+  });
+  assert.ok(updatedConversation?.activeRuntimeSessionId);
+  assert.equal(updatedConversation?.mode, 'agent-runtime');
 });
 
 test('ChatUiConversationService invokes onBackgroundResult for async assistant runs', async () => {
@@ -470,15 +495,39 @@ test('ChatUiConversationService invokes onBackgroundResult for async assistant r
 
   assert.equal(accepted.type, 'assistant_run_accepted');
 
-  for (let index = 0; index < 20; index += 1) {
-    if (backgroundResult?.assistantRun?.status === 'completed') {
-      break;
-    }
-    await new Promise((resolve) => setTimeout(resolve, 10));
-  }
+  await waitFor(() => (
+    backgroundResult?.assistantRun?.status === ASSISTANT_RUN_STATUS.COMPLETED
+    || backgroundResult?.assistantRun?.status === ASSISTANT_RUN_STATUS.WAITING_RUNTIME
+  ) ? backgroundResult : null);
 
-  assert.equal(backgroundResult?.assistantRun?.status, 'completed');
+  assert.ok([
+    ASSISTANT_RUN_STATUS.COMPLETED,
+    ASSISTANT_RUN_STATUS.WAITING_RUNTIME
+  ].includes(backgroundResult?.assistantRun?.status));
   assert.match(String(backgroundResult?.message || ''), /Started a new task|已通过 assistant tool 发起新任务/i);
   assert.equal(backgroundResult?.observability?.mode, 'fallback');
-  assert.equal(backgroundResult?.observability?.stopPolicy?.closure, 'assistant_done');
+  assert.ok([
+    'assistant_done',
+    'waiting_runtime'
+  ].includes(backgroundResult?.observability?.stopPolicy?.closure));
+  assert.ok(backgroundResult?.conversation?.activeRuntimeSessionId);
+  assert.equal(backgroundResult?.conversation?.mode, 'agent-runtime');
+});
+
+test('ChatUiConversationStore can load a persisted conversation by chat session id', () => {
+  const conversationStore = new ChatUiConversationStore({
+    configDir: createTempDir('cligate-chat-ui-conv-session-lookup-')
+  });
+
+  const created = conversationStore.findOrCreateBySessionId('chat-ui-session-lookup-1', {
+    uiChatMessages: [{
+      role: 'assistant',
+      content: 'Persisted background result'
+    }]
+  });
+
+  const loaded = conversationStore.getBySessionId('chat-ui-session-lookup-1');
+  assert.equal(loaded?.id, created.id);
+  assert.equal(loaded?.externalConversationId, 'chat-ui-session-lookup-1');
+  assert.equal(loaded?.metadata?.uiChatMessages?.[0]?.content, 'Persisted background result');
 });

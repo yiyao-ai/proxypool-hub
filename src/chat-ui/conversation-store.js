@@ -1,6 +1,15 @@
 import { AgentChannelConversationStore } from '../agent-channels/conversation-store.js';
 
 export class ChatUiConversationStore extends AgentChannelConversationStore {
+  getBySessionId(sessionId) {
+    return this.findByExternal(
+      'chat-ui',
+      'default',
+      String(sessionId || ''),
+      'local-user'
+    );
+  }
+
   findOrCreateBySessionId(sessionId, metadata = {}) {
     return this.findOrCreateByExternal({
       channel: 'chat-ui',

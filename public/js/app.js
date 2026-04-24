@@ -1647,6 +1647,10 @@ document.addEventListener('alpine:init', () => {
                 this.chatSessions = [];
             }
 
+            this.chatSessions.forEach((session) => {
+                this.ensureAgentRuntimeSessionDefaults(session);
+            });
+
             if (this.chatSessions.length === 0) {
                 this.newChatSession();
                 return;
@@ -1722,6 +1726,7 @@ document.addEventListener('alpine:init', () => {
                 this.chatHistoryOpen = false;
             }
             this.scrollChatToBottom();
+            this.refreshChatSessionFromServer(session.id);
             if (this.chatMode === 'agent-runtime' && session.runtimeSessionId) {
                 this.connectAgentRuntimeStream(session);
             }
@@ -1861,6 +1866,83 @@ document.addEventListener('alpine:init', () => {
             if (session.id === this.activeChatSessionId) {
                 this.chatMessages = [...session.messages];
                 this.scrollChatToBottom(true);
+            }
+        },
+
+        chatMessageSignature(message = {}) {
+            const role = String(message.role || '');
+            const kind = String(message.kind || '');
+            const assistantRunId = String(message.assistantRunId || '');
+            const runStatus = String(message.runStatus || '');
+            const content = String(message.content || '');
+            return [role, kind, assistantRunId, runStatus, content].join('|');
+        },
+
+        mergePersistedChatMessages(session, persistedMessages = []) {
+            if (!session || !Array.isArray(persistedMessages) || persistedMessages.length === 0) {
+                return false;
+            }
+
+            const existingMessages = Array.isArray(session.messages) ? session.messages : [];
+            const seen = new Set(existingMessages.map((message) => this.chatMessageSignature(message)));
+            const normalized = persistedMessages
+                .filter((message) => message && typeof message === 'object')
+                .map((message) => ({
+                    role: message.role || 'assistant',
+                    kind: message.kind || 'agent-message',
+                    content: String(message.content || ''),
+                    assistantRunId: String(message.assistantRunId || ''),
+                    runStatus: String(message.runStatus || ''),
+                    observability: message.observability || null,
+                    createdAt: message.createdAt || ''
+                }))
+                .filter((message) => {
+                    const signature = this.chatMessageSignature(message);
+                    if (seen.has(signature)) {
+                        return false;
+                    }
+                    seen.add(signature);
+                    return true;
+                });
+
+            if (normalized.length === 0) {
+                return false;
+            }
+
+            const sorted = normalized.sort((left, right) => String(left.createdAt || '').localeCompare(String(right.createdAt || '')));
+            session.messages = [...existingMessages, ...sorted];
+            const completed = sorted.find((message) => (
+                message.assistantRunId
+                && ['completed', 'failed', 'cancelled'].includes(String(message.runStatus || ''))
+            ));
+            if (completed && session.pendingAssistantRunId === completed.assistantRunId) {
+                session.pendingAssistantRunId = '';
+            }
+            if (session.id === this.activeChatSessionId) {
+                this.chatMessages = [...session.messages];
+                this.scrollChatToBottom(true);
+            }
+            return true;
+        },
+
+        async refreshChatSessionFromServer(sessionId) {
+            const session = this.chatSessions.find((item) => item.id === sessionId);
+            if (!session) return;
+
+            const { ok, data } = await this.api(`/api/chat/sessions/${encodeURIComponent(sessionId)}`);
+            if (!ok || !data?.session) {
+                return;
+            }
+
+            const serverSession = data.session;
+            if (serverSession.activeRuntimeSessionId) {
+                session.runtimeSessionId = serverSession.activeRuntimeSessionId;
+            }
+
+            const merged = this.mergePersistedChatMessages(session, serverSession.uiChatMessages || []);
+            if (merged) {
+                session.updatedAt = new Date().toISOString();
+                this.syncActiveChatSession();
             }
         },
 

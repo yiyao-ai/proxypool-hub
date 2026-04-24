@@ -58,6 +58,11 @@ function buildRouterResultText(result) {
   }
 }
 
+function buildRouterFailureText(error) {
+  const message = String(error?.message || '').trim() || 'Unknown error';
+  return `Task failed before the runtime session could be established.\n${message}`;
+}
+
 function readTextCandidate(payload = {}) {
   if (payload?.text && typeof payload.text === 'object' && typeof payload.text.content === 'string') {
     return payload.text.content;
@@ -200,7 +205,6 @@ export class DingTalkChannelProvider {
       { key: 'robotCode', type: 'text', labelKey: 'channelRobotCode', section: 'auth' },
       { key: 'signingSecret', type: 'password', labelKey: 'channelSigningSecret', section: 'security' },
       { key: 'defaultRuntimeProvider', type: 'runtime-provider', labelKey: 'channelDefaultRuntime', section: 'runtime' },
-      { key: 'model', type: 'text', labelKey: 'chatModel', placeholderKey: 'chatModelPlaceholder', section: 'runtime' },
       { key: 'cwd', type: 'text', labelKey: 'channelWorkingDirectory', section: 'runtime' },
       { key: 'requirePairing', type: 'boolean', labelKey: 'channelRequirePairing', section: 'security' }
     ];
@@ -671,14 +675,27 @@ export class DingTalkChannelProvider {
       };
     }
 
-    const result = await this.router.routeInboundMessage(normalized, {
-      defaultRuntimeProvider: this.settings?.defaultRuntimeProvider || 'codex',
-      requirePairing: this.settings?.requirePairing === true,
-      cwd: this.settings?.cwd || options.cwd || '',
-      model: this.settings?.model || options.model || ''
-    });
+    try {
+      const result = await this.router.routeInboundMessage(normalized, {
+        defaultRuntimeProvider: this.settings?.defaultRuntimeProvider || 'codex',
+        requirePairing: this.settings?.requirePairing === true,
+        cwd: this.settings?.cwd || options.cwd || ''
+      });
 
-    await this.handleRouterResult(normalized, result);
+      await this.handleRouterResult(normalized, result);
+    } catch (error) {
+      await this.sendMessage({
+        conversation: {
+          externalConversationId: normalized.externalConversationId,
+          metadata: {
+            channelContext: {
+              ...((normalized.metadata && typeof normalized.metadata === 'object') ? normalized.metadata : {})
+            }
+          }
+        },
+        text: buildRouterFailureText(error)
+      });
+    }
     return {
       status: 200,
       body: {

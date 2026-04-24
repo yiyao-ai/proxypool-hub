@@ -2,6 +2,9 @@ import crypto from 'crypto';
 
 import { getClaudeConfigPath, readClaudeConfig, setDirectMode, setProxyMode } from '../claude-config.js';
 
+// Chat assistant compatibility layer only.
+// Pending confirm actions for ordinary chat stay here; /cligate run semantics belong to assistant-core/assistant-agent.
+
 const PENDING_ACTION_TTL_MS = 10 * 60 * 1000;
 const pendingActions = new Map();
 

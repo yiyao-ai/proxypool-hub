@@ -316,8 +316,7 @@ export async function handleFeishuChannelWebhook(req, res) {
     provider.router = agentChannelManager.router;
 
     const result = await provider.handleWebhook(req.body || {}, {
-      cwd: provider.settings?.cwd || '',
-      model: provider.settings?.model || ''
+      cwd: provider.settings?.cwd || ''
     });
 
     return res.status(result?.status || 200).json(result?.body || { success: true });
@@ -342,8 +341,7 @@ export async function handleDingTalkChannelWebhook(req, res) {
     provider.router = agentChannelManager.router;
 
     const result = await provider.handleWebhook(req.body || {}, {
-      cwd: provider.settings?.cwd || '',
-      model: provider.settings?.model || ''
+      cwd: provider.settings?.cwd || ''
     });
 
     return res.status(result?.status || 200).json(result?.body || { success: true });

@@ -52,6 +52,11 @@ function buildRouterResultText(result) {
   }
 }
 
+function buildRouterFailureText(error) {
+  const message = String(error?.message || '').trim() || 'Unknown error';
+  return `Task failed before the runtime session could be established.\n${message}`;
+}
+
 function readMessageText(content) {
   if (!content) return '';
   if (typeof content === 'string') {
@@ -138,7 +143,6 @@ export class FeishuChannelProvider {
       { key: 'verificationToken', type: 'text', labelKey: 'channelVerificationToken', section: 'security' },
       { key: 'encryptKey', type: 'text', labelKey: 'channelEncryptKey', section: 'security' },
       { key: 'defaultRuntimeProvider', type: 'runtime-provider', labelKey: 'channelDefaultRuntime', section: 'runtime' },
-      { key: 'model', type: 'text', labelKey: 'chatModel', placeholderKey: 'chatModelPlaceholder', section: 'runtime' },
       { key: 'cwd', type: 'text', labelKey: 'channelWorkingDirectory', section: 'runtime' },
       { key: 'requirePairing', type: 'boolean', labelKey: 'channelRequirePairing', section: 'security' }
     ];
@@ -285,14 +289,22 @@ export class FeishuChannelProvider {
       };
     }
 
-    const result = await this.router.routeInboundMessage(normalized, {
-      defaultRuntimeProvider: this.settings?.defaultRuntimeProvider || 'codex',
-      requirePairing: this.settings?.requirePairing === true,
-      cwd: this.settings?.cwd || options.cwd || '',
-      model: this.settings?.model || options.model || ''
-    });
+    try {
+      const result = await this.router.routeInboundMessage(normalized, {
+        defaultRuntimeProvider: this.settings?.defaultRuntimeProvider || 'codex',
+        requirePairing: this.settings?.requirePairing === true,
+        cwd: this.settings?.cwd || options.cwd || ''
+      });
 
-    await this.handleRouterResult(normalized, result);
+      await this.handleRouterResult(normalized, result);
+    } catch (error) {
+      await this.sendMessage({
+        conversation: {
+          externalConversationId: normalized.externalConversationId
+        },
+        text: buildRouterFailureText(error)
+      });
+    }
     return {
       status: 200,
       body: {

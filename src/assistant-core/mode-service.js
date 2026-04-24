@@ -6,6 +6,12 @@ import AssistantRunner from './runner.js';
 import agentOrchestratorMessageService from '../agent-orchestrator/message-service.js';
 import assistantTaskViewService from './task-view-service.js';
 import AssistantDialogueService from '../assistant-agent/dialogue-service.js';
+import { CHANNEL_CONVERSATION_MODE } from '../agent-channels/models.js';
+import { buildSupervisorBrief } from '../agent-orchestrator/supervisor-brief.js';
+import { syncTaskFromRuntimeResult } from '../agent-core/task-service.js';
+
+// CliGate Assistant mainline entry.
+// /cligate, assistant runs, async closure, and observability should converge on assistant-core + assistant-agent.
 
 function nowIso() {
   return new Date().toISOString();
@@ -96,6 +102,21 @@ function buildAssistantRunObservability(run = null) {
   };
 }
 
+function getDelegatedRuntimeResult(executed = {}) {
+  const toolResults = Array.isArray(executed?.toolResults) ? executed.toolResults : [];
+  return toolResults.find((entry) => (
+    [
+      'start_runtime_task',
+      'delegate_to_codex',
+      'delegate_to_claude_code',
+      'delegate_to_runtime',
+      'reuse_or_delegate',
+      'send_runtime_input'
+    ].includes(entry?.toolName)
+    && entry?.result?.id
+  ))?.result || null;
+}
+
 export class AssistantModeService {
   constructor({
     conversationStore,
@@ -176,16 +197,87 @@ export class AssistantModeService {
       lastAssistantSummary: executed.reply.summary
     });
 
-    const nextConversation = this.patchConversation(conversation, {
-          metadata: {
-            assistantCore: buildAssistantMetadata(this.getConversationAssistantState(conversation), {
-              mode: assistantModeActive ? ASSISTANT_CONTROL_MODE.ASSISTANT : ASSISTANT_CONTROL_MODE.DIRECT_RUNTIME,
-              assistantSessionId: assistantSession.id,
-              lastRunId: persistedRun.id,
-              lastRunSummary: executed.reply.summary
+    const delegatedRuntime = getDelegatedRuntimeResult(executed);
+    const nextAssistantMetadata = {
+      assistantCore: buildAssistantMetadata(this.getConversationAssistantState(conversation), {
+        mode: assistantModeActive ? ASSISTANT_CONTROL_MODE.ASSISTANT : ASSISTANT_CONTROL_MODE.DIRECT_RUNTIME,
+        assistantSessionId: assistantSession.id,
+        lastRunId: persistedRun.id,
+        lastRunSummary: executed.reply.summary
+      })
+    };
+    let nextConversation = this.patchConversation(conversation, {
+      metadata: nextAssistantMetadata
+    });
+
+    if (delegatedRuntime?.id) {
+      const pendingApproval = this.messageService.listPendingApprovals(delegatedRuntime.id)[0] || null;
+      const pendingQuestion = this.messageService.listPendingQuestions(delegatedRuntime.id)
+        .find((entry) => entry.status === 'pending') || null;
+      const taskRecord = syncTaskFromRuntimeResult({
+        conversation: nextConversation,
+        result: {
+          type: delegatedRuntime?.turnCount > 1 ? 'runtime_continued' : 'runtime_started',
+          provider: delegatedRuntime.provider,
+          session: delegatedRuntime,
+          supervisorContext: persistedRun?.metadata?.plan?.summaryIntent === 'runtime_start'
+            ? {
+                kind: 'assistant',
+                title: delegatedRuntime.title || runText,
+                summary: executed.reply.summary || '',
+                sourceTitle: conversation?.metadata?.supervisor?.brief?.title || '',
+                sourceProvider: conversation?.metadata?.supervisor?.brief?.provider || '',
+                sourceStatus: conversation?.metadata?.supervisor?.brief?.status || ''
+              }
+            : null
+        },
+        userInput: runText
+      });
+      const taskMemory = {
+        ...((conversation.metadata?.supervisor?.taskMemory && typeof conversation.metadata.supervisor.taskMemory === 'object')
+          ? conversation.metadata.supervisor.taskMemory
+          : {}),
+        current: {
+          sessionId: delegatedRuntime.id,
+          provider: delegatedRuntime.provider,
+          title: delegatedRuntime.title || taskRecord?.title || runText || '',
+          status: pendingQuestion
+            ? 'waiting_user'
+            : (pendingApproval ? 'waiting_approval' : (delegatedRuntime.status || 'starting')),
+          startedAt: delegatedRuntime.createdAt || new Date().toISOString(),
+          lastUpdateAt: delegatedRuntime.updatedAt || new Date().toISOString(),
+          summary: String(executed.reply.summary || delegatedRuntime.summary || '').trim(),
+          result: '',
+          originKind: 'assistant',
+          sourceTitle: String(conversation?.metadata?.supervisor?.brief?.title || '').trim(),
+          sourceProvider: String(conversation?.metadata?.supervisor?.brief?.provider || '').trim(),
+          sourceStatus: String(conversation?.metadata?.supervisor?.brief?.status || '').trim(),
+          pendingApprovalTitle: String(pendingApproval?.title || '').trim(),
+          pendingQuestion: String(pendingQuestion?.text || '').trim()
+        }
+      };
+
+      nextConversation = this.conversationStore.bindRuntimeSession(conversation.id, delegatedRuntime.id, {
+        mode: CHANNEL_CONVERSATION_MODE.AGENT_RUNTIME,
+        lastPendingApprovalId: pendingApproval?.approvalId || null,
+        lastPendingQuestionId: pendingQuestion?.questionId || null,
+        metadata: {
+          ...(nextConversation?.metadata || conversation?.metadata || {}),
+          assistantCore: nextAssistantMetadata.assistantCore,
+          supervisor: {
+            ...(((nextConversation?.metadata || conversation?.metadata || {})?.supervisor
+              && typeof ((nextConversation?.metadata || conversation?.metadata || {})?.supervisor) === 'object')
+              ? ((nextConversation?.metadata || conversation?.metadata || {})?.supervisor)
+              : {}),
+            taskMemory,
+            brief: buildSupervisorBrief({
+              taskMemory,
+              session: delegatedRuntime
             })
           }
-    });
+        }
+      });
+    }
 
     return {
       type: 'assistant_response',

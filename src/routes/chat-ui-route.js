@@ -16,6 +16,11 @@ import { createPendingAssistantAction, executePendingAssistantAction } from '../
 import chatUiConversationService from '../chat-ui/conversation-service.js';
 import chatUiConversationStore from '../chat-ui/conversation-store.js';
 
+function listPersistedUiChatMessages(conversation) {
+  const messages = conversation?.metadata?.uiChatMessages;
+  return Array.isArray(messages) ? messages : [];
+}
+
 export async function handleListChatSources(_req, res) {
   const chatgptSources = listAccounts().accounts
     .filter((account) => account.enabled !== false)
@@ -753,6 +758,35 @@ export async function handleConfirmAssistantToolAction(req, res) {
   return res.json(result);
 }
 
+export async function handleGetChatAgentSession(req, res) {
+  const sessionId = String(req.params.sessionId || '').trim();
+  if (!sessionId) {
+    return res.status(400).json({
+      success: false,
+      error: 'sessionId is required'
+    });
+  }
+
+  const conversation = chatUiConversationStore.getBySessionId(sessionId);
+  if (!conversation) {
+    return res.status(404).json({
+      success: false,
+      error: 'chat session not found'
+    });
+  }
+
+  return res.json({
+    success: true,
+    session: {
+      sessionId,
+      conversationId: conversation.id,
+      activeRuntimeSessionId: conversation.activeRuntimeSessionId || '',
+      assistantState: conversation.metadata?.assistantCore || null,
+      uiChatMessages: listPersistedUiChatMessages(conversation)
+    }
+  });
+}
+
 export async function handleRouteChatAgentMessage(req, res) {
   try {
     const {
@@ -937,4 +971,11 @@ async function streamOpenAIResponse(response, res, { requestedModel, mappedModel
   res.end();
 }
 
-export default { handleListChatSources, handleChatWithSource, handleStreamChatWithSource, handleConfirmAssistantToolAction };
+export default {
+  handleListChatSources,
+  handleChatWithSource,
+  handleStreamChatWithSource,
+  handleConfirmAssistantToolAction,
+  handleGetChatAgentSession,
+  handleRouteChatAgentMessage
+};

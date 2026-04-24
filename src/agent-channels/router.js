@@ -118,6 +118,36 @@ export class AgentChannelRouter {
       onBackgroundResult: async (backgroundResult) => {
         const provider = this.registry.get(message.channel, message.accountId);
         const outboundText = String(backgroundResult?.message || '').trim();
+        const relatedRuntimeSessionId = backgroundResult?.assistantRun?.relatedRuntimeSessionIds?.[0] || null;
+        if (relatedRuntimeSessionId) {
+          const runtimeSession = this.messageService.getRuntimeSession(relatedRuntimeSessionId);
+          const pendingApproval = this.messageService.listPendingApprovals(relatedRuntimeSessionId)[0] || null;
+          const pendingQuestion = this.messageService.listPendingQuestions(relatedRuntimeSessionId)
+            .find((entry) => entry.status === 'pending') || null;
+          const latestConversation = this.conversationStore.get(conversation.id) || conversation;
+          this.conversationStore.bindRuntimeSession(conversation.id, relatedRuntimeSessionId, {
+            mode: CHANNEL_CONVERSATION_MODE.AGENT_RUNTIME,
+            lastPendingApprovalId: pendingApproval?.approvalId || null,
+            lastPendingQuestionId: pendingQuestion?.questionId || null,
+            metadata: {
+              ...(latestConversation.metadata || {}),
+              assistantCore: {
+                ...((latestConversation.metadata?.assistantCore && typeof latestConversation.metadata.assistantCore === 'object')
+                  ? latestConversation.metadata.assistantCore
+                  : {})
+              },
+              supervisor: {
+                ...((latestConversation.metadata?.supervisor && typeof latestConversation.metadata.supervisor === 'object')
+                  ? latestConversation.metadata.supervisor
+                  : {}),
+                brief: buildSupervisorBrief({
+                  taskMemory: latestConversation.metadata?.supervisor?.taskMemory || null,
+                  session: runtimeSession
+                })
+              }
+            }
+          });
+        }
         if (!provider?.sendMessage || !outboundText) {
           return;
         }
@@ -130,7 +160,7 @@ export class AgentChannelRouter {
         this.deliveryStore.saveOutbound({
           channel: message.channel,
           conversationId: conversation.id,
-          sessionId: backgroundResult?.assistantRun?.relatedRuntimeSessionIds?.[0] || null,
+          sessionId: relatedRuntimeSessionId,
           externalMessageId: result?.messageId || '',
           status: 'sent',
           payload: {
