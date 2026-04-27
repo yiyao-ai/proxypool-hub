@@ -2,9 +2,9 @@ import { getServerSettings } from './server-settings.js';
 import { listAllCredentials, isCredentialAvailable } from './credential-registry.js';
 import { resolveAssignedCredentials } from './app-routing.js';
 
-const OPENAI_CHAT_KEY_TYPES = new Set(['openai', 'azure-openai', 'gemini', 'vertex-ai']);
-const OPENAI_RESPONSES_KEY_TYPES = new Set(['openai', 'azure-openai', 'gemini', 'vertex-ai']);
-const ANTHROPIC_MESSAGE_KEY_TYPES = new Set(['anthropic', 'gemini', 'vertex-ai', 'minimax', 'moonshot', 'zhipu']);
+const OPENAI_CHAT_KEY_TYPES = new Set(['openai', 'azure-openai', 'gemini', 'vertex-ai', 'deepseek']);
+const OPENAI_RESPONSES_KEY_TYPES = new Set(['openai', 'azure-openai', 'gemini', 'vertex-ai', 'deepseek']);
+const ANTHROPIC_MESSAGE_KEY_TYPES = new Set(['anthropic', 'gemini', 'vertex-ai', 'minimax', 'moonshot', 'zhipu', 'deepseek']);
 
 function protocolPreferences(protocol) {
   switch (protocol) {

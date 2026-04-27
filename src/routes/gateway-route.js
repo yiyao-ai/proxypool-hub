@@ -26,7 +26,7 @@ export async function handleGatewayChat(req, res) {
     // Try providers in order of preference
     const typesToTry = preferredType
         ? [preferredType]
-        : ['openai', 'azure-openai', 'gemini', 'vertex-ai', 'minimax', 'moonshot', 'zhipu'];
+        : ['openai', 'azure-openai', 'gemini', 'vertex-ai', 'deepseek', 'minimax', 'moonshot', 'zhipu'];
 
     for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
         for (const type of typesToTry) {
@@ -184,6 +184,7 @@ export function handleListProviders(req, res) {
             { type: 'gemini', name: 'Google Gemini' },
             { type: 'azure-openai', name: 'Azure OpenAI' },
             { type: 'vertex-ai', name: 'Vertex AI' },
+            { type: 'deepseek', name: 'DeepSeek' },
             { type: 'minimax', name: 'MiniMax' },
             { type: 'moonshot', name: 'Moonshot (Kimi)' },
             { type: 'zhipu', name: 'ZhipuAI (GLM)' }

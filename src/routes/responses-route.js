@@ -327,7 +327,7 @@ export async function handleResponses(req, res) {
     const appId = detectRequestApp(req);
     const priority = settings.routingPriority || 'account-first';
     const hasAccounts = listAccounts().total > 0;
-    const chatKeyTypes = ['openai', 'azure-openai', 'gemini', 'vertex-ai'];
+    const chatKeyTypes = ['openai', 'azure-openai', 'gemini', 'vertex-ai', 'deepseek'];
     const hasApiKeys = hasKeysForTypes(chatKeyTypes);
     const hasClaudeAccounts = _getUsableClaudeAccounts().length > 0;
     const hasAntigravityAccounts = settings.antigravityEnabled !== false && listAntigravityAccounts().total > 0;

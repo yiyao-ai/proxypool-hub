@@ -15,6 +15,7 @@ import { VertexAIProvider } from './providers/vertex-ai.js';
 import { MiniMaxProvider } from './providers/minimax.js';
 import { MoonshotProvider } from './providers/moonshot.js';
 import { ZhipuProvider } from './providers/zhipu.js';
+import { DeepSeekProvider } from './providers/deepseek.js';
 
 const API_KEYS_FILE = join(CONFIG_DIR, 'api-keys.json');
 
@@ -26,7 +27,8 @@ const PROVIDER_CLASSES = {
     'vertex-ai': VertexAIProvider,
     minimax: MiniMaxProvider,
     moonshot: MoonshotProvider,
-    zhipu: ZhipuProvider
+    zhipu: ZhipuProvider,
+    deepseek: DeepSeekProvider
 };
 
 let keysData = null;

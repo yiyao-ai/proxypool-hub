@@ -88,6 +88,12 @@ const DEFAULT_PRICING = {
         'glm-4-air': { input: 0.07, output: 0.07, cacheRead: 0, cacheWrite: 0 },
         'glm-4-airx': { input: 0.14, output: 0.14, cacheRead: 0, cacheWrite: 0 },
         'glm-4-flash': { input: 0.01, output: 0.01, cacheRead: 0, cacheWrite: 0 }
+    },
+    deepseek: {
+        'deepseek-v4-flash': { input: 0.27, output: 1.10, cacheRead: 0.07, cacheWrite: 0 },
+        'deepseek-v4-pro': { input: 2.00, output: 8.00, cacheRead: 0.50, cacheWrite: 0 },
+        'deepseek-chat': { input: 0.27, output: 1.10, cacheRead: 0.07, cacheWrite: 0 },
+        'deepseek-reasoner': { input: 2.00, output: 8.00, cacheRead: 0.50, cacheWrite: 0 }
     }
 };
 

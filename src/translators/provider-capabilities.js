@@ -33,9 +33,9 @@ export function resolveAnthropicProviderCapabilities(provider, context = {}) {
         };
     }
 
-    if (provider.type === 'openai' || provider.type === 'azure-openai') {
+    if (provider.type === 'openai' || provider.type === 'azure-openai' || provider.type === 'deepseek') {
         const capabilities = resolveAnthropicOpenAIResponsesCapabilities({
-            provider: provider.type,
+            provider: provider.type === 'deepseek' ? 'openai' : provider.type,
             appId,
             hasTools
         });

@@ -64,6 +64,12 @@ const DEFAULT_PROVIDER_MAPPINGS = {
         fast:      'claude-haiku-4-5',
         reasoning: 'claude-opus-4-6',
     },
+    deepseek: {
+        flagship:  'deepseek-v4-pro',
+        standard:  'deepseek-v4-flash',
+        fast:      'deepseek-v4-flash',
+        reasoning: 'deepseek-v4-pro',
+    },
 };
 
 // ─── Known models per provider (for UI dropdowns) ───────────────────────────
@@ -92,6 +98,10 @@ const STATIC_PROVIDER_MODELS = {
         'gemini-3.1-pro-preview', 'gemini-3-flash-preview', 'gemini-3.1-flash-lite-preview',
         'gemini-2.5-pro', 'gemini-2.5-flash', 'gemini-2.0-flash',
         'claude-sonnet-4-6', 'claude-opus-4-6', 'claude-haiku-4-5',
+    ],
+    deepseek: [
+        'deepseek-v4-pro', 'deepseek-v4-flash',
+        'deepseek-chat', 'deepseek-reasoner',
     ],
 };
 
@@ -238,6 +248,8 @@ function isNativeModel(providerType, model) {
         case 'openai':
         case 'azure-openai':
             return m.startsWith('gpt-') || /^o[134](-|$)/.test(m);
+        case 'deepseek':
+            return m.startsWith('deepseek-') || m === 'deepseek-chat' || m === 'deepseek-reasoner';
         case 'anthropic':
             return m.startsWith('claude-');
         default:

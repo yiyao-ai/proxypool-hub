@@ -313,7 +313,7 @@ export async function handleCodexResponses(req, res) {
     const appId = detectRequestApp(req);
     const priority = settings.routingPriority || 'account-first';
     const hasAccounts = listAccounts().total > 0;
-    const apiKeyTypes = ['openai', 'azure-openai', 'gemini', 'vertex-ai'];
+    const apiKeyTypes = ['openai', 'azure-openai', 'gemini', 'vertex-ai', 'deepseek'];
     const hasApiKeys = hasKeysForTypes(apiKeyTypes);
     const hasClaudeAccounts = _getUsableClaudeAccounts().length > 0;
     const hasAntigravityAccounts = settings.antigravityEnabled !== false && listAntigravityAccounts().total > 0;
@@ -1107,7 +1107,7 @@ export async function handleCodexModels(req, res) {
         }
 
         // No accounts — check for API keys and return a synthetic model list
-        const apiKeyTypes = ['openai', 'azure-openai', 'gemini', 'vertex-ai'];
+        const apiKeyTypes = ['openai', 'azure-openai', 'gemini', 'vertex-ai', 'deepseek'];
         const hasApiKeys = apiKeyTypes.some(t => !!selectKey(t));
         if (hasApiKeys || antigravityModels.length > 0) {
             return res.json({

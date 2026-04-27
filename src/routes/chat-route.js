@@ -53,7 +53,7 @@ export async function handleChatCompletion(req, res) {
   const priority = settings.routingPriority || 'account-first';
   const hasAccounts = listAccounts().total > 0;
   // Try openai, azure-openai, gemini, vertex-ai keys for chat completions
-  const chatKeyTypes = ['openai', 'azure-openai', 'gemini', 'vertex-ai'];
+  const chatKeyTypes = ['openai', 'azure-openai', 'gemini', 'vertex-ai', 'deepseek'];
   const hasApiKeys = hasKeysForTypes(chatKeyTypes);
   const routingPreview = resolveCredentialForRequest({
     appId,
