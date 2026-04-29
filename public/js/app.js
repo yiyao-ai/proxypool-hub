@@ -3210,9 +3210,26 @@ document.addEventListener('alpine:init', () => {
         },
 
         async loadAssistantAgentConfig() {
-            const { ok, data } = await this.api('/settings/assistant-agent');
-            if (ok && data?.assistantAgent) {
-                const cfg = data.assistantAgent;
+            // Fetch catalog first and let Alpine flush the <template x-for>
+            // options into the DOM before assigning boundCredential. Otherwise
+            // Alpine's `:value` binding on the <select> fires while x-for has
+            // zero options, the browser silently drops the unmatched value,
+            // and the dropdown looks empty even though the credential persists.
+            const [statusResult, configResult] = await Promise.all([
+                this.api('/api/assistant/agent-status'),
+                this.api('/settings/assistant-agent')
+            ]);
+
+            if (statusResult.ok && statusResult.data?.status) {
+                this.assistantAgentStatus = statusResult.data.status;
+            }
+
+            // Yield a macrotask so Alpine renders the catalog-driven options
+            // before the boundCredential assignment triggers the :value binding.
+            await new Promise((resolve) => setTimeout(resolve, 0));
+
+            if (configResult.ok && configResult.data?.assistantAgent) {
+                const cfg = configResult.data.assistantAgent;
                 this.assistantAgentConfig = {
                     enabled: cfg.enabled === true,
                     boundCredential: cfg.boundCredential || null,
@@ -3227,7 +3244,6 @@ document.addEventListener('alpine:init', () => {
                     }
                 };
             }
-            await this.loadAssistantAgentStatus();
         },
 
         async loadAssistantAgentStatus() {
