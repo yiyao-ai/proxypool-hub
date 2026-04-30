@@ -316,8 +316,8 @@
         </div>
 
         <main class="main-panel">
-            <div class="main-scroll custom-scrollbar">
-                <div class="page-surface">
+            <div class="main-scroll custom-scrollbar" :class="{ 'main-scroll-chat': activeTab === 'chat' }">
+                <div class="page-surface" :class="{ 'page-surface-chat': activeTab === 'chat' }">
             <div x-show="activeTab === 'dashboard'" x-transition class="view-container">
                 <div class="dashboard-hero mb-6">
                     <div class="dashboard-hero-copy">
@@ -658,48 +658,48 @@
                                 <p class="text-sm text-gray-400 mt-1" x-text="t('chatDesc')"></p>
                             </div>
                             <div class="chat-header-actions flex items-center gap-2">
-                                <button class="btn btn-sm bg-space-700 hover:bg-space-600 border border-space-border text-white"
+                                <button class="chat-header-button btn btn-sm text-white"
                                     @click="toggleChatHistory()">
                                     <span x-text="t('chatHistory')"></span>
                                 </button>
-                                <button class="btn btn-sm bg-space-700 hover:bg-space-600 border border-space-border text-white"
+                                <button class="chat-header-button btn btn-sm text-white"
                                     @click="openChatSidebar('runtime')">
                                     <span x-text="t('agentRuntimeMonitor')"></span>
                                 </button>
-                                <button class="btn btn-sm bg-neon-cyan hover:bg-cyan-600 border-none text-white"
+                                <button class="chat-header-button chat-header-button-primary btn btn-sm text-white"
                                     @click="newChatSession()" x-text="t('newChat')"></button>
                             </div>
                         </div>
 
                         <div class="chat-control-panel rounded-2xl border border-space-border/30 bg-space-900/40 p-3 mb-4 flex-shrink-0">
                             <div class="chat-control-grid flex flex-wrap items-end gap-3">
-                                <div class="min-w-0 chat-control-fixed" style="flex:0 0 148px;">
-                                    <label class="text-[11px] font-mono text-gray-400 uppercase tracking-wider" x-text="t('chatMode')"></label>
+                                <div class="chat-control-field min-w-0 chat-control-fixed" style="flex:0 0 148px;">
+                                    <label class="chat-control-label text-[11px] font-mono text-gray-400 uppercase tracking-wider" x-text="t('chatMode')"></label>
                                     <select x-model="chatMode" @change="syncActiveChatSession()"
-                                        class="input mt-1.5 h-10 bg-space-800 border-space-border text-white font-mono text-xs">
+                                        class="chat-control-input input mt-1.5 h-10 bg-space-800 border-space-border text-white font-mono text-xs">
                                         <option value="assistant" x-text="t('chatModeAssistant')"></option>
                                         <option value="agent-runtime" x-text="t('chatModeAgent')"></option>
                                     </select>
                                 </div>
-                                <div class="min-w-0 chat-control-fixed" style="flex:0 0 168px;">
-                                    <label class="text-[11px] font-mono text-gray-400 uppercase tracking-wider" x-text="t('chatSource')"></label>
+                                <div class="chat-control-field min-w-0 chat-control-fixed" style="flex:0 0 168px;">
+                                    <label class="chat-control-label text-[11px] font-mono text-gray-400 uppercase tracking-wider" x-text="t('chatSource')"></label>
                                     <select x-model="chatSourceId" @change="syncActiveChatSession()" x-show="chatMode === 'assistant'"
-                                        class="input mt-1.5 h-10 bg-space-800 border-space-border text-white font-mono text-xs">
+                                        class="chat-control-input input mt-1.5 h-10 bg-space-800 border-space-border text-white font-mono text-xs">
                                         <template x-for="source in chatSources" :key="source.id">
                                             <option :value="source.id" x-text="source.label"></option>
                                         </template>
                                     </select>
                                     <select x-model="chatRuntimeProvider" @change="syncActiveChatSession()" x-show="chatMode === 'agent-runtime'"
-                                        class="input mt-1.5 h-10 bg-space-800 border-space-border text-white font-mono text-xs">
+                                        class="chat-control-input input mt-1.5 h-10 bg-space-800 border-space-border text-white font-mono text-xs">
                                         <template x-for="provider in agentRuntimeProviders" :key="provider.id">
                                             <option :value="provider.id" x-text="chatRuntimeProviderLabel(provider.id)"></option>
                                         </template>
                                     </select>
                                 </div>
-                                <div class="min-w-0 chat-control-flex" style="flex:1 1 auto;">
-                                    <label class="text-[11px] font-mono text-gray-400 uppercase tracking-wider" x-text="t('chatModel')"></label>
+                                <div class="chat-control-field min-w-0 chat-control-flex" style="flex:1 1 auto;">
+                                    <label class="chat-control-label text-[11px] font-mono text-gray-400 uppercase tracking-wider" x-text="t('chatModel')"></label>
                                     <input type="text" list="chat-model-options" x-model="chatModel" @change="syncActiveChatSession()"
-                                        class="input mt-1.5 h-10 bg-space-800 border-space-border text-white font-mono text-xs"
+                                        class="chat-control-input input mt-1.5 h-10 bg-space-800 border-space-border text-white font-mono text-xs"
                                         :placeholder="t('chatModelPlaceholder')">
                                     <datalist id="chat-model-options">
                                         <template x-for="model in chatModels" :key="model">
@@ -707,24 +707,24 @@
                                         </template>
                                     </datalist>
                                 </div>
-                                <label x-show="chatMode === 'assistant'" class="flex items-center gap-2 px-3 h-10 rounded-xl border border-space-border/40 bg-space-800/70 text-xs text-gray-200 mb-[1px] whitespace-nowrap">
+                                <label x-show="chatMode === 'assistant'" class="chat-control-toggle flex items-center gap-2 px-3 h-10 rounded-xl border text-xs text-gray-200 mb-[1px] whitespace-nowrap">
                                     <input type="checkbox" x-model="chatAssistantMode" @change="syncActiveChatSession()"
                                         class="rounded border-space-border bg-space-900 text-neon-cyan focus:ring-neon-cyan">
                                     <span x-text="t('chatAssistantMode')"></span>
                                 </label>
-                                <button x-show="chatMode === 'assistant'" class="btn btn-sm bg-space-800 hover:bg-space-700 border border-space-border text-gray-200 mb-[1px] whitespace-nowrap"
+                                <button x-show="chatMode === 'assistant'" class="chat-control-button btn btn-sm text-gray-200 mb-[1px] whitespace-nowrap"
                                     style="flex:0 0 auto;"
                                     @click="toggleSystemPrompt()">
                                     <span x-text="chatSystemPromptOpen ? t('hidePrompt') : t('showPrompt')"></span>
                                 </button>
                             </div>
 
-                            <div class="mt-2 text-[11px] text-gray-500" x-show="chatMode === 'assistant' && chatSourceLoading" x-text="t('loadingChatSources')"></div>
+                            <div class="chat-control-helper mt-2 text-[11px] text-gray-500" x-show="chatMode === 'assistant' && chatSourceLoading" x-text="t('loadingChatSources')"></div>
 
-                            <div x-show="chatSystemPromptOpen && chatMode === 'assistant'" x-transition class="mt-3 pt-3 border-t border-space-border/20">
-                                <label class="text-[11px] font-mono text-gray-400 uppercase tracking-wider" x-text="t('systemPromptOptional')"></label>
+                            <div x-show="chatSystemPromptOpen && chatMode === 'assistant'" x-transition class="chat-system-prompt mt-3 pt-3 border-t border-space-border/20">
+                                <label class="chat-control-label text-[11px] font-mono text-gray-400 uppercase tracking-wider" x-text="t('systemPromptOptional')"></label>
                                 <textarea x-model="chatSystemPrompt" @input.debounce.300ms="syncActiveChatSession()" rows="3"
-                                    class="input mt-1.5 bg-space-800 border-space-border text-white font-mono text-xs resize-y"
+                                    class="chat-control-input input mt-1.5 bg-space-800 border-space-border text-white font-mono text-xs resize-y"
                                     :placeholder="t('systemPromptPlaceholder')"></textarea>
                             </div>
                         </div>
@@ -732,23 +732,23 @@
                         <div class="chat-status-bar flex items-center justify-between gap-4 mb-4 flex-shrink-0">
                             <div class="chat-status-copy text-sm text-gray-400 min-w-0">
                                 <template x-if="chatMode === 'assistant'">
-                                    <div>
-                                        <span x-text="t('chatUsing')"></span>
-                                        <span class="text-white font-mono ml-2 truncate inline-block max-w-[340px] align-bottom" x-text="chatSourceLabel(chatSourceId)"></span>
+                                    <div class="chat-status-group">
+                                        <span class="chat-status-label" x-text="t('chatUsing')"></span>
+                                        <span class="chat-status-pill text-white font-mono ml-2 truncate inline-block max-w-[340px] align-bottom" x-text="chatSourceLabel(chatSourceId)"></span>
                                     </div>
                                 </template>
                                 <template x-if="chatMode === 'agent-runtime'">
-                                    <div class="flex items-center gap-2 flex-wrap">
-                                        <span x-text="t('agentRuntimeUsing')"></span>
-                                        <span class="text-white font-mono" x-text="chatRuntimeProviderLabel(chatRuntimeProvider)"></span>
-                                        <span class="px-2 py-1 rounded-full bg-space-800 border border-space-border/40 text-[10px] font-mono text-gray-300"
+                                    <div class="chat-status-group flex items-center gap-2 flex-wrap">
+                                        <span class="chat-status-label" x-text="t('agentRuntimeUsing')"></span>
+                                        <span class="chat-status-pill text-white font-mono" x-text="chatRuntimeProviderLabel(chatRuntimeProvider)"></span>
+                                        <span class="chat-status-pill px-2 py-1 rounded-full bg-space-800 border border-space-border/40 text-[10px] font-mono text-gray-300"
                                             x-text="agentRuntimeStatusLabel()"></span>
-                                        <span class="px-2 py-1 rounded-full bg-space-900/70 border border-space-border/30 text-[10px] font-mono text-gray-400"
+                                        <span class="chat-status-pill px-2 py-1 rounded-full bg-space-900/70 border border-space-border/30 text-[10px] font-mono text-gray-400"
                                             x-text="activeRuntimeSessionBadge()"></span>
-                                        <button class="btn btn-xs bg-space-800 hover:bg-space-700 border border-space-border text-white"
+                                        <button class="chat-status-button btn btn-xs text-white"
                                             x-show="getActiveChatSession()?.runtimeSessionId"
                                             @click="startFreshAgentRuntimeSession()" x-text="t('agentRuntimeNewSession')"></button>
-                                        <button class="btn btn-xs bg-space-900 hover:bg-space-800 border border-space-border text-gray-300"
+                                        <button class="chat-status-button chat-status-button-muted btn btn-xs text-gray-300"
                                             x-show="getActiveChatSession()?.runtimeSessionId"
                                             @click="detachAgentRuntimeSession()" x-text="t('agentRuntimeDetach')"></button>
                                     </div>
@@ -768,12 +768,12 @@
                             </template>
 
                             <template x-for="(message, index) in chatMessages" :key="index">
-                                <div class="flex" :class="message.role === 'user' ? 'justify-end' : 'justify-start'">
+                                <div class="flex chat-message-row" :class="message.role === 'user' ? 'justify-end' : 'justify-start'">
                                     <div class="chat-message-bubble max-w-[90%] rounded-2xl px-4 py-3 border"
                                         :class="message.role === 'user'
-                                            ? 'bg-neon-cyan/15 border-neon-cyan/30 text-white'
-                                            : (message.isError ? 'bg-red-500/10 border-red-500/30 text-red-200' : 'bg-space-800/70 border-space-border/40 text-gray-100')">
-                                        <div class="flex items-center gap-2 mb-2">
+                                            ? 'text-white'
+                                            : (message.isError ? 'bg-red-500/10 border-red-500/30 text-red-200' : 'text-gray-100')">
+                                        <div class="chat-message-meta flex items-center gap-2 mb-2">
                                             <span class="text-[10px] font-mono uppercase tracking-wider"
                                                 :class="message.role === 'user' ? 'text-neon-cyan' : (message.isError ? 'text-red-300' : 'text-gray-400')"
                                                 x-text="message.role === 'user' ? t('you') : t('assistant')"></span>
@@ -781,7 +781,7 @@
                                             <span class="text-[10px] font-mono text-gray-500" x-show="message.kind === 'agent-command'" x-text="t('agentRuntimeCommand')"></span>
                                             <span class="text-[10px] font-mono text-gray-500" x-show="message.kind === 'agent-file-change'" x-text="t('agentRuntimeFilesChanged')"></span>
                                         </div>
-                                        <pre class="whitespace-pre-wrap break-words text-sm font-sans" x-text="message.content"></pre>
+                                        <pre class="chat-message-body whitespace-pre-wrap break-words text-sm font-sans" x-text="message.content"></pre>
                                         <div class="chat-message-detail mt-3 rounded-xl border border-space-border/30 bg-space-950/50 p-3"
                                             x-show="message.observability && formatAssistantRunObservability(message.observability, message.runStatus)">
                                             <div class="text-[10px] font-mono uppercase tracking-wider text-gray-500 mb-2">assistant run</div>
@@ -811,11 +811,11 @@
                                             </div>
                                             <div class="mt-3 text-xs text-gray-300" x-show="message.approvalStatus !== 'pending'" x-text="message.approvalStatus"></div>
                                         </div>
-                                        <div class="mt-3" x-show="Array.isArray(message.citations) && message.citations.length > 0">
+                                        <div class="chat-message-citations mt-3" x-show="Array.isArray(message.citations) && message.citations.length > 0">
                                             <div class="text-[10px] font-mono uppercase tracking-wider text-gray-500 mb-2" x-text="t('chatManualSources')"></div>
                                             <div class="flex flex-wrap gap-2">
                                                 <template x-for="citation in message.citations" :key="citation.id || citation.title">
-                                                    <span class="px-2 py-1 rounded-full bg-space-900/90 border border-space-border/40 text-[10px] font-mono text-gray-300"
+                                                    <span class="chat-message-citation px-2 py-1 rounded-full bg-space-900/90 border border-space-border/40 text-[10px] font-mono text-gray-300"
                                                         x-text="formatChatCitation(citation)"></span>
                                                 </template>
                                             </div>
@@ -852,8 +852,8 @@
                                 @keydown.ctrl.enter.prevent="sendChatMessage()"
                                 @keydown.meta.enter.prevent="sendChatMessage()"></textarea>
                             <div class="chat-composer-footer flex items-center justify-between gap-4">
-                                <div class="text-xs text-gray-500" x-text="chatMode === 'agent-runtime' ? t('agentRuntimeShortcutHint') : t('chatShortcutHint')"></div>
-                                <button class="btn bg-neon-cyan hover:bg-cyan-600 border-none text-white"
+                                <div class="chat-composer-hint text-xs text-gray-500" x-text="chatMode === 'agent-runtime' ? t('agentRuntimeShortcutHint') : t('chatShortcutHint')"></div>
+                                <button class="chat-composer-submit btn bg-neon-cyan hover:bg-cyan-600 border-none text-white"
                                     @click="sendChatMessage()" :disabled="chatSendDisabled()">
                                     <span x-text="chatLoading ? t('sending') : t('send')"></span>
                                 </button>
@@ -866,33 +866,35 @@
                         <div class="view-card chat-side-panel w-[320px] h-full min-h-0 flex flex-col overflow-hidden">
                             <div class="chat-side-header flex items-center justify-between gap-3 mb-3 flex-shrink-0">
                                 <div class="chat-side-tabs flex items-center gap-1 p-1 rounded-lg bg-space-900/60 border border-space-border/30">
-                                    <button class="px-3 py-1.5 rounded-md text-[11px] font-mono transition-all"
+                                    <button class="chat-side-tab px-3 py-1.5 rounded-md text-[11px] font-mono transition-all"
                                         :class="chatSidebarTab === 'history' ? 'bg-space-800 text-white' : 'text-gray-500 hover:text-white'"
                                         @click="openChatSidebar('history')" x-text="t('historyPanel')"></button>
-                                    <button class="px-3 py-1.5 rounded-md text-[11px] font-mono transition-all"
+                                    <button class="chat-side-tab px-3 py-1.5 rounded-md text-[11px] font-mono transition-all"
                                         :class="chatSidebarTab === 'runtime' ? 'bg-space-800 text-white' : 'text-gray-500 hover:text-white'"
                                         @click="openChatSidebar('runtime')" x-text="t('agentRuntimeMonitor')"></button>
                                 </div>
-                                <div class="flex items-center gap-2">
-                                    <div class="text-[11px] font-mono text-gray-500" x-text="chatSidebarTab === 'history' ? (chatSessions.length + ' ' + t('sessions')) : (agentRuntimeSessions.length + ' ' + t('sessions'))"></div>
-                                    <button class="text-xs text-gray-500 hover:text-white" @click="chatHistoryOpen = false">&times;</button>
+                                <div class="chat-side-summary flex items-center gap-2">
+                                    <div class="chat-side-count text-[11px] font-mono text-gray-500" x-text="chatSidebarTab === 'history' ? (chatSessions.length + ' ' + t('sessions')) : (agentRuntimeSessions.length + ' ' + t('sessions'))"></div>
+                                    <button class="chat-side-close text-xs text-gray-500 hover:text-white" @click="chatHistoryOpen = false">&times;</button>
                                 </div>
                             </div>
                             <div x-show="chatSidebarTab === 'history'" class="space-y-2 flex-1 min-h-0 overflow-y-auto custom-scrollbar pr-1">
                                 <template x-for="session in chatSessions" :key="session.id">
                                     <div class="chat-session-card rounded-xl border px-3 py-2 transition-all cursor-pointer"
-                                        :class="session.id === activeChatSessionId ? 'border-cyan-400/30 bg-cyan-400/8' : 'border-space-border/30 bg-space-900/30 hover:bg-space-800/38'"
+                                        :class="session.id === activeChatSessionId
+                                            ? 'chat-session-card-active border-cyan-400/30 bg-cyan-400/8'
+                                            : (session.runtimeUnread ? 'chat-session-card-unread border-amber-400/20' : 'border-space-border/30 bg-space-900/30 hover:bg-space-800/38')"
                                         @click="openChatSession(session.id)">
                                         <div class="chat-session-head flex items-start justify-between gap-2">
                                             <div class="chat-session-copy min-w-0">
                                                 <div class="chat-session-title-row flex items-center gap-2 min-w-0">
                                                     <div class="chat-session-title text-sm text-white truncate" x-text="chatSessionTitle(session)"></div>
                                                     <span x-show="session.runtimeUnread"
-                                                        class="px-1.5 py-0.5 rounded-full bg-amber-500/20 border border-amber-500/30 text-[10px] font-mono text-amber-300">new</span>
+                                                        class="chat-session-badge px-1.5 py-0.5 rounded-full bg-amber-500/20 border border-amber-500/30 text-[10px] font-mono text-amber-300">new</span>
                                                 </div>
                                                 <div class="chat-session-subtitle text-[11px] font-mono text-gray-500 truncate mt-1" x-text="session.mode === 'agent-runtime' ? chatRuntimeProviderLabel(session.runtimeProvider || '') : chatSourceLabel(session.sourceId || '')"></div>
                                             </div>
-                                            <button class="text-xs text-gray-500 hover:text-red-300" @click.stop="removeChatSession(session.id)">&times;</button>
+                                            <button class="chat-session-remove text-xs text-gray-500 hover:text-red-300" @click.stop="removeChatSession(session.id)">&times;</button>
                                         </div>
                                         <div class="chat-session-meta mt-2 text-[11px] text-gray-500 flex items-center gap-2">
                                             <span x-text="chatModeLabel(session.mode || 'assistant')"></span>
@@ -905,9 +907,9 @@
                                 </template>
                             </div>
                             <div x-show="chatSidebarTab === 'runtime'" class="flex-1 min-h-0 overflow-y-auto custom-scrollbar pr-1">
-                                <div class="flex items-center justify-between mb-3">
+                                <div class="chat-runtime-toolbar flex items-center justify-between mb-3">
                                     <div class="text-[11px] font-mono text-gray-500" x-text="t('agentRuntimeMonitorDesc')"></div>
-                                    <button class="btn btn-xs bg-space-800 hover:bg-space-700 border border-space-border text-white"
+                                    <button class="chat-side-action btn btn-xs text-white"
                                         @click="loadAgentRuntimeSessions()" :disabled="agentRuntimeSessionsLoading">
                                         <span x-text="agentRuntimeSessionsLoading ? t('loading') : t('refresh')"></span>
                                     </button>
@@ -928,15 +930,15 @@
                                                         <span x-text="runtimeSession.model || '-'"></span>
                                                     </div>
                                                 </div>
-                                                <span class="px-2 py-1 rounded-full border text-[10px] font-mono"
+                                                <span class="chat-runtime-status px-2 py-1 rounded-full border text-[10px] font-mono"
                                                     :class="agentRuntimeStatusPillClass(runtimeSession.status)"
                                                     x-text="agentRuntimeStatusLabel(runtimeSession)"></span>
                                             </div>
                                             <div class="chat-runtime-summary mt-2 text-[11px] text-gray-500" x-text="runtimeSession.summary || '-'"></div>
                                             <div class="chat-runtime-footer mt-3 flex items-center justify-between gap-2">
-                                                <div class="text-[10px] font-mono text-gray-500" x-text="formatRelativeTime(runtimeSession.updatedAt)"></div>
+                                                <div class="chat-runtime-time text-[10px] font-mono text-gray-500" x-text="formatRelativeTime(runtimeSession.updatedAt)"></div>
                                                 <div class="flex items-center gap-2">
-                                                    <button class="btn btn-xs bg-space-800 hover:bg-space-700 border border-space-border text-white"
+                                                    <button class="chat-side-action btn btn-xs text-white"
                                                         @click="openAgentRuntimeMonitorSession(runtimeSession)" x-text="t('openInChat')"></button>
                                                     <button class="btn btn-xs bg-red-500/20 hover:bg-red-500/30 border border-red-500/30 text-red-300"
                                                         x-show="['running','waiting_user','waiting_approval'].includes(runtimeSession.status)"
