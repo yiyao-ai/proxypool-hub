@@ -35,6 +35,7 @@ import {
     mergeDeepSeekReasoningText,
     normalizeDeepSeekRequestBody
 } from '../deepseek-utils.js';
+import { shouldInjectEndTurnFalse, maybeInjectFromLocals } from '../utils/codex-compaction-tracker.js';
 
 const UPSTREAM_BASE = 'https://chatgpt.com/backend-api';
 const MAX_RETRIES = 5;
@@ -400,6 +401,12 @@ export async function handleCodexResponses(req, res) {
     const isStreaming = body.stream !== false;
     const rawBody = Buffer.isBuffer(req.rawBody) ? req.rawBody : null;
 
+    // Decide once per request whether to patch `end_turn: false` into the
+    // outgoing response. Honored downstream by sendResponsesSSE and by the
+    // res.json call sites via maybeInjectFromLocals.
+    if (!res.locals) res.locals = {};
+    res.locals.codexInjectEndTurn = shouldInjectEndTurnFalse(req, body);
+
     // --- Request logging ---
     const inputSummary = Array.isArray(body.input)
         ? body.input.map(item => {
@@ -669,7 +676,7 @@ async function _handleCodexViaAssignedApiKey(res, body, modelId, isStreaming, st
         if (providerSupportsNativeResponses(provider)) {
             copyAllowedResponseHeaders(response, res);
         }
-        if (isStreaming) sendResponsesSSE(res, codexResponse); else res.json(codexResponse);
+        if (isStreaming) sendResponsesSSE(res, codexResponse); else res.json(maybeInjectFromLocals(res, codexResponse));
         return true;
     } catch (error) {
         markCredentialError(buildCredentialId('api-key', provider.id), error, { model: modelId });
@@ -754,7 +761,7 @@ async function _handleCodexViaAssignedClaudeAccount(res, body, modelId, isStream
         recordRequest({ provider: 'claude-pool', keyId: account.email, model: anthropicBody.model, inputTokens, outputTokens, durationMs, success: true });
         logRequest({ route: '/backend-api/codex/responses', provider: 'claude-pool', keyId: account.email, model: modelId, mappedModel: anthropicBody.model, requestBody: body, inputTokens, outputTokens, durationMs, status: 200, success: true });
         logger.success(`[Codex] <<< Assigned Claude account OK | ${account.email} | model=${modelId} | ${inputTokens}+${outputTokens} tokens | ${durationMs}ms`);
-        if (isStreaming) sendResponsesSSE(res, codexFormat); else res.json(codexFormat);
+        if (isStreaming) sendResponsesSSE(res, codexFormat); else res.json(maybeInjectFromLocals(res, codexFormat));
         return true;
     } catch (error) {
         recordClaudeRuntimeObservation(account.email, error.rateLimitHeaders, { model: anthropicBody.model });
@@ -1184,7 +1191,7 @@ async function _handleCodexViaApiKey(res, body, modelId, isStreaming, keyTypes, 
                 if (isStreaming) {
                     sendResponsesSSE(res, codexResponse);
                 } else {
-                    res.json(codexResponse);
+                    res.json(maybeInjectFromLocals(res, codexResponse));
                 }
                 return;
             } catch (error) {
@@ -1702,7 +1709,7 @@ async function _handleCodexViaClaudeAccount(res, body, modelId, isStreaming, sta
             if (isStreaming) {
                 sendResponsesSSE(res, codexFormat);
             } else {
-                res.json(codexFormat);
+                res.json(maybeInjectFromLocals(res, codexFormat));
             }
             return true;
         } catch (error) {
@@ -1724,7 +1731,7 @@ async function _handleCodexViaClaudeAccount(res, body, modelId, isStreaming, sta
                             const outputTokens = retryResponse.usage?.output_tokens || 0;
                             recordRequest({ provider: 'claude-pool', keyId: account.email, model: anthropicBody.model, inputTokens, outputTokens, durationMs: retryDurationMs, success: true });
                             logger.success(`[Codex] <<< Claude account OK (after refresh) | ${account.email} | model=${modelId} | ${inputTokens}+${outputTokens} tokens | ${retryDurationMs}ms`);
-                            if (isStreaming) { sendResponsesSSE(res, codexFormat); } else { res.json(codexFormat); }
+                            if (isStreaming) { sendResponsesSSE(res, codexFormat); } else { res.json(maybeInjectFromLocals(res, codexFormat)); }
                             return true;
                         }
                     }
@@ -1782,7 +1789,7 @@ async function _handleCodexViaAntigravityAccount(res, body, modelId, isStreaming
                 status: 200,
                 success: true
             });
-            if (isStreaming) sendResponsesSSE(res, codexFormat); else res.json(codexFormat);
+            if (isStreaming) sendResponsesSSE(res, codexFormat); else res.json(maybeInjectFromLocals(res, codexFormat));
             return true;
         } catch (error) {
             logger.error(`[Codex] Antigravity error: ${account.email} - ${error.message}`);

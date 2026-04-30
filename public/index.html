@@ -56,24 +56,26 @@
         </template>
     </div>
 
-    <div class="h-14 border-b border-space-border flex items-center px-4 lg:px-6 justify-between bg-space-900/50 backdrop-blur-md z-50 relative">
-        <div class="flex items-center gap-3">
-            <button @click="toggleSidebar()" class="text-gray-400 hover:text-white focus:outline-none p-1 transition-colors lg:hidden">
+    <header class="app-topbar">
+        <div class="topbar-brand">
+            <button @click="toggleSidebar()" class="topbar-menu-button text-gray-400 hover:text-white focus:outline-none p-1 transition-colors lg:hidden">
                 <svg class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16" />
                 </svg>
             </button>
-            <div class="w-8 h-8 rounded bg-gradient-to-br from-neon-purple to-blue-600 flex items-center justify-center text-white font-bold shadow-[0_0_15px_rgba(168,85,247,0.4)]">
+            <div class="topbar-brand-mark w-8 h-8 rounded bg-gradient-to-br from-neon-purple to-blue-600 flex items-center justify-center text-white font-bold shadow-[0_0_15px_rgba(168,85,247,0.4)]">
                 CX
             </div>
-            <div class="flex flex-col">
-                <span class="text-sm font-bold tracking-wide text-white" x-text="t('codexProxy')"></span>
-                <div class="flex flex-col gap-0.5">
+            <div class="topbar-brand-copy flex flex-col">
+                <div class="topbar-title-row">
+                    <span class="text-sm font-bold tracking-wide text-white" x-text="t('codexProxy')"></span>
+                </div>
+                <div class="topbar-meta flex flex-col gap-0.5">
                     <div class="flex items-center gap-1.5">
                         <span class="text-[10px] text-gray-500 font-mono tracking-wider" x-text="t('claudeProxySystem')"></span>
                         <span class="text-[10px] text-gray-500 font-mono tracking-wider" x-text="'v' + version"></span>
                     </div>
-                    <a href="https://github.com/codeking-ai/cligate" target="_blank" class="text-[10px] text-neon-purple hover:text-purple-400 hover:underline transition-colors flex items-center gap-1">
+                    <a href="https://github.com/codeking-ai/cligate" target="_blank" class="topbar-meta-link text-[10px] text-neon-purple hover:text-purple-400 hover:underline transition-colors flex items-center gap-1">
                         <svg class="w-3 h-3" fill="currentColor" viewBox="0 0 24 24"><path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/></svg>
                         <span x-text="t('starOnGithub')"></span>
                     </a>
@@ -81,19 +83,19 @@
             </div>
         </div>
 
-        <div class="flex flex-wrap items-center justify-end gap-2 lg:gap-4">
+        <div class="topbar-actions flex flex-wrap items-center justify-end gap-2 lg:gap-4">
             <!-- Language Toggle -->
-            <div class="flex items-center gap-1 text-xs font-mono">
+            <div class="topbar-chip-group flex items-center gap-1 text-xs font-mono">
                 <button @click="setLang('en')" class="px-1.5 py-0.5 rounded transition-all"
                     :class="lang === 'en' ? 'bg-neon-purple/20 text-neon-purple border border-neon-purple/30' : 'text-gray-500 hover:text-gray-300'">EN</button>
                 <button @click="setLang('zh')" class="px-1.5 py-0.5 rounded transition-all"
                     :class="lang === 'zh' ? 'bg-neon-purple/20 text-neon-purple border border-neon-purple/30' : 'text-gray-500 hover:text-gray-300'">中文</button>
             </div>
 
-            <div class="h-4 w-px bg-space-border"></div>
+            <div class="topbar-divider h-4 w-px bg-space-border"></div>
 
             <!-- Theme Toggle -->
-            <button @click="toggleTheme()" class="btn btn-ghost btn-xs btn-square text-gray-400 hover:text-white hover:bg-white/5 transition-all" :title="darkMode ? 'Light Mode' : 'Dark Mode'">
+            <button @click="toggleTheme()" class="topbar-icon-button btn btn-ghost btn-xs btn-square text-gray-400 hover:text-white hover:bg-white/5 transition-all" :title="darkMode ? 'Light Mode' : 'Dark Mode'">
                 <!-- Sun icon (shown in dark mode) -->
                 <svg x-show="darkMode" xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
                     <path stroke-linecap="round" stroke-linejoin="round" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" />
@@ -104,9 +106,9 @@
                 </svg>
             </button>
 
-            <div class="h-4 w-px bg-space-border"></div>
+            <div class="topbar-divider h-4 w-px bg-space-border"></div>
 
-            <div class="flex items-center gap-2 px-3 py-1 rounded-full text-xs font-mono border transition-all duration-300"
+            <div class="topbar-status flex items-center gap-2 px-3 py-1 rounded-full text-xs font-mono border transition-all duration-300"
                 :class="connectionStatus === 'connected'
                     ? 'bg-neon-green/10 border-neon-green/20 text-neon-green'
                     : 'bg-red-500/10 border-red-500/20 text-red-500'">
@@ -116,25 +118,25 @@
                 <span x-text="connectionStatus === 'connected' ? t('online') : t('offline')"></span>
             </div>
 
-            <div class="h-4 w-px bg-space-border"></div>
+            <div class="topbar-divider h-4 w-px bg-space-border"></div>
 
-            <button type="button" class="btn btn-ghost btn-xs btn-square text-gray-400 hover:text-white hover:bg-white/5"
+            <button type="button" class="topbar-icon-button btn btn-ghost btn-xs btn-square text-gray-400 hover:text-white hover:bg-white/5"
                 @click="refreshAccounts()" :disabled="loading" :title="t('refreshData')">
                 <svg class="w-4 h-4" :class="{'animate-spin': loading}" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
                 </svg>
             </button>
         </div>
-    </div>
+    </header>
 
-    <div class="app-shell flex h-[calc(100vh-56px)] relative">
+    <div class="app-shell relative">
         <div x-show="isSmallScreen && sidebarOpen" x-transition.opacity
             @click="sidebarOpen = false" class="fixed inset-0 bg-black/50 z-40 lg:hidden" style="display: none;"></div>
 
         <div class="sidebar bg-space-900 border-r border-space-border/30"
             :class="{ 'collapsed': !isSmallScreen && sidebarCollapsed, 'sidebar-open': isSmallScreen && sidebarOpen }">
             <div class="sidebar-inner flex flex-col h-full pt-6 pb-4 flex-shrink-0" :style="{ width: isSmallScreen ? '16rem' : (sidebarCollapsed ? '3.5rem' : '16rem') }">
-                <div class="flex items-center justify-end px-4 mb-2 flex-shrink-0">
+                <div class="sidebar-head flex items-center justify-end px-4 mb-2 flex-shrink-0">
                     <button class="sidebar-collapse-btn" @click="toggleSidebar()" :title="isSmallScreen ? t('close') : (sidebarCollapsed ? 'Expand' : 'Collapse')">
                         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 19l-7-7 7-7m8 14l-7-7 7-7" />
@@ -295,14 +297,14 @@
 
                 <div class="sidebar-footer flex-shrink-0 px-4 pb-2 pt-4 border-t border-space-border/20">
                     <a href="https://github.com/codeking-ai/cligate/issues/new/choose" target="_blank"
-                        class="flex items-center gap-2 px-2 py-2 text-xs text-gray-500 hover:text-neon-cyan hover:bg-white/5 rounded transition-all">
+                        class="sidebar-footer-link flex items-center gap-2 px-2 py-2 text-xs text-gray-500 hover:text-neon-cyan hover:bg-white/5 rounded transition-all">
                         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z"></path>
                         </svg>
                         <span x-text="t('feedback')"></span>
                     </a>
                     <a href="https://github.com/codeking-ai/cligate/discussions" target="_blank"
-                        class="flex items-center gap-2 px-2 py-2 text-xs text-gray-500 hover:text-neon-purple hover:bg-white/5 rounded transition-all">
+                        class="sidebar-footer-link flex items-center gap-2 px-2 py-2 text-xs text-gray-500 hover:text-neon-purple hover:bg-white/5 rounded transition-all">
                         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 8h2a2 2 0 012 2v6a2 2 0 01-2 2h-2v4l-4-4H9a1.994 1.994 0 01-1.414-.586m0 0L11 14h4a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2v4l.586-.586z"></path>
                         </svg>
@@ -313,28 +315,44 @@
             </div>
         </div>
 
-        <div class="main-panel flex-1 min-w-0 overflow-auto bg-space-950 relative custom-scrollbar">
+        <main class="main-panel">
+            <div class="main-scroll custom-scrollbar">
+                <div class="page-surface">
             <div x-show="activeTab === 'dashboard'" x-transition class="view-container">
-                <div class="flex items-center justify-between gap-4 mb-6">
-                    <div class="flex flex-wrap items-center gap-4">
-                        <h1 class="text-2xl font-bold text-white tracking-tight" x-text="t('dashboard')"></h1>
-                        <div class="flex items-center h-6 px-3 rounded-full bg-space-800/80 border border-space-border/50 shadow-sm backdrop-blur-sm">
-                            <span class="text-[10px] font-mono text-gray-400 uppercase tracking-wider" x-text="t('chatgptProxySystem')"></span>
+                <div class="dashboard-hero mb-6">
+                    <div class="dashboard-hero-copy">
+                        <div class="dashboard-hero-eyebrow-row">
+                            <span class="dashboard-hero-eyebrow" x-text="t('chatgptProxySystem')"></span>
+                            <span class="dashboard-hero-version" x-text="'v' + version"></span>
                         </div>
+                        <h1 class="dashboard-hero-title" x-text="t('dashboard')"></h1>
+                        <p class="dashboard-hero-subtitle">聚焦系统状态、代理健康度与下一步动作，不再把测试、接入和配置细节全部挤在首页首屏。</p>
                     </div>
-                    <div class="flex items-center gap-2 px-2.5 py-1.5 rounded-lg bg-space-900/60 border border-space-border/40 whitespace-nowrap flex-shrink-0">
-                        <div class="relative flex items-center justify-center">
-                            <span class="absolute w-1.5 h-1.5 bg-neon-green rounded-full animate-ping opacity-75"></span>
-                            <span class="relative w-1.5 h-1.5 bg-neon-green rounded-full"></span>
+                    <div class="dashboard-hero-side">
+                        <div class="dashboard-hero-status">
+                            <div class="relative flex items-center justify-center">
+                                <span class="absolute w-1.5 h-1.5 bg-neon-green rounded-full animate-ping opacity-75"></span>
+                                <span class="relative w-1.5 h-1.5 bg-neon-green rounded-full"></span>
+                            </div>
+                            <span class="dashboard-hero-status-label" x-text="t('live')"></span>
+                            <span class="dashboard-hero-status-dot">•</span>
+                            <span class="dashboard-hero-status-time" x-text="currentTime"></span>
                         </div>
-                        <span class="text-[10px] font-mono text-gray-500 uppercase tracking-wider" x-text="t('live')"></span>
-                        <span class="text-gray-700">•</span>
-                        <span class="text-[10px] font-mono text-gray-400 tabular-nums" x-text="currentTime"></span>
+                        <div class="dashboard-hero-actions">
+                            <button class="btn btn-sm bg-space-800 hover:bg-space-700 border border-space-border text-white"
+                                @click="refreshAccounts()" :disabled="loading">
+                                <span x-text="t('refreshData')"></span>
+                            </button>
+                            <button class="btn btn-sm bg-neon-cyan hover:bg-cyan-600 border-none text-white"
+                                @click="setActiveTab('chat')">
+                                <span x-text="t('quickTest')"></span>
+                            </button>
+                        </div>
                     </div>
                 </div>
 
                 <div class="grid grid-cols-2 sm:grid-cols-4 gap-2 lg:gap-3 mb-6">
-                    <div class="stat bg-space-900/40 border border-space-border/30 rounded-xl p-3 lg:p-4 hover:border-cyan-500/30 hover:bg-cyan-500/5 transition-all duration-300 group relative cursor-pointer min-w-0">
+                    <div class="dashboard-stat-card dashboard-stat-card-cyan stat bg-space-900/40 border border-space-border/30 rounded-xl p-3 lg:p-4 hover:border-cyan-500/30 hover:bg-cyan-500/5 transition-all duration-300 group relative cursor-pointer min-w-0">
                         <div class="absolute top-3 right-3 text-gray-700/40 group-hover:text-cyan-400/70 transition-colors">
                             <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" class="w-4 h-4 sm:w-5 sm:h-5 stroke-current">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0z"></path>
@@ -345,7 +363,7 @@
                         <div class="stat-desc text-cyan-400/60 text-[10px] truncate" x-text="t('linkedAccounts')"></div>
                     </div>
 
-                    <div class="stat bg-space-900/40 border border-space-border/30 rounded-xl p-3 lg:p-4 hover:border-green-500/30 hover:bg-green-500/5 transition-all duration-300 group relative cursor-pointer min-w-0">
+                    <div class="dashboard-stat-card dashboard-stat-card-green stat bg-space-900/40 border border-space-border/30 rounded-xl p-3 lg:p-4 hover:border-green-500/30 hover:bg-green-500/5 transition-all duration-300 group relative cursor-pointer min-w-0">
                         <div class="absolute top-3 right-3 text-gray-700/40 group-hover:text-green-400/70 transition-colors">
                             <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" class="w-4 h-4 sm:w-5 sm:h-5 stroke-current">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
@@ -356,7 +374,7 @@
                         <div class="stat-desc text-green-400/60 text-[10px] truncate" x-text="t('enabledForRouting')"></div>
                     </div>
 
-                    <div class="stat bg-space-900/40 border border-space-border/30 rounded-xl p-3 lg:p-4 hover:border-yellow-500/30 hover:bg-yellow-500/5 transition-all duration-300 group relative cursor-pointer min-w-0">
+                    <div class="dashboard-stat-card dashboard-stat-card-yellow stat bg-space-900/40 border border-space-border/30 rounded-xl p-3 lg:p-4 hover:border-yellow-500/30 hover:bg-yellow-500/5 transition-all duration-300 group relative cursor-pointer min-w-0">
                         <div class="absolute top-3 right-3 text-gray-700/40 group-hover:text-yellow-400/70 transition-colors">
                             <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" class="w-4 h-4 sm:w-5 sm:h-5 stroke-current">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path>
@@ -367,7 +385,7 @@
                         <div class="stat-desc text-yellow-400/60 text-[10px] truncate" x-text="t('needsRefresh')"></div>
                     </div>
 
-                    <div class="stat bg-space-900/40 border border-space-border/30 rounded-xl p-3 lg:p-4 hover:border-purple-500/30 hover:bg-purple-500/5 transition-all duration-300 group relative cursor-pointer min-w-0">
+                    <div class="dashboard-stat-card dashboard-stat-card-purple stat bg-space-900/40 border border-space-border/30 rounded-xl p-3 lg:p-4 hover:border-purple-500/30 hover:bg-purple-500/5 transition-all duration-300 group relative cursor-pointer min-w-0">
                         <div class="absolute top-3 right-3 text-gray-700/40 group-hover:text-purple-400/70 transition-colors">
                             <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" class="w-4 h-4 sm:w-5 sm:h-5 stroke-current">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z"></path>
@@ -379,8 +397,70 @@
                     </div>
                 </div>
 
+                <div class="dashboard-focus-grid mb-6">
+                    <div class="view-card dashboard-section-card dashboard-focus-card">
+                        <div class="dashboard-focus-head">
+                            <div>
+                                <div class="dashboard-focus-kicker" x-text="t('dashboardFocusTitle')"></div>
+                                <h2 class="dashboard-focus-title">CliGate Workspace</h2>
+                            </div>
+                        </div>
+                        <p class="dashboard-focus-desc" x-text="t('dashboardFocusDesc')"></p>
+                        <div class="dashboard-focus-lists">
+                            <div class="dashboard-focus-column">
+                                <div class="dashboard-focus-label" x-text="t('dashboardAttentionTitle')"></div>
+                                <div class="dashboard-focus-items">
+                                    <div class="dashboard-focus-item dashboard-focus-item-warn">
+                                        <span class="dashboard-focus-item-title" x-text="stats.expired > 0 ? (stats.expired + ' ' + t('needsRefresh')) : t('availableAccounts')"></span>
+                                        <span class="dashboard-focus-item-meta" x-text="stats.expired > 0 ? t('tokenExpired') : t('enabledForRouting')"></span>
+                                    </div>
+                                    <div class="dashboard-focus-item" :class="dashboardProxyReadyCount < 4 ? 'dashboard-focus-item-warn' : 'dashboard-focus-item-ok'">
+                                        <span class="dashboard-focus-item-title" x-text="dashboardProxyReadyCount + ' / 4 CLI ready'"></span>
+                                        <span class="dashboard-focus-item-meta">Claude / Codex / Gemini / OpenClaw</span>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="dashboard-focus-column">
+                                <div class="dashboard-focus-label" x-text="t('dashboardHealthyTitle')"></div>
+                                <div class="dashboard-focus-items">
+                                    <div class="dashboard-focus-item dashboard-focus-item-ok">
+                                        <span class="dashboard-focus-item-title" x-text="stats.available + ' ' + t('availableAccounts')"></span>
+                                        <span class="dashboard-focus-item-meta" x-text="t('enabledForRouting')"></span>
+                                    </div>
+                                    <div class="dashboard-focus-item dashboard-focus-item-ok">
+                                        <span class="dashboard-focus-item-title" x-text="connectionStatus === 'connected' ? t('online') : t('offline')"></span>
+                                        <span class="dashboard-focus-item-meta">Proxy service</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="view-card dashboard-section-card dashboard-actions-card">
+                        <div class="dashboard-focus-kicker" x-text="t('dashboardActionTitle')"></div>
+                        <div class="dashboard-action-list">
+                            <button class="dashboard-action-tile" @click="setActiveTab('accounts')">
+                                <span class="dashboard-action-name" x-text="t('dashboardActionAccounts')"></span>
+                                <span class="dashboard-action-meta" x-text="t('totalAccounts')"></span>
+                            </button>
+                            <button class="dashboard-action-tile" @click="setActiveTab('chat')">
+                                <span class="dashboard-action-name" x-text="t('dashboardActionChat')"></span>
+                                <span class="dashboard-action-meta" x-text="t('quickTest')"></span>
+                            </button>
+                            <button class="dashboard-action-tile" @click="setActiveTab('tools'); loadToolsStatus()">
+                                <span class="dashboard-action-name" x-text="t('dashboardActionTools')"></span>
+                                <span class="dashboard-action-meta">Claude / Codex / Gemini / OpenClaw</span>
+                            </button>
+                            <button class="dashboard-action-tile" @click="setActiveTab('logs')">
+                                <span class="dashboard-action-name" x-text="t('dashboardActionLogs')"></span>
+                                <span class="dashboard-action-meta">Runtime stream</span>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
                 <div class="grid gap-6 lg:grid-cols-2 mt-6">
-                    <div class="view-card">
+                    <div class="view-card dashboard-section-card">
                         <div class="flex items-center gap-2.5 mb-4">
                             <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" class="w-4 h-4 text-neon-purple">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path>
@@ -404,7 +484,7 @@
                         </div>
                     </div>
 
-                    <div class="view-card">
+                    <div class="view-card dashboard-section-card">
                         <div class="flex items-center gap-2.5 mb-4">
                             <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" class="w-4 h-4 text-neon-cyan">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path>
@@ -442,7 +522,7 @@
                 </div>
 
                 <div class="grid gap-6 lg:grid-cols-2">
-                    <div class="view-card">
+                    <div class="view-card dashboard-section-card">
                         <div class="flex items-center gap-2.5 mb-4">
                         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" class="w-4 h-4 text-neon-cyan">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path>
@@ -476,7 +556,7 @@
                     </div>
                 </div>
 
-                    <div class="view-card">
+                    <div class="view-card dashboard-section-card">
                         <div class="flex items-center gap-2.5 mb-4">
                         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" class="w-4 h-4 text-neon-green">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path>
@@ -510,7 +590,7 @@
                     </div>
                 </div>
 
-                    <div class="view-card">
+                    <div class="view-card dashboard-section-card">
                         <div class="flex items-center gap-2.5 mb-4">
                         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" class="w-4 h-4 text-blue-400">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path>
@@ -543,7 +623,7 @@
                     </div>
                 </div>
 
-                    <div class="view-card">
+                    <div class="view-card dashboard-section-card">
                         <div class="flex items-center gap-2.5 mb-4">
                         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" class="w-4 h-4 text-orange-400">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path>
@@ -3739,7 +3819,9 @@
                     </div>
                 </template>
             </div>
-        </div>
+                </div>
+            </div>
+        </main>
     </div>
 
     <!-- Add API Key Modal -->
@@ -4311,6 +4393,7 @@
                 </template>
             </div>
         </div>
+    </div>
     <script src="/js/i18n.js?v=20260422-assistant-tasks-2"></script>
     <script src="/js/app.js?v=20260422-assistant-tasks-2"></script>
 </body>

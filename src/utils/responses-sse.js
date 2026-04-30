@@ -9,12 +9,19 @@
  *   output_item.done → response.completed
  */
 
+import { applyEndTurnFalse } from './codex-compaction-tracker.js';
+
 /**
  * Send a complete Responses API SSE event sequence on an Express response.
  * @param {object} res - Express response object
  * @param {object} responsesFormat - Completed response in Responses API format
  */
 export function sendResponsesSSE(res, responsesFormat) {
+    // Codex auto-compaction continuation: patched in by upstream route handlers
+    // via res.locals.codexInjectEndTurn. See utils/codex-compaction-tracker.js.
+    if (res && res.locals && res.locals.codexInjectEndTurn) {
+        applyEndTurnFalse(responsesFormat);
+    }
     res.setHeader('Content-Type', 'text/event-stream');
     res.setHeader('Cache-Control', 'no-cache');
     res.setHeader('Connection', 'keep-alive');

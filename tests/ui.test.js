@@ -39,7 +39,7 @@ test('Web UI loads app bundle and has a logs container', async () => {
   const html = await res.text();
 
   // Script is the main interactive surface.
-  assert.ok(html.includes('<script src="/js/app.js"></script>'));
+  assert.match(html, /<script src="\/js\/app\.js(?:\?[^"]+)?"><\/script>/);
 
   // Logs view uses this id; useful for streaming/log rendering.
   assert.ok(html.includes('id="logs-container"'));
