@@ -7,9 +7,9 @@ document.addEventListener('alpine:init', () => {
         sidebarOpen: false,
         sidebarCollapsed: localStorage.getItem('proxy-sidebar-collapsed') === 'true' && window.innerWidth >= 1024,
         navSections: {
-            main: true,
-            api: false,
-            system: false
+            workspace: true,
+            configuration: false,
+            observability: false
         },
         loading: false,
         toast: null,
@@ -433,12 +433,12 @@ document.addEventListener('alpine:init', () => {
             try {
                 const saved = JSON.parse(localStorage.getItem('proxy-nav-sections') || '{}');
                 this.navSections = {
-                    main: saved.main !== undefined ? !!saved.main : true,
-                    api: saved.api !== undefined ? !!saved.api : false,
-                    system: saved.system !== undefined ? !!saved.system : false
+                    workspace: saved.workspace !== undefined ? !!saved.workspace : (saved.main !== undefined ? !!saved.main : true),
+                    configuration: saved.configuration !== undefined ? !!saved.configuration : (saved.system !== undefined ? !!saved.system : false),
+                    observability: saved.observability !== undefined ? !!saved.observability : (saved.api !== undefined ? !!saved.api : false)
                 };
             } catch {
-                this.navSections = { main: true, api: false, system: false };
+                this.navSections = { workspace: true, configuration: false, observability: false };
             }
         },
 
@@ -447,10 +447,10 @@ document.addEventListener('alpine:init', () => {
         },
 
         sectionForTab(tab) {
-            if (['dashboard', 'chat', 'channels', 'conversationRecords', 'assistantTasks', 'accounts'].includes(tab)) return 'main';
-            if (['apikeys', 'usage', 'pricing', 'apiExplorer', 'requestLogs'].includes(tab)) return 'api';
-            if (['tools', 'localModels', 'logs', 'settings', 'resources'].includes(tab)) return 'system';
-            return 'main';
+            if (['dashboard', 'chat', 'conversationRecords', 'assistantTasks'].includes(tab)) return 'workspace';
+            if (['accounts', 'channels', 'apikeys', 'tools', 'localModels', 'settings', 'resources'].includes(tab)) return 'configuration';
+            if (['usage', 'pricing', 'apiExplorer', 'requestLogs', 'logs'].includes(tab)) return 'observability';
+            return 'workspace';
         },
 
         isSectionExpanded(section) {

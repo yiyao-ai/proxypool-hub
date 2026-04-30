@@ -146,14 +146,14 @@
 
                 <div class="sidebar-scroll flex-1 min-h-0 overflow-y-auto px-2">
                     <div class="sidebar-group">
-                        <button class="sidebar-section-toggle" @click="toggleNavSection('main')" :aria-expanded="isSectionExpanded('main')">
-                            <span class="sidebar-section-title text-xs font-bold text-gray-600 uppercase tracking-widest" x-text="t('main')"></span>
+                        <button class="sidebar-section-toggle" @click="toggleNavSection('workspace')" :aria-expanded="isSectionExpanded('workspace')">
+                            <span class="sidebar-section-title text-xs font-bold text-gray-600 uppercase tracking-widest" x-text="t('workspace')"></span>
                             <svg class="sidebar-section-chevron w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"
-                                :class="{ 'rotate-180': isSectionExpanded('main') }">
+                                :class="{ 'rotate-180': isSectionExpanded('workspace') }">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
                             </svg>
                         </button>
-                        <nav class="flex flex-col gap-1" x-show="isSectionExpanded('main')">
+                        <nav class="flex flex-col gap-1" x-show="isSectionExpanded('workspace')">
                             <button class="nav-item flex items-center gap-3 px-6 py-3 text-sm font-medium text-gray-400 hover:text-white hover:bg-white/5"
                                 :class="{'active': activeTab === 'dashboard'}" @click="setActiveTab('dashboard')" :title="sidebarCollapsed ? t('dashboard') : ''">
                                 <svg class="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -169,11 +169,11 @@
                                 <span class="sidebar-label" x-text="t('chat')"></span>
                             </button>
                             <button class="nav-item flex items-center gap-3 px-6 py-3 text-sm font-medium text-gray-400 hover:text-white hover:bg-white/5"
-                                :class="{'active': activeTab === 'channels'}" @click="setActiveTab('channels')" :title="sidebarCollapsed ? t('channels') : ''">
+                                :class="{'active': activeTab === 'assistantTasks'}" @click="setActiveTab('assistantTasks')" :title="sidebarCollapsed ? t('assistantTasks') : ''">
                                 <svg class="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 9h8m-8 4h5m-9 8h16a2 2 0 002-2V7a2 2 0 00-2-2h-3l-2-2H9L7 5H4a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5h6M9 9h6M5 13h14M5 17h10M4 6a2 2 0 012-2h12a2 2 0 012 2v12a2 2 0 01-2 2H8l-4 4V6z" />
                                 </svg>
-                                <span class="sidebar-label" x-text="t('channels')"></span>
+                                <span class="sidebar-label" x-text="t('assistantTasks')"></span>
                             </button>
                             <button class="nav-item flex items-center gap-3 px-6 py-3 text-sm font-medium text-gray-400 hover:text-white hover:bg-white/5"
                                 :class="{'active': activeTab === 'conversationRecords'}" @click="setActiveTab('conversationRecords')" :title="sidebarCollapsed ? t('conversationRecords') : ''">
@@ -182,13 +182,18 @@
                                 </svg>
                                 <span class="sidebar-label" x-text="t('conversationRecords')"></span>
                             </button>
-                            <button class="nav-item flex items-center gap-3 px-6 py-3 text-sm font-medium text-gray-400 hover:text-white hover:bg-white/5"
-                                :class="{'active': activeTab === 'assistantTasks'}" @click="setActiveTab('assistantTasks')" :title="sidebarCollapsed ? t('assistantTasks') : ''">
-                                <svg class="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5h6M9 9h6M5 13h14M5 17h10M4 6a2 2 0 012-2h12a2 2 0 012 2v12a2 2 0 01-2 2H8l-4 4V6z" />
-                                </svg>
-                                <span class="sidebar-label" x-text="t('assistantTasks')"></span>
-                            </button>
+                        </nav>
+                    </div>
+
+                    <div class="sidebar-group">
+                        <button class="sidebar-section-toggle" @click="toggleNavSection('configuration')" :aria-expanded="isSectionExpanded('configuration')">
+                            <span class="sidebar-section-title text-xs font-bold text-gray-600 uppercase tracking-widest" x-text="t('configuration')"></span>
+                            <svg class="sidebar-section-chevron w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"
+                                :class="{ 'rotate-180': isSectionExpanded('configuration') }">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+                            </svg>
+                        </button>
+                        <nav class="flex flex-col gap-1" x-show="isSectionExpanded('configuration')">
                             <button class="nav-item flex items-center gap-3 px-6 py-3 text-sm font-medium text-gray-400 hover:text-white hover:bg-white/5"
                                 :class="{'active': activeTab === 'accounts'}" @click="setActiveTab('accounts')" :title="sidebarCollapsed ? t('accounts') : ''">
                                 <svg class="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -196,18 +201,6 @@
                                 </svg>
                                 <span class="sidebar-label" x-text="t('accounts')"></span>
                             </button>
-                        </nav>
-                    </div>
-
-                    <div class="sidebar-group">
-                        <button class="sidebar-section-toggle" @click="toggleNavSection('api')" :aria-expanded="isSectionExpanded('api')">
-                            <span class="sidebar-section-title text-xs font-bold text-gray-600 uppercase tracking-widest">API</span>
-                            <svg class="sidebar-section-chevron w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"
-                                :class="{ 'rotate-180': isSectionExpanded('api') }">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
-                            </svg>
-                        </button>
-                        <nav class="flex flex-col gap-1" x-show="isSectionExpanded('api')">
                             <button class="nav-item flex items-center gap-3 px-6 py-3 text-sm font-medium text-gray-400 hover:text-white hover:bg-white/5"
                                 :class="{'active': activeTab === 'apikeys'}" @click="setActiveTab('apikeys')" :title="sidebarCollapsed ? t('apiKeys') : ''">
                                 <svg class="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -216,45 +209,12 @@
                                 <span class="sidebar-label" x-text="t('apiKeys')"></span>
                             </button>
                             <button class="nav-item flex items-center gap-3 px-6 py-3 text-sm font-medium text-gray-400 hover:text-white hover:bg-white/5"
-                                :class="{'active': activeTab === 'usage'}" @click="setActiveTab('usage')" :title="sidebarCollapsed ? t('usageStats') : ''">
+                                :class="{'active': activeTab === 'channels'}" @click="setActiveTab('channels')" :title="sidebarCollapsed ? t('channels') : ''">
                                 <svg class="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 9h8m-8 4h5m-9 8h16a2 2 0 002-2V7a2 2 0 00-2-2h-3l-2-2H9L7 5H4a2 2 0 00-2 2v12a2 2 0 002 2z" />
                                 </svg>
-                                <span class="sidebar-label" x-text="t('usageStats')"></span>
+                                <span class="sidebar-label" x-text="t('channels')"></span>
                             </button>
-                            <button class="nav-item flex items-center gap-3 px-6 py-3 text-sm font-medium text-gray-400 hover:text-white hover:bg-white/5"
-                                :class="{'active': activeTab === 'pricing'}" @click="setActiveTab('pricing')" :title="sidebarCollapsed ? t('pricing') : ''">
-                                <svg class="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-2.21 0-4 .895-4 2s1.79 2 4 2 4-.895 4-2-1.79-2-4-2zm0 0V6m0 6v6m0 0c-2.21 0-4-.895-4-2s1.79-2 4-2 4 .895 4 2-1.79 2-4 2z" />
-                                </svg>
-                                <span class="sidebar-label" x-text="t('pricing')"></span>
-                            </button>
-                            <button class="nav-item flex items-center gap-3 px-6 py-3 text-sm font-medium text-gray-400 hover:text-white hover:bg-white/5"
-                                :class="{'active': activeTab === 'apiExplorer'}" @click="setActiveTab('apiExplorer')" :title="sidebarCollapsed ? t('apiExplorer') : ''">
-                                <svg class="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 9h8M8 13h5m-8 8h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v14a2 2 0 002 2z" />
-                                </svg>
-                                <span class="sidebar-label" x-text="t('apiExplorer')"></span>
-                            </button>
-                            <button class="nav-item flex items-center gap-3 px-6 py-3 text-sm font-medium text-gray-400 hover:text-white hover:bg-white/5"
-                                :class="{'active': activeTab === 'requestLogs'}" @click="setActiveTab('requestLogs'); loadRequestLogs()" :title="sidebarCollapsed ? t('requestLogs') : ''">
-                                <svg class="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
-                                </svg>
-                                <span class="sidebar-label" x-text="t('requestLogs')"></span>
-                            </button>
-                        </nav>
-                    </div>
-
-                    <div class="sidebar-group">
-                        <button class="sidebar-section-toggle" @click="toggleNavSection('system')" :aria-expanded="isSectionExpanded('system')">
-                            <span class="sidebar-section-title text-xs font-bold text-gray-600 uppercase tracking-widest" x-text="t('system')"></span>
-                            <svg class="sidebar-section-chevron w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"
-                                :class="{ 'rotate-180': isSectionExpanded('system') }">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
-                            </svg>
-                        </button>
-                        <nav class="flex flex-col gap-1" x-show="isSectionExpanded('system')">
                             <button class="nav-item flex items-center gap-3 px-6 py-3 text-sm font-medium text-gray-400 hover:text-white hover:bg-white/5"
                                 :class="{'active': activeTab === 'tools'}" @click="setActiveTab('tools'); loadToolsStatus()" :title="sidebarCollapsed ? t('toolInstaller') : ''">
                                 <svg class="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -270,13 +230,6 @@
                                 <span class="sidebar-label" x-text="t('localModels')"></span>
                             </button>
                             <button class="nav-item flex items-center gap-3 px-6 py-3 text-sm font-medium text-gray-400 hover:text-white hover:bg-white/5"
-                                :class="{'active': activeTab === 'logs'}" @click="setActiveTab('logs')" :title="sidebarCollapsed ? t('logs') : ''">
-                                <svg class="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                                </svg>
-                                <span class="sidebar-label" x-text="t('logs')"></span>
-                            </button>
-                            <button class="nav-item flex items-center gap-3 px-6 py-3 text-sm font-medium text-gray-400 hover:text-white hover:bg-white/5"
                                 :class="{'active': activeTab === 'settings'}" @click="setActiveTab('settings')" :title="sidebarCollapsed ? t('settings') : ''">
                                 <svg class="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
@@ -290,6 +243,53 @@
                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6.253v13m0-13C10.832 5.483 9.246 5 7.5 5 4.462 5 2 6.79 2 9v8c0-2.21 2.462-4 5.5-4 1.746 0 3.332.483 4.5 1.253m0-8C13.168 5.483 14.754 5 16.5 5c3.038 0 5.5 1.79 5.5 4v8c0-2.21-2.462-4-5.5-4-1.746 0-3.332.483-4.5 1.253" />
                                 </svg>
                                 <span class="sidebar-label" x-text="t('resources')"></span>
+                            </button>
+                        </nav>
+                    </div>
+
+                    <div class="sidebar-group">
+                        <button class="sidebar-section-toggle" @click="toggleNavSection('observability')" :aria-expanded="isSectionExpanded('observability')">
+                            <span class="sidebar-section-title text-xs font-bold text-gray-600 uppercase tracking-widest" x-text="t('observability')"></span>
+                            <svg class="sidebar-section-chevron w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"
+                                :class="{ 'rotate-180': isSectionExpanded('observability') }">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+                            </svg>
+                        </button>
+                        <nav class="flex flex-col gap-1" x-show="isSectionExpanded('observability')">
+                            <button class="nav-item flex items-center gap-3 px-6 py-3 text-sm font-medium text-gray-400 hover:text-white hover:bg-white/5"
+                                :class="{'active': activeTab === 'usage'}" @click="setActiveTab('usage')" :title="sidebarCollapsed ? t('usageStats') : ''">
+                                <svg class="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+                                </svg>
+                                <span class="sidebar-label" x-text="t('usageStats')"></span>
+                            </button>
+                            <button class="nav-item flex items-center gap-3 px-6 py-3 text-sm font-medium text-gray-400 hover:text-white hover:bg-white/5"
+                                :class="{'active': activeTab === 'pricing'}" @click="setActiveTab('pricing')" :title="sidebarCollapsed ? t('pricing') : ''">
+                                <svg class="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-2.21 0-4 .895-4 2s1.79 2 4 2 4-.895 4-2-1.79-2-4-2zm0 0V6m0 6v6m0 0c-2.21 0-4-.895-4-2s1.79-2 4-2 4 .895 4 2-1.79 2-4 2z" />
+                                </svg>
+                                <span class="sidebar-label" x-text="t('pricing')"></span>
+                            </button>
+                            <button class="nav-item flex items-center gap-3 px-6 py-3 text-sm font-medium text-gray-400 hover:text-white hover:bg-white/5"
+                                :class="{'active': activeTab === 'requestLogs'}" @click="setActiveTab('requestLogs'); loadRequestLogs()" :title="sidebarCollapsed ? t('requestLogs') : ''">
+                                <svg class="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+                                </svg>
+                                <span class="sidebar-label" x-text="t('requestLogs')"></span>
+                            </button>
+                            <button class="nav-item flex items-center gap-3 px-6 py-3 text-sm font-medium text-gray-400 hover:text-white hover:bg-white/5"
+                                :class="{'active': activeTab === 'apiExplorer'}" @click="setActiveTab('apiExplorer')" :title="sidebarCollapsed ? t('apiExplorer') : ''">
+                                <svg class="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 9h8M8 13h5m-8 8h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v14a2 2 0 002 2z" />
+                                </svg>
+                                <span class="sidebar-label" x-text="t('apiExplorer')"></span>
+                            </button>
+                            <button class="nav-item flex items-center gap-3 px-6 py-3 text-sm font-medium text-gray-400 hover:text-white hover:bg-white/5"
+                                :class="{'active': activeTab === 'logs'}" @click="setActiveTab('logs')" :title="sidebarCollapsed ? t('logs') : ''">
+                                <svg class="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                </svg>
+                                <span class="sidebar-label" x-text="t('logs')"></span>
                             </button>
                         </nav>
                     </div>
@@ -326,7 +326,6 @@
                             <span class="dashboard-hero-version" x-text="'v' + version"></span>
                         </div>
                         <h1 class="dashboard-hero-title" x-text="t('dashboard')"></h1>
-                        <p class="dashboard-hero-subtitle">聚焦系统状态、代理健康度与下一步动作，不再把测试、接入和配置细节全部挤在首页首屏。</p>
                     </div>
                     <div class="dashboard-hero-side">
                         <div class="dashboard-hero-status">
@@ -402,36 +401,21 @@
                         <div class="dashboard-focus-head">
                             <div>
                                 <div class="dashboard-focus-kicker" x-text="t('dashboardFocusTitle')"></div>
-                                <h2 class="dashboard-focus-title">CliGate Workspace</h2>
+                                <h2 class="dashboard-focus-title" x-text="t('dashboardOverviewName')"></h2>
                             </div>
                         </div>
-                        <p class="dashboard-focus-desc" x-text="t('dashboardFocusDesc')"></p>
-                        <div class="dashboard-focus-lists">
-                            <div class="dashboard-focus-column">
-                                <div class="dashboard-focus-label" x-text="t('dashboardAttentionTitle')"></div>
-                                <div class="dashboard-focus-items">
-                                    <div class="dashboard-focus-item dashboard-focus-item-warn">
-                                        <span class="dashboard-focus-item-title" x-text="stats.expired > 0 ? (stats.expired + ' ' + t('needsRefresh')) : t('availableAccounts')"></span>
-                                        <span class="dashboard-focus-item-meta" x-text="stats.expired > 0 ? t('tokenExpired') : t('enabledForRouting')"></span>
-                                    </div>
-                                    <div class="dashboard-focus-item" :class="dashboardProxyReadyCount < 4 ? 'dashboard-focus-item-warn' : 'dashboard-focus-item-ok'">
-                                        <span class="dashboard-focus-item-title" x-text="dashboardProxyReadyCount + ' / 4 CLI ready'"></span>
-                                        <span class="dashboard-focus-item-meta">Claude / Codex / Gemini / OpenClaw</span>
-                                    </div>
-                                </div>
+                        <div class="dashboard-focus-items mt-4">
+                            <div class="dashboard-focus-item" :class="stats.expired > 0 ? 'dashboard-focus-item-warn' : 'dashboard-focus-item-ok'">
+                                <span class="dashboard-focus-item-title" x-text="stats.expired > 0 ? (stats.expired + ' ' + t('needsRefresh')) : (stats.available + ' ' + t('availableAccounts'))"></span>
+                                <span class="dashboard-focus-item-meta" x-text="stats.expired > 0 ? t('tokenExpired') : t('enabledForRouting')"></span>
                             </div>
-                            <div class="dashboard-focus-column">
-                                <div class="dashboard-focus-label" x-text="t('dashboardHealthyTitle')"></div>
-                                <div class="dashboard-focus-items">
-                                    <div class="dashboard-focus-item dashboard-focus-item-ok">
-                                        <span class="dashboard-focus-item-title" x-text="stats.available + ' ' + t('availableAccounts')"></span>
-                                        <span class="dashboard-focus-item-meta" x-text="t('enabledForRouting')"></span>
-                                    </div>
-                                    <div class="dashboard-focus-item dashboard-focus-item-ok">
-                                        <span class="dashboard-focus-item-title" x-text="connectionStatus === 'connected' ? t('online') : t('offline')"></span>
-                                        <span class="dashboard-focus-item-meta">Proxy service</span>
-                                    </div>
-                                </div>
+                            <div class="dashboard-focus-item" :class="dashboardProxyReadyCount < 4 ? 'dashboard-focus-item-warn' : 'dashboard-focus-item-ok'">
+                                <span class="dashboard-focus-item-title" x-text="dashboardProxyReadyCount + ' / 4 ' + t('dashboardProxyReadyTitle')"></span>
+                                <span class="dashboard-focus-item-meta">Claude / Codex / Gemini / OpenClaw</span>
+                            </div>
+                            <div class="dashboard-focus-item" :class="connectionStatus === 'connected' ? 'dashboard-focus-item-ok' : 'dashboard-focus-item-warn'">
+                                <span class="dashboard-focus-item-title" x-text="connectionStatus === 'connected' ? t('online') : t('offline')"></span>
+                                <span class="dashboard-focus-item-meta" x-text="t('dashboardProxyServiceMeta')"></span>
                             </div>
                         </div>
                     </div>
@@ -453,7 +437,7 @@
                             </button>
                             <button class="dashboard-action-tile" @click="setActiveTab('logs')">
                                 <span class="dashboard-action-name" x-text="t('dashboardActionLogs')"></span>
-                                <span class="dashboard-action-meta">Runtime stream</span>
+                                <span class="dashboard-action-meta" x-text="t('dashboardLogsMeta')"></span>
                             </button>
                         </div>
                     </div>
@@ -667,13 +651,13 @@
 
             <div x-show="activeTab === 'chat'" x-transition class="view-container h-full flex flex-col min-h-0 overflow-hidden">
                 <div class="chat-layout flex flex-1 min-h-0 gap-6 items-stretch overflow-hidden">
-                    <div class="view-card flex-1 flex flex-col h-full min-h-0 min-w-0 overflow-hidden">
-                        <div class="flex items-start justify-between gap-4 mb-5 flex-shrink-0">
-                            <div>
+                    <div class="view-card chat-main-panel flex-1 flex flex-col h-full min-h-0 min-w-0 overflow-hidden">
+                        <div class="chat-header flex items-start justify-between gap-4 mb-5 flex-shrink-0">
+                            <div class="chat-header-copy">
                                 <h1 class="text-2xl font-bold text-white tracking-tight" x-text="t('chat')"></h1>
                                 <p class="text-sm text-gray-400 mt-1" x-text="t('chatDesc')"></p>
                             </div>
-                            <div class="flex items-center gap-2">
+                            <div class="chat-header-actions flex items-center gap-2">
                                 <button class="btn btn-sm bg-space-700 hover:bg-space-600 border border-space-border text-white"
                                     @click="toggleChatHistory()">
                                     <span x-text="t('chatHistory')"></span>
@@ -687,8 +671,8 @@
                             </div>
                         </div>
 
-                        <div class="rounded-2xl border border-space-border/30 bg-space-900/40 p-3 mb-4 flex-shrink-0">
-                            <div class="flex flex-wrap items-end gap-3">
+                        <div class="chat-control-panel rounded-2xl border border-space-border/30 bg-space-900/40 p-3 mb-4 flex-shrink-0">
+                            <div class="chat-control-grid flex flex-wrap items-end gap-3">
                                 <div class="min-w-0 chat-control-fixed" style="flex:0 0 148px;">
                                     <label class="text-[11px] font-mono text-gray-400 uppercase tracking-wider" x-text="t('chatMode')"></label>
                                     <select x-model="chatMode" @change="syncActiveChatSession()"
@@ -745,8 +729,8 @@
                             </div>
                         </div>
 
-                        <div class="flex items-center justify-between gap-4 mb-4 flex-shrink-0">
-                            <div class="text-sm text-gray-400 min-w-0">
+                        <div class="chat-status-bar flex items-center justify-between gap-4 mb-4 flex-shrink-0">
+                            <div class="chat-status-copy text-sm text-gray-400 min-w-0">
                                 <template x-if="chatMode === 'assistant'">
                                     <div>
                                         <span x-text="t('chatUsing')"></span>
@@ -773,7 +757,7 @@
                             <div class="text-xs font-mono text-gray-500" x-text="chatMessages.length + ' ' + t('messagesLower')"></div>
                         </div>
 
-                        <div x-ref="chatMessagesContainer" class="flex-1 min-h-0 overflow-y-auto custom-scrollbar rounded-2xl border border-space-border/30 bg-space-950/40 p-4 space-y-4">
+                        <div x-ref="chatMessagesContainer" class="chat-message-stage flex-1 min-h-0 overflow-y-auto custom-scrollbar rounded-2xl border border-space-border/30 bg-space-950/40 p-4 space-y-4">
                             <template x-if="chatMessages.length === 0">
                                 <div class="h-full min-h-[320px] flex items-center justify-center text-center text-gray-500">
                                     <div>
@@ -785,7 +769,7 @@
 
                             <template x-for="(message, index) in chatMessages" :key="index">
                                 <div class="flex" :class="message.role === 'user' ? 'justify-end' : 'justify-start'">
-                                    <div class="max-w-[90%] rounded-2xl px-4 py-3 border"
+                                    <div class="chat-message-bubble max-w-[90%] rounded-2xl px-4 py-3 border"
                                         :class="message.role === 'user'
                                             ? 'bg-neon-cyan/15 border-neon-cyan/30 text-white'
                                             : (message.isError ? 'bg-red-500/10 border-red-500/30 text-red-200' : 'bg-space-800/70 border-space-border/40 text-gray-100')">
@@ -798,22 +782,22 @@
                                             <span class="text-[10px] font-mono text-gray-500" x-show="message.kind === 'agent-file-change'" x-text="t('agentRuntimeFilesChanged')"></span>
                                         </div>
                                         <pre class="whitespace-pre-wrap break-words text-sm font-sans" x-text="message.content"></pre>
-                                        <div class="mt-3 rounded-xl border border-space-border/30 bg-space-950/50 p-3"
+                                        <div class="chat-message-detail mt-3 rounded-xl border border-space-border/30 bg-space-950/50 p-3"
                                             x-show="message.observability && formatAssistantRunObservability(message.observability, message.runStatus)">
                                             <div class="text-[10px] font-mono uppercase tracking-wider text-gray-500 mb-2">assistant run</div>
                                             <pre class="whitespace-pre-wrap break-words text-[11px] font-mono text-gray-300"
                                                 x-text="formatAssistantRunObservability(message.observability, message.runStatus)"></pre>
                                         </div>
-                                        <div class="mt-3 rounded-xl border border-space-border/30 bg-space-950/50 p-3" x-show="message.kind === 'agent-command' && message.commandOutput">
+                                        <div class="chat-message-detail mt-3 rounded-xl border border-space-border/30 bg-space-950/50 p-3" x-show="message.kind === 'agent-command' && message.commandOutput">
                                             <div class="text-[10px] font-mono uppercase tracking-wider text-gray-500 mb-2" x-text="t('agentRuntimeCommandOutput')"></div>
                                             <pre class="whitespace-pre-wrap break-words text-xs font-mono text-gray-300" x-text="message.commandOutput"></pre>
                                         </div>
-                                        <div class="mt-3 rounded-xl border border-cyan-500/30 bg-cyan-500/10 p-3" x-show="message.kind === 'agent-question'">
+                                        <div class="chat-message-callout chat-message-callout-question mt-3 rounded-xl border border-cyan-500/30 bg-cyan-500/10 p-3" x-show="message.kind === 'agent-question'">
                                             <div class="text-[10px] font-mono uppercase tracking-wider text-cyan-300 mb-2" x-text="t('agentRuntimeQuestion')"></div>
                                             <div class="text-xs text-cyan-100/80" x-show="message.questionStatus === 'pending'" x-text="t('agentRuntimeQuestionHint')"></div>
                                             <div class="text-xs text-gray-400" x-show="message.questionStatus !== 'pending'" x-text="t('agentRuntimeQuestionAnswered')"></div>
                                         </div>
-                                        <div class="mt-3 rounded-xl border border-amber-500/30 bg-amber-500/10 p-3" x-show="message.kind === 'agent-approval'">
+                                        <div class="chat-message-callout chat-message-callout-approval mt-3 rounded-xl border border-amber-500/30 bg-amber-500/10 p-3" x-show="message.kind === 'agent-approval'">
                                             <div class="text-[10px] font-mono uppercase tracking-wider text-amber-300 mb-2" x-text="t('agentRuntimeApproval')"></div>
                                             <div class="text-xs text-amber-100/80 mt-2" x-text="message.approvalSummary || ''"></div>
                                             <div class="mt-3 flex items-center gap-2" x-show="message.approvalStatus === 'pending'">
@@ -836,9 +820,9 @@
                                                 </template>
                                             </div>
                                         </div>
-                                        <div class="mt-3 rounded-xl border border-amber-500/30 bg-amber-500/10 p-3" x-show="message.pendingAction">
+                                        <div class="chat-message-callout chat-message-callout-approval mt-3 rounded-xl border border-amber-500/30 bg-amber-500/10 p-3" x-show="message.pendingAction">
                                             <div class="text-[10px] font-mono uppercase tracking-wider text-amber-300 mb-2" x-text="t('assistantPendingAction')"></div>
-                                            <div class="text-sm text-white" x-text="message.pendingAction?.title || ''"></div>
+                                            <div class="chat-message-callout-title text-sm text-white" x-text="message.pendingAction?.title || ''"></div>
                                             <div class="text-xs text-amber-100/80 mt-2" x-text="message.pendingAction?.summary || ''"></div>
                                             <div class="mt-3 flex items-center gap-2">
                                                 <button class="btn btn-sm bg-amber-500 hover:bg-amber-400 border-none text-space-950"
@@ -861,13 +845,13 @@
                             </template>
                         </div>
 
-                        <div class="mt-4 space-y-3 flex-shrink-0">
+                        <div class="chat-composer mt-4 space-y-3 flex-shrink-0">
                             <textarea x-model="chatInput" rows="4"
-                                class="input bg-space-800 border-space-border text-white font-sans text-sm resize-y"
+                                class="chat-composer-input input bg-space-800 border-space-border text-white font-sans text-sm resize-y"
                                 :placeholder="chatMode === 'agent-runtime' ? t('agentRuntimeInputPlaceholder') : t('chatInputPlaceholder')"
                                 @keydown.ctrl.enter.prevent="sendChatMessage()"
                                 @keydown.meta.enter.prevent="sendChatMessage()"></textarea>
-                            <div class="flex items-center justify-between gap-4">
+                            <div class="chat-composer-footer flex items-center justify-between gap-4">
                                 <div class="text-xs text-gray-500" x-text="chatMode === 'agent-runtime' ? t('agentRuntimeShortcutHint') : t('chatShortcutHint')"></div>
                                 <button class="btn bg-neon-cyan hover:bg-cyan-600 border-none text-white"
                                     @click="sendChatMessage()" :disabled="chatSendDisabled()">
@@ -879,9 +863,9 @@
 
                     <div class="chat-history-panel overflow-hidden shrink-0 h-full min-h-0 transition-all duration-300 ease-out"
                         :class="chatHistoryOpen ? 'w-[320px] opacity-100 translate-x-0' : 'w-0 opacity-0 translate-x-4 pointer-events-none'">
-                        <div class="view-card w-[320px] h-full min-h-0 flex flex-col overflow-hidden">
-                            <div class="flex items-center justify-between gap-3 mb-3 flex-shrink-0">
-                                <div class="flex items-center gap-1 p-1 rounded-lg bg-space-900/60 border border-space-border/30">
+                        <div class="view-card chat-side-panel w-[320px] h-full min-h-0 flex flex-col overflow-hidden">
+                            <div class="chat-side-header flex items-center justify-between gap-3 mb-3 flex-shrink-0">
+                                <div class="chat-side-tabs flex items-center gap-1 p-1 rounded-lg bg-space-900/60 border border-space-border/30">
                                     <button class="px-3 py-1.5 rounded-md text-[11px] font-mono transition-all"
                                         :class="chatSidebarTab === 'history' ? 'bg-space-800 text-white' : 'text-gray-500 hover:text-white'"
                                         @click="openChatSidebar('history')" x-text="t('historyPanel')"></button>
@@ -896,21 +880,21 @@
                             </div>
                             <div x-show="chatSidebarTab === 'history'" class="space-y-2 flex-1 min-h-0 overflow-y-auto custom-scrollbar pr-1">
                                 <template x-for="session in chatSessions" :key="session.id">
-                                    <div class="rounded-xl border px-3 py-2 transition-all cursor-pointer"
-                                        :class="session.id === activeChatSessionId ? 'border-neon-cyan/40 bg-neon-cyan/10' : 'border-space-border/30 bg-space-900/40 hover:bg-space-800/50'"
+                                    <div class="chat-session-card rounded-xl border px-3 py-2 transition-all cursor-pointer"
+                                        :class="session.id === activeChatSessionId ? 'border-cyan-400/30 bg-cyan-400/8' : 'border-space-border/30 bg-space-900/30 hover:bg-space-800/38'"
                                         @click="openChatSession(session.id)">
-                                        <div class="flex items-start justify-between gap-2">
-                                            <div class="min-w-0">
-                                                <div class="flex items-center gap-2 min-w-0">
-                                                    <div class="text-sm text-white truncate" x-text="chatSessionTitle(session)"></div>
+                                        <div class="chat-session-head flex items-start justify-between gap-2">
+                                            <div class="chat-session-copy min-w-0">
+                                                <div class="chat-session-title-row flex items-center gap-2 min-w-0">
+                                                    <div class="chat-session-title text-sm text-white truncate" x-text="chatSessionTitle(session)"></div>
                                                     <span x-show="session.runtimeUnread"
                                                         class="px-1.5 py-0.5 rounded-full bg-amber-500/20 border border-amber-500/30 text-[10px] font-mono text-amber-300">new</span>
                                                 </div>
-                                                <div class="text-[11px] font-mono text-gray-500 truncate mt-1" x-text="session.mode === 'agent-runtime' ? chatRuntimeProviderLabel(session.runtimeProvider || '') : chatSourceLabel(session.sourceId || '')"></div>
+                                                <div class="chat-session-subtitle text-[11px] font-mono text-gray-500 truncate mt-1" x-text="session.mode === 'agent-runtime' ? chatRuntimeProviderLabel(session.runtimeProvider || '') : chatSourceLabel(session.sourceId || '')"></div>
                                             </div>
                                             <button class="text-xs text-gray-500 hover:text-red-300" @click.stop="removeChatSession(session.id)">&times;</button>
                                         </div>
-                                        <div class="mt-2 text-[11px] text-gray-500 flex items-center gap-2">
+                                        <div class="chat-session-meta mt-2 text-[11px] text-gray-500 flex items-center gap-2">
                                             <span x-text="chatModeLabel(session.mode || 'assistant')"></span>
                                             <span>&middot;</span>
                                             <span x-text="session.model || 'gpt-5.2'"></span>
@@ -930,15 +914,15 @@
                                 </div>
                                 <div class="space-y-2">
                                     <template x-if="!agentRuntimeSessionsLoading && agentRuntimeSessions.length === 0">
-                                        <div class="rounded-xl border border-space-border/30 bg-space-900/40 px-3 py-4 text-sm text-gray-500"
+                                        <div class="chat-runtime-card rounded-xl border border-space-border/30 bg-space-900/30 px-3 py-4 text-sm text-gray-500"
                                             x-text="t('agentRuntimeMonitorEmpty')"></div>
                                     </template>
                                     <template x-for="runtimeSession in agentRuntimeSessions" :key="runtimeSession.id">
-                                        <div class="rounded-xl border border-space-border/30 bg-space-900/40 px-3 py-3">
-                                            <div class="flex items-start justify-between gap-2">
-                                                <div class="min-w-0">
-                                                    <div class="text-sm text-white truncate" x-text="runtimeSession.title || t('newChat')"></div>
-                                                    <div class="mt-1 text-[11px] font-mono text-gray-500 flex items-center gap-2 flex-wrap">
+                                        <div class="chat-runtime-card rounded-xl border border-space-border/30 bg-space-900/30 px-3 py-3">
+                                            <div class="chat-runtime-head flex items-start justify-between gap-2">
+                                                <div class="chat-runtime-copy min-w-0">
+                                                    <div class="chat-runtime-title text-sm text-white truncate" x-text="runtimeSession.title || t('newChat')"></div>
+                                                    <div class="chat-runtime-meta mt-1 text-[11px] font-mono text-gray-500 flex items-center gap-2 flex-wrap">
                                                         <span x-text="chatRuntimeProviderLabel(runtimeSession.provider)"></span>
                                                         <span>&middot;</span>
                                                         <span x-text="runtimeSession.model || '-'"></span>
@@ -948,8 +932,8 @@
                                                     :class="agentRuntimeStatusPillClass(runtimeSession.status)"
                                                     x-text="agentRuntimeStatusLabel(runtimeSession)"></span>
                                             </div>
-                                            <div class="mt-2 text-[11px] text-gray-500" x-text="runtimeSession.summary || '-'"></div>
-                                            <div class="mt-3 flex items-center justify-between gap-2">
+                                            <div class="chat-runtime-summary mt-2 text-[11px] text-gray-500" x-text="runtimeSession.summary || '-'"></div>
+                                            <div class="chat-runtime-footer mt-3 flex items-center justify-between gap-2">
                                                 <div class="text-[10px] font-mono text-gray-500" x-text="formatRelativeTime(runtimeSession.updatedAt)"></div>
                                                 <div class="flex items-center gap-2">
                                                     <button class="btn btn-xs bg-space-800 hover:bg-space-700 border border-space-border text-white"
