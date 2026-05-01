@@ -8,7 +8,7 @@
     <title>CliGate</title>
     <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🚀</text></svg>">
     <script src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js" defer></script>
-    <link rel="stylesheet" href="/css/style.css?v=20260417-session-records-4">
+    <link rel="stylesheet" href="/css/style.css?v=20260502-settings-localmodels-header-1">
 </head>
 
 <body class="bg-space-950 text-gray-300 font-sans antialiased min-h-screen selection:bg-neon-purple selection:text-white"
@@ -1440,17 +1440,20 @@
                 </div>
             </div>
 
-            <div x-show="activeTab === 'logs'" x-transition class="view-container h-full flex flex-col">
-                <div class="flex items-center justify-between gap-4 mb-6">
+            <div x-show="activeTab === 'logs'" x-transition class="view-container logs-workspace-view h-full flex flex-col">
+                <div class="logs-workspace-header flex items-center justify-between gap-4 mb-6">
                     <div class="flex flex-wrap items-center gap-4">
-                        <h1 class="text-2xl font-bold text-white tracking-tight" x-text="t('serverLogs')"></h1>
-                        <div class="flex items-center h-6 px-3 rounded-full bg-space-800/80 border border-space-border/50 shadow-sm backdrop-blur-sm">
+                        <div>
+                            <div class="logs-workspace-eyebrow text-[11px] font-mono uppercase tracking-[0.18em] text-gray-500" x-text="t('logsWorkspaceEyebrow')"></div>
+                            <h1 class="text-2xl font-bold text-white tracking-tight mt-2" x-text="t('serverLogs')"></h1>
+                        </div>
+                        <div class="logs-meta-chip flex items-center h-6 px-3 rounded-full bg-space-800/80 border border-space-border/50 shadow-sm backdrop-blur-sm">
                             <span class="text-[10px] font-mono text-gray-400 uppercase tracking-wider" x-text="t('realtimeLogStream')"></span>
                         </div>
                     </div>
-                    <div class="flex items-center gap-3">
-                        <div class="text-[10px] font-mono text-gray-600">
-                            <span x-text="logs.length"></span> <span x-text="t('entries')"></span>
+                    <div class="logs-toolbar flex items-center gap-3">
+                        <div class="logs-meta-chip flex items-center h-6 px-2 rounded bg-space-800/80 border border-space-border/50">
+                            <span class="text-[11px] font-mono text-gray-400"><span x-text="logs.length"></span> <span x-text="t('entries')"></span></span>
                         </div>
                         <button class="btn btn-xs btn-ghost text-gray-400 hover:text-white" @click="clearLogs()" :title="t('delete')">
                             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1461,7 +1464,7 @@
                 </div>
 
                 <div class="view-card !p-0 flex flex-col flex-1 min-h-0">
-                    <div class="bg-space-900 flex items-center p-2 px-4 border-b border-space-border gap-4">
+                    <div class="logs-console-toolbar bg-space-900 flex items-center p-2 px-4 border-b border-space-border gap-4">
                         <div class="flex gap-2">
                             <div class="w-3 h-3 rounded-full bg-red-500/20 border border-red-500/50"></div>
                             <div class="w-3 h-3 rounded-full bg-yellow-500/20 border border-yellow-500/50"></div>
@@ -1472,13 +1475,13 @@
                         <div class="flex-1 flex items-center justify-center gap-4">
                             <div class="relative w-full max-w-xs">
                                 <input type="text" x-model="logSearchQuery" :placeholder="t('searchLogs')"
-                                    class="w-full h-7 bg-space-950 border border-space-border rounded text-xs font-mono pl-7 pr-2 focus:border-neon-purple focus:outline-none transition-colors placeholder-gray-700 text-gray-300">
+                                    class="input-search-sm w-full h-7 pl-7 pr-2 text-xs font-mono">
                                 <svg class="w-3 h-3 absolute left-2.5 top-2 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
                                 </svg>
                             </div>
 
-                            <div class="hidden md:flex gap-3 text-[10px] font-mono font-bold uppercase select-none">
+                            <div class="logs-filter-group hidden md:flex gap-3 text-[10px] font-mono font-bold uppercase select-none">
                                 <label class="flex items-center gap-1.5 cursor-pointer text-blue-400 opacity-50 hover:opacity-100 transition-opacity" :class="{'opacity-100': logFilters.INFO}">
                                     <input type="checkbox" class="checkbox checkbox-xs rounded-[2px] w-3 h-3" x-model="logFilters.INFO"> INFO
                                 </label>
@@ -1526,18 +1529,40 @@
                             </div>
                         </template>
                         <div class="h-3 w-1.5 bg-zinc-600 animate-pulse mt-1 inline-block" x-show="filteredLogs.length === logs.length && !logSearchQuery"></div>
-                        <div x-show="filteredLogs.length === 0 && logs.length > 0" class="text-zinc-700 italic mt-8 text-center" x-text="t('noLogsMatch')">
+                        <div x-show="filteredLogs.length === 0 && logs.length > 0" class="logs-empty-state flex items-center justify-center text-zinc-700 italic mt-8 text-center" x-text="t('noLogsMatch')">
                         </div>
                     </div>
                 </div>
             </div>
 
-            <div x-show="activeTab === 'settings'" x-transition class="view-container">
-                <div class="flex items-center justify-between gap-4 mb-6">
-                    <div class="flex flex-wrap items-center gap-4">
-                        <h1 class="text-2xl font-bold text-white tracking-tight" x-text="t('settings')"></h1>
-                        <div class="flex items-center h-6 px-3 rounded-full bg-space-800/80 border border-space-border/50 shadow-sm backdrop-blur-sm">
-                            <span class="text-[10px] font-mono text-gray-400 uppercase tracking-wider" x-text="t('serverConfiguration')"></span>
+            <div x-show="activeTab === 'settings'" x-transition class="view-container workspace-view">
+                <div class="workspace-header flex items-center justify-between gap-4 mb-6">
+                    <div>
+                        <div class="workspace-eyebrow text-xs font-mono uppercase tracking-[0.32em]" x-text="t('configuration')"></div>
+                        <div class="flex flex-wrap items-center gap-4 mt-2">
+                            <h1 class="text-2xl font-bold text-white tracking-tight" x-text="t('settings')"></h1>
+                            <div class="meta-chip flex items-center h-6 px-3 rounded-full bg-space-800/80 border border-space-border/50 shadow-sm backdrop-blur-sm">
+                                <span class="text-[10px] font-mono uppercase tracking-wider" x-text="t('serverConfiguration')"></span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="meta-chip flex items-center h-6 px-3 rounded-full bg-space-800/80 border border-space-border/50 shadow-sm backdrop-blur-sm"
+                        :class="connectionStatus === 'connected' ? 'text-neon-green' : 'text-red-400'">
+                        <span class="text-[10px] font-mono uppercase tracking-wider"
+                            x-text="connectionStatus === 'connected' ? t('online') : t('offline')"></span>
+                    </div>
+                </div>
+
+                <div class="view-card overview-card overview-card-accent-cyan mb-6">
+                    <div class="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                        <div class="min-w-0">
+                            <div class="text-xs font-mono text-gray-400 uppercase tracking-widest" x-text="t('settingsOverviewKicker')"></div>
+                            <h2 class="overview-title text-xl font-semibold text-white mt-2" x-text="t('settingsOverviewTitle')"></h2>
+                            <p class="overview-copy text-sm text-gray-400 mt-3" x-text="t('settingsOverviewDesc')"></p>
+                        </div>
+                        <div class="overview-meta flex flex-wrap gap-2">
+                            <span class="meta-chip" x-text="'http://localhost:8081'"></span>
+                            <span class="meta-chip" x-text="t('assistantAgentTitle')"></span>
                         </div>
                     </div>
                 </div>
@@ -2395,7 +2420,7 @@
                                                 <div class="text-xs text-gray-500 font-mono" x-text="channelInstanceStatus(provider.id, instance.id)?.status?.lastError || ''"></div>
                                                 <button class="btn btn-sm bg-neon-cyan/90 hover:bg-neon-cyan text-space-950 border-none"
                                                     @click="saveChannelSettings(provider.id, instance.id)"
-                                                    :disabled="channelSettingsSaving[provider.id + ':' + instance.id]">
+                                                    :disabled="!!channelSettingsSaving[provider.id + ':' + instance.id]">
                                                     <span x-text="channelSettingsSaving[provider.id + ':' + instance.id] ? t('sending') : t('saveChannelSettings')"></span>
                                                 </button>
                                             </div>
@@ -2801,12 +2826,33 @@
                 </div>
             </div>
 
-            <div x-show="activeTab === 'localModels'" x-transition class="view-container">
-                <div class="flex items-center justify-between gap-4 mb-6">
-                    <div class="flex flex-wrap items-center gap-4">
-                        <h1 class="text-2xl font-bold text-white tracking-tight" x-text="t('localModels')"></h1>
-                        <div class="flex items-center h-6 px-3 rounded-full bg-space-800/80 border border-space-border/50 shadow-sm backdrop-blur-sm">
-                            <span class="text-[10px] font-mono text-gray-400 uppercase tracking-wider" x-text="t('localRuntimeConfigTitle')"></span>
+            <div x-show="activeTab === 'localModels'" x-transition class="view-container workspace-view">
+                <div class="workspace-header flex items-center justify-between gap-4 mb-6">
+                    <div>
+                        <div class="workspace-eyebrow text-xs font-mono uppercase tracking-[0.32em]" x-text="t('configuration')"></div>
+                        <div class="flex flex-wrap items-center gap-4 mt-2">
+                            <h1 class="text-2xl font-bold text-white tracking-tight" x-text="t('localModels')"></h1>
+                            <div class="meta-chip flex items-center h-6 px-3 rounded-full bg-space-800/80 border border-space-border/50 shadow-sm backdrop-blur-sm">
+                                <span class="text-[10px] font-mono uppercase tracking-wider" x-text="t('localRuntimeConfigTitle')"></span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="meta-chip flex items-center h-6 px-3 rounded-full bg-space-800/80 border border-space-border/50 shadow-sm backdrop-blur-sm"
+                        :class="localRuntimeStatusClass()">
+                        <span class="text-[10px] font-mono uppercase tracking-wider" x-text="localRuntimeStatusLabel()"></span>
+                    </div>
+                </div>
+
+                <div class="view-card overview-card overview-card-accent-green mb-6">
+                    <div class="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                        <div class="min-w-0">
+                            <div class="text-xs font-mono text-gray-400 uppercase tracking-widest" x-text="t('localModelsOverviewKicker')"></div>
+                            <h2 class="overview-title text-xl font-semibold text-white mt-2" x-text="t('localModelsOverviewTitle')"></h2>
+                            <p class="overview-copy text-sm text-gray-400 mt-3" x-text="t('localModelsOverviewDesc')"></p>
+                        </div>
+                        <div class="overview-meta flex flex-wrap gap-2">
+                            <span class="meta-chip" x-text="localRuntime?.baseUrl || 'http://127.0.0.1:11434'"></span>
+                            <span class="meta-chip" x-text="localRuntimeModels.length + ' ' + t('models')"></span>
                         </div>
                     </div>
                 </div>
@@ -2940,17 +2986,20 @@
             </div>
 
             <!-- ─── API Keys View ────────────────────────────────────────── -->
-            <div x-show="activeTab === 'apikeys'" x-transition class="view-container">
-                <div class="flex items-center justify-between gap-4 mb-6">
-                    <div class="flex flex-wrap items-center gap-4">
-                        <h1 class="text-2xl font-bold text-white tracking-tight" x-text="t('apiKeys')"></h1>
-                        <div class="flex items-center h-6 px-3 rounded-full bg-space-800/80 border border-space-border/50 shadow-sm backdrop-blur-sm">
-                            <span class="text-[10px] font-mono text-gray-400 uppercase tracking-wider" x-text="t('manageApiKeys')"></span>
+            <div x-show="activeTab === 'apikeys'" x-transition class="view-container workspace-view">
+                <div class="workspace-header flex items-center justify-between gap-4 mb-6">
+                    <div>
+                        <div class="workspace-eyebrow text-[11px] font-mono uppercase tracking-[0.18em] text-gray-500" x-text="t('configuration')"></div>
+                        <div class="flex flex-wrap items-center gap-4 mt-2">
+                            <h1 class="text-2xl font-bold text-white tracking-tight" x-text="t('apiKeys')"></h1>
+                            <div class="meta-chip flex items-center h-6 px-3 rounded-full bg-space-800/80 border border-space-border/50 shadow-sm backdrop-blur-sm">
+                                <span class="text-[10px] font-mono text-gray-400 uppercase tracking-wider" x-text="t('manageApiKeys')"></span>
+                            </div>
                         </div>
                     </div>
                     <div class="flex items-center gap-2">
-                        <div class="flex items-center h-6 px-2 rounded bg-space-800/80 border border-space-border/50">
-                            <span class="text-[11px] font-mono text-gray-400" x-text="apiKeysList.length + ' keys'"></span>
+                        <div class="meta-chip flex items-center h-6 px-2 rounded bg-space-800/80 border border-space-border/50">
+                            <span class="text-[11px] font-mono text-gray-400" x-text="apiKeysList.length + ' ' + t('nKeys')"></span>
                         </div>
                         <button class="btn btn-xs btn-accent-purple gap-2 h-8"
                             @click="showAddKeyModal = true">
@@ -2962,11 +3011,26 @@
                     </div>
                 </div>
 
+                <div class="view-card overview-card overview-card-accent-purple mb-6">
+                    <div class="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                        <div class="min-w-0">
+                            <div class="text-xs font-mono text-gray-400 uppercase tracking-widest" x-text="t('apiKeysOverviewKicker')"></div>
+                            <h2 class="overview-title text-xl font-semibold text-white mt-2" x-text="t('apiKeysOverviewTitle')"></h2>
+                            <p class="overview-copy text-sm text-gray-400 mt-3" x-text="t('apiKeysOverviewDesc')"></p>
+                        </div>
+                        <div class="overview-meta flex flex-wrap gap-2">
+                            <span class="meta-chip" x-text="apiKeyStats.activeKeys + ' ' + t('activeStatus')"></span>
+                            <span class="meta-chip" x-text="apiKeyStats.totalRequests + ' ' + t('requests')"></span>
+                            <span class="meta-chip" x-text="'$' + apiKeyStats.totalCost.toFixed(2)"></span>
+                        </div>
+                    </div>
+                </div>
+
                 <!-- Stats cards -->
                 <div class="grid grid-cols-2 sm:grid-cols-4 gap-2 lg:gap-3 mb-6" x-show="apiKeyStats.totalKeys > 0">
                     <div class="stat bg-space-900/40 border border-space-border/30 rounded-xl p-3 lg:p-4 min-w-0">
                         <div class="stat-value text-white font-mono text-2xl font-bold mb-1" x-text="apiKeyStats.totalKeys"></div>
-                        <div class="stat-title text-gray-500 font-mono text-[10px] uppercase tracking-wider">Total Keys</div>
+                        <div class="stat-title text-gray-500 font-mono text-[10px] uppercase tracking-wider" x-text="t('totalKeysLabel')"></div>
                     </div>
                     <div class="stat bg-space-900/40 border border-space-border/30 rounded-xl p-3 lg:p-4 min-w-0">
                         <div class="stat-value text-white font-mono text-2xl font-bold mb-1" x-text="apiKeyStats.activeKeys"></div>
@@ -2983,24 +3047,24 @@
                 </div>
 
                 <!-- Keys table -->
-                <div class="view-card !p-0 overflow-x-auto">
-                    <table class="w-full min-w-[700px]">
+                <div class="view-card account-table-shell !p-0 overflow-x-auto">
+                    <table class="account-table w-full min-w-[700px]">
                         <thead x-show="apiKeysList.length > 0">
                             <tr class="bg-space-900/50 border-b border-space-border/50">
-                                <th class="py-3 pl-6 text-left text-[10px] font-bold text-gray-500 uppercase tracking-wider" x-text="t('status')"></th>
+                                <th class="py-3 text-left text-[10px] font-bold text-gray-500 uppercase tracking-wider" x-text="t('status')"></th>
                                 <th class="py-3 text-left text-[10px] font-bold text-gray-500 uppercase tracking-wider" x-text="t('keyName')"></th>
                                 <th class="py-3 text-left text-[10px] font-bold text-gray-500 uppercase tracking-wider" x-text="t('provider')"></th>
                                 <th class="py-3 text-left text-[10px] font-bold text-gray-500 uppercase tracking-wider" x-text="t('apiKeyLabel')"></th>
                                 <th class="py-3 text-left text-[10px] font-bold text-gray-500 uppercase tracking-wider" x-text="t('totalReqs')"></th>
                                 <th class="py-3 text-left text-[10px] font-bold text-gray-500 uppercase tracking-wider" x-text="t('totalCostLabel')"></th>
-                                <th class="py-3 pr-6 text-right text-[10px] font-bold text-gray-500 uppercase tracking-wider" x-text="t('operations')"></th>
+                                <th class="py-3 text-right text-[10px] font-bold text-gray-500 uppercase tracking-wider" x-text="t('operations')"></th>
                             </tr>
                         </thead>
                         <tbody>
                             <template x-if="apiKeysList.length === 0">
                                 <tr>
                                     <td colspan="7" class="py-16 text-center">
-                                        <div class="flex flex-col items-center gap-4">
+                                        <div class="account-empty-state flex flex-col items-center justify-center gap-4 max-w-lg mx-auto">
                                             <svg class="w-16 h-16 text-gray-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z" />
                                             </svg>
@@ -3016,11 +3080,11 @@
                             </template>
                             <template x-for="key in apiKeysList" :key="key.id">
                                 <tr class="border-b border-space-border/30 last:border-0 hover:bg-white/5 transition-colors">
-                                    <td class="py-4 pl-6">
-                                        <div class="flex items-center gap-2">
-                                            <div class="w-2 h-2 rounded-full" :class="key.isAvailable ? 'bg-neon-green shadow-[0_0_8px_rgba(34,197,94,0.6)]' : 'bg-red-500'"></div>
-                                            <span class="text-xs font-mono" :class="key.isAvailable ? 'text-neon-green' : 'text-red-400'"
-                                                x-text="key.isAvailable ? t('enabled') : t('disabled')"></span>
+                                    <td class="py-4">
+                                        <div class="account-status-cell">
+                                            <div class="account-status-dot" :class="apiKeyStateDotClass(key)"></div>
+                                            <span class="account-status-label" :class="apiKeyStateTextClass(key)"
+                                                x-text="apiKeyStateLabel(key)"></span>
                                         </div>
                                     </td>
                                     <td class="py-4"><span class="font-mono text-sm text-gray-300" x-text="key.name"></span></td>
@@ -3042,7 +3106,7 @@
                                     <td class="py-4"><span class="font-mono text-xs text-gray-500" x-text="key.apiKey"></span></td>
                                     <td class="py-4"><span class="font-mono text-sm text-gray-300" x-text="key.totalRequests"></span></td>
                                     <td class="py-4"><span class="font-mono text-sm text-neon-green" x-text="'$' + key.totalCost.toFixed(4)"></span></td>
-                                    <td class="py-4 pr-6">
+                                    <td class="py-4">
                                         <div class="flex justify-end gap-2">
                                             <button class="btn btn-xs-inline btn-accent-blue"
                                                 @click="testApiKey(key.id)" :disabled="!!key._testing"
@@ -3073,11 +3137,14 @@
             </div>
 
             <!-- ─── Usage & Costs View ──────────────────────────────────────── -->
-            <div x-show="activeTab === 'usage'" x-transition class="view-container">
-                <div class="flex items-center justify-between gap-4 mb-6">
+            <div x-show="activeTab === 'usage'" x-transition class="view-container usage-workspace-view">
+                <div class="usage-workspace-header flex items-center justify-between gap-4 mb-6">
                     <div class="flex flex-wrap items-center gap-4">
-                        <h1 class="text-2xl font-bold text-white tracking-tight" x-text="t('usageStats')"></h1>
-                        <div class="flex items-center h-6 px-3 rounded-full bg-space-800/80 border border-space-border/50 shadow-sm backdrop-blur-sm">
+                        <div>
+                            <div class="usage-workspace-eyebrow text-[11px] font-mono uppercase tracking-[0.18em] text-gray-500" x-text="t('usageWorkspaceEyebrow')"></div>
+                            <h1 class="text-2xl font-bold text-white tracking-tight mt-2" x-text="t('usageStats')"></h1>
+                        </div>
+                        <div class="usage-meta-chip flex items-center h-6 px-3 rounded-full bg-space-800/80 border border-space-border/50 shadow-sm backdrop-blur-sm">
                             <span class="text-[10px] font-mono text-gray-400 uppercase tracking-wider" x-text="t('usageMonitoring')"></span>
                         </div>
                     </div>
@@ -3089,28 +3156,28 @@
                 </div>
 
                 <!-- Overview cards -->
-                <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2 lg:gap-3 mb-6">
-                    <div class="stat bg-space-900/40 border border-space-border/30 rounded-xl p-3 lg:p-4 min-w-0">
+                <div class="usage-overview-grid grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2 lg:gap-3 mb-6">
+                    <div class="usage-overview-card stat bg-space-900/40 border border-space-border/30 rounded-xl p-3 lg:p-4 min-w-0">
                         <div class="stat-value text-white font-mono text-2xl font-bold mb-1" x-text="usageOverview.today?.requests || 0"></div>
                         <div class="stat-title text-gray-500 font-mono text-[10px] uppercase tracking-wider" x-text="t('today') + ' ' + t('requests')"></div>
                     </div>
-                    <div class="stat bg-space-900/40 border border-space-border/30 rounded-xl p-3 lg:p-4 min-w-0">
+                    <div class="usage-overview-card stat bg-space-900/40 border border-space-border/30 rounded-xl p-3 lg:p-4 min-w-0">
                         <div class="stat-value text-neon-green font-mono text-2xl font-bold mb-1" x-text="'$' + (usageOverview.today?.cost || 0).toFixed(4)"></div>
                         <div class="stat-title text-gray-500 font-mono text-[10px] uppercase tracking-wider" x-text="t('today') + ' ' + t('cost')"></div>
                     </div>
-                    <div class="stat bg-space-900/40 border border-space-border/30 rounded-xl p-3 lg:p-4 min-w-0">
+                    <div class="usage-overview-card stat bg-space-900/40 border border-space-border/30 rounded-xl p-3 lg:p-4 min-w-0">
                         <div class="stat-value text-neon-cyan font-mono text-2xl font-bold mb-1" x-text="((usageOverview.today?.inputTokens || 0) + (usageOverview.today?.outputTokens || 0)).toLocaleString()"></div>
                         <div class="stat-title text-gray-500 font-mono text-[10px] uppercase tracking-wider" x-text="t('todayTokens')"></div>
                     </div>
-                    <div class="stat bg-space-900/40 border border-space-border/30 rounded-xl p-3 lg:p-4 min-w-0">
+                    <div class="usage-overview-card stat bg-space-900/40 border border-space-border/30 rounded-xl p-3 lg:p-4 min-w-0">
                         <div class="stat-value text-white font-mono text-2xl font-bold mb-1" x-text="usageOverview.allTime?.requests || 0"></div>
                         <div class="stat-title text-gray-500 font-mono text-[10px] uppercase tracking-wider" x-text="t('allTime') + ' ' + t('requests')"></div>
                     </div>
-                    <div class="stat bg-space-900/40 border border-space-border/30 rounded-xl p-3 lg:p-4 min-w-0">
+                    <div class="usage-overview-card stat bg-space-900/40 border border-space-border/30 rounded-xl p-3 lg:p-4 min-w-0">
                         <div class="stat-value text-neon-green font-mono text-2xl font-bold mb-1" x-text="'$' + (usageOverview.allTime?.cost || 0).toFixed(4)"></div>
                         <div class="stat-title text-gray-500 font-mono text-[10px] uppercase tracking-wider" x-text="t('allTime') + ' ' + t('cost')"></div>
                     </div>
-                    <div class="stat bg-space-900/40 border border-space-border/30 rounded-xl p-3 lg:p-4 min-w-0">
+                    <div class="usage-overview-card stat bg-space-900/40 border border-space-border/30 rounded-xl p-3 lg:p-4 min-w-0">
                         <div class="stat-value font-mono text-2xl font-bold mb-1"
                             :class="(usageOverview.today?.requests > 0 && usageOverview.today?.errors / usageOverview.today?.requests > 0.1) ? 'text-red-400' : 'text-gray-400'"
                             x-text="usageOverview.today?.requests > 0 ? (usageOverview.today.errors / usageOverview.today.requests * 100).toFixed(1) + '%' : '0%'"></div>
@@ -3119,7 +3186,7 @@
                 </div>
 
                 <!-- Daily usage chart + table -->
-                <div class="view-card mb-6">
+                <div class="view-card usage-section-card mb-6">
                     <div class="flex items-center justify-between mb-4">
                         <h3 class="text-xs font-mono text-gray-400 uppercase tracking-widest" x-text="(i18n[lang] || i18n.en).dailyUsageDays(dailyDays)"></h3>
                         <div class="flex gap-1">
@@ -3155,7 +3222,7 @@
 
                     <!-- Table -->
                     <div class="overflow-x-auto">
-                        <table class="w-full">
+                        <table class="usage-table">
                             <thead>
                                 <tr class="border-b border-space-border/30">
                                     <th class="py-2 text-left text-[10px] font-bold text-gray-500 uppercase" x-text="t('date')"></th>
@@ -3180,11 +3247,11 @@
                             </tbody>
                         </table>
                     </div>
-                    <div x-show="dailyStats.length === 0" class="py-8 text-center text-gray-600 text-sm" x-text="t('noUsageData')"></div>
+                    <div x-show="dailyStats.length === 0" class="usage-empty-state flex items-center justify-center py-8 text-center text-gray-600 text-sm" x-text="t('noUsageData')"></div>
                 </div>
 
                 <!-- Account / Key distribution -->
-                <div class="view-card mb-6">
+                <div class="view-card usage-section-card mb-6">
                     <h3 class="text-xs font-mono text-gray-400 uppercase tracking-widest mb-4" x-text="t('byAccount')"></h3>
                     <div class="space-y-3" x-show="accountStatsEntries.length > 0">
                         <template x-for="entry in accountStatsEntries" :key="entry.name">
@@ -3200,13 +3267,13 @@
                             </div>
                         </template>
                     </div>
-                    <div x-show="accountStatsEntries.length === 0" class="py-6 text-center text-gray-600 text-sm" x-text="t('noUsageData')"></div>
+                    <div x-show="accountStatsEntries.length === 0" class="usage-empty-state flex items-center justify-center py-6 text-center text-gray-600 text-sm" x-text="t('noUsageData')"></div>
                 </div>
 
                 <!-- Provider & Model distribution -->
                 <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 lg:gap-6 mb-6">
                     <!-- By Provider -->
-                    <div class="view-card">
+                    <div class="view-card usage-section-card">
                         <h3 class="text-xs font-mono text-gray-400 uppercase tracking-widest mb-4" x-text="t('byProvider')"></h3>
                         <div class="space-y-3" x-show="providerStatsEntries.length > 0">
                             <template x-for="entry in providerStatsEntries" :key="entry.name">
@@ -3222,11 +3289,11 @@
                                 </div>
                             </template>
                         </div>
-                        <div x-show="providerStatsEntries.length === 0" class="py-6 text-center text-gray-600 text-sm" x-text="t('noUsageData')"></div>
+                        <div x-show="providerStatsEntries.length === 0" class="usage-empty-state flex items-center justify-center py-6 text-center text-gray-600 text-sm" x-text="t('noUsageData')"></div>
                     </div>
 
                     <!-- By Model -->
-                    <div class="view-card">
+                    <div class="view-card usage-section-card">
                         <h3 class="text-xs font-mono text-gray-400 uppercase tracking-widest mb-4" x-text="t('byModel')"></h3>
                         <div class="space-y-3" x-show="modelStatsEntries.length > 0">
                             <template x-for="entry in modelStatsEntries" :key="entry.name">
@@ -3242,15 +3309,15 @@
                                 </div>
                             </template>
                         </div>
-                        <div x-show="modelStatsEntries.length === 0" class="py-6 text-center text-gray-600 text-sm" x-text="t('noUsageData')"></div>
+                        <div x-show="modelStatsEntries.length === 0" class="usage-empty-state flex items-center justify-center py-6 text-center text-gray-600 text-sm" x-text="t('noUsageData')"></div>
                     </div>
                 </div>
 
                 <!-- Recent requests -->
-                <div class="view-card">
+                <div class="view-card usage-section-card">
                     <h3 class="text-xs font-mono text-gray-400 uppercase tracking-widest mb-4" x-text="t('recentRequests')"></h3>
                     <div class="overflow-x-auto">
-                        <table class="w-full" x-show="usageHistory.length > 0">
+                        <table class="usage-table" x-show="usageHistory.length > 0">
                             <thead>
                                 <tr class="border-b border-space-border/30">
                                     <th class="py-2 text-left text-[10px] font-bold text-gray-500 uppercase">Time</th>
@@ -3283,15 +3350,18 @@
                             </tbody>
                         </table>
                     </div>
-                    <div x-show="usageHistory.length === 0" class="py-8 text-center text-gray-600 text-sm" x-text="t('noUsageData')"></div>
+                    <div x-show="usageHistory.length === 0" class="usage-empty-state flex items-center justify-center py-8 text-center text-gray-600 text-sm" x-text="t('noUsageData')"></div>
                 </div>
             </div>
 
-            <div x-show="activeTab === 'pricing'" x-transition class="view-container">
-                <div class="flex items-center justify-between gap-4 mb-6">
+            <div x-show="activeTab === 'pricing'" x-transition class="view-container pricing-workspace-view">
+                <div class="pricing-workspace-header flex items-center justify-between gap-4 mb-6">
                     <div class="flex flex-wrap items-center gap-4">
-                        <h1 class="text-2xl font-bold text-white tracking-tight" x-text="t('pricing')"></h1>
-                        <div class="flex items-center h-6 px-3 rounded-full bg-space-800/80 border border-space-border/50 shadow-sm backdrop-blur-sm">
+                        <div>
+                            <div class="pricing-workspace-eyebrow text-[11px] font-mono uppercase tracking-[0.18em] text-gray-500" x-text="t('observabilityWorkspaceEyebrow')"></div>
+                            <h1 class="text-2xl font-bold text-white tracking-tight mt-2" x-text="t('pricing')"></h1>
+                        </div>
+                        <div class="pricing-meta-chip flex items-center h-6 px-3 rounded-full bg-space-800/80 border border-space-border/50 shadow-sm backdrop-blur-sm">
                             <span class="text-[10px] font-mono text-gray-400 uppercase tracking-wider" x-text="t('pricingDesc')"></span>
                         </div>
                     </div>
@@ -3317,7 +3387,7 @@
                     </div>
                 </div>
 
-                <div class="view-card mb-6">
+                <div class="view-card pricing-section-card mb-6">
                     <div class="flex flex-col lg:flex-row gap-3 lg:items-center lg:justify-between">
                         <div class="text-xs font-mono text-gray-500 uppercase tracking-wider" x-text="t('pricingUnit')"></div>
                         <div class="flex flex-col sm:flex-row gap-3">
@@ -3332,8 +3402,8 @@
                     </div>
                 </div>
 
-                <div class="view-card overflow-x-auto">
-                    <table class="w-full min-w-[1120px]">
+                <div class="view-card pricing-section-card overflow-x-auto">
+                    <table class="usage-table min-w-[1120px]">
                         <thead>
                             <tr class="border-b border-space-border/30">
                                 <th class="py-2 text-left text-[10px] font-bold text-gray-500 uppercase" x-text="t('provider')"></th>
@@ -3388,16 +3458,19 @@
                             </template>
                         </tbody>
                     </table>
-                    <div x-show="filteredPricingEntries.length === 0" class="py-8 text-center text-gray-600 text-sm" x-text="t('noPricingData')"></div>
+                    <div x-show="filteredPricingEntries.length === 0" class="usage-empty-state flex items-center justify-center py-8 text-center text-gray-600 text-sm" x-text="t('noPricingData')"></div>
                 </div>
             </div>
 
             <!-- ─── API Explorer Tab ─────────────────────────────────────── -->
-            <div x-show="activeTab === 'apiExplorer'" x-transition class="view-container">
-                <div class="flex items-center justify-between gap-4 mb-6">
+            <div x-show="activeTab === 'apiExplorer'" x-transition class="view-container api-explorer-workspace-view">
+                <div class="api-explorer-workspace-header flex items-center justify-between gap-4 mb-6">
                     <div class="flex flex-wrap items-center gap-4">
-                        <h1 class="text-2xl font-bold text-white tracking-tight" x-text="t('apiExplorer')"></h1>
-                        <div class="flex items-center h-6 px-3 rounded-full bg-space-800/80 border border-space-border/50 shadow-sm backdrop-blur-sm">
+                        <div>
+                            <div class="api-explorer-workspace-eyebrow text-[11px] font-mono uppercase tracking-[0.18em] text-gray-500" x-text="t('observabilityWorkspaceEyebrow')"></div>
+                            <h1 class="text-2xl font-bold text-white tracking-tight mt-2" x-text="t('apiExplorer')"></h1>
+                        </div>
+                        <div class="api-explorer-meta-chip flex items-center h-6 px-3 rounded-full bg-space-800/80 border border-space-border/50 shadow-sm backdrop-blur-sm">
                             <span class="text-[10px] font-mono text-gray-400 uppercase tracking-wider" x-text="t('apiExplorerDesc')"></span>
                         </div>
                     </div>
@@ -3411,7 +3484,7 @@
 
                 <div class="grid gap-6 xl:grid-cols-[420px_minmax(0,1fr)]">
                     <div class="space-y-4">
-                        <div class="view-card">
+                        <div class="view-card api-explorer-section-card">
                             <div class="flex items-center justify-between gap-3 mb-4">
                                 <h2 class="text-sm font-semibold text-white" x-text="t('requestConfig')"></h2>
                                 <select x-model.number="apiExplorerPresetIndex" @change="loadApiExplorerPreset(apiExplorerPresetIndex)"
@@ -3462,7 +3535,7 @@
                     </div>
 
                     <div class="space-y-4 min-w-0">
-                        <div class="view-card">
+                        <div class="view-card api-explorer-section-card">
                             <div class="flex flex-wrap items-center gap-3 mb-4">
                                 <h2 class="text-sm font-semibold text-white" x-text="t('responseMeta')"></h2>
                                 <template x-if="apiExplorerResponse">
@@ -3479,7 +3552,7 @@
                             </div>
 
                             <template x-if="!apiExplorerResponse">
-                                <div class="py-12 text-center text-gray-600 text-sm" x-text="t('noResponseYet')"></div>
+                                <div class="usage-empty-state flex items-center justify-center py-12 text-center text-gray-600 text-sm" x-text="t('noResponseYet')"></div>
                             </template>
 
                             <template x-if="apiExplorerResponse">
@@ -3509,15 +3582,18 @@
             </div>
 
             <!-- ─── Request Logs Tab ─────────────────────────────────────── -->
-            <div x-show="activeTab === 'requestLogs'" x-transition class="view-container">
-                <div class="flex items-center justify-between gap-4 mb-6">
+            <div x-show="activeTab === 'requestLogs'" x-transition class="view-container requestlogs-workspace-view">
+                <div class="requestlogs-workspace-header flex items-center justify-between gap-4 mb-6">
                     <div class="flex flex-wrap items-center gap-4">
-                        <h1 class="text-2xl font-bold text-white tracking-tight" x-text="t('requestLogs')"></h1>
-                        <div class="flex items-center h-6 px-3 rounded-full bg-space-800/80 border border-space-border/50 shadow-sm backdrop-blur-sm">
+                        <div>
+                            <div class="requestlogs-workspace-eyebrow text-[11px] font-mono uppercase tracking-[0.18em] text-gray-500" x-text="t('observabilityWorkspaceEyebrow')"></div>
+                            <h1 class="text-2xl font-bold text-white tracking-tight mt-2" x-text="t('requestLogs')"></h1>
+                        </div>
+                        <div class="requestlogs-meta-chip flex items-center h-6 px-3 rounded-full bg-space-800/80 border border-space-border/50 shadow-sm backdrop-blur-sm">
                             <span class="text-[10px] font-mono text-gray-400 uppercase tracking-wider" x-text="t('requestLogsDesc')"></span>
                         </div>
                     </div>
-                    <div class="flex items-center gap-2">
+                    <div class="requestlogs-toolbar flex items-center gap-2">
                         <label class="flex items-center gap-2 text-xs text-gray-400 cursor-pointer">
                             <input type="checkbox" class="toggle toggle-xs toggle-primary" :checked="reqLogSettings.enabled" @change="toggleRequestLogging($event.target.checked)">
                             <span x-text="reqLogSettings.enabled ? t('enabled') : t('disabled')"></span>
@@ -3531,7 +3607,8 @@
                 </div>
 
                 <!-- Filters -->
-                <div class="flex flex-wrap items-center gap-3 mb-4">
+                <div class="view-card requestlogs-filter-card mb-4">
+                    <div class="flex flex-wrap items-center gap-3">
                     <select x-model="reqLogFilter.date" @change="loadRequestLogs()" class="h-8 bg-space-800 border border-space-border rounded text-xs font-mono px-2 text-white focus:border-neon-purple focus:outline-none">
                         <template x-for="d in reqLogDates" :key="d">
                             <option :value="d" x-text="d"></option>
@@ -3554,12 +3631,13 @@
                         <span x-text="t('errorsOnly')"></span>
                     </label>
                     <span class="text-[10px] text-gray-600 font-mono ml-auto" x-text="reqLogTotal + ' ' + t('records')"></span>
+                    </div>
                 </div>
 
                 <!-- Log entries -->
                 <div class="space-y-2">
                     <template x-for="entry in reqLogEntries" :key="entry.id">
-                        <div class="bg-space-900/40 border border-space-border/30 rounded-lg overflow-hidden">
+                        <div class="requestlogs-entry-card bg-space-900/40 border border-space-border/30 rounded-lg overflow-hidden">
                             <div class="flex items-center gap-3 px-4 py-2.5 cursor-pointer hover:bg-space-800/30 transition-colors" @click="entry._expanded = !entry._expanded">
                                 <span class="text-[10px] font-bold uppercase px-1.5 py-0.5 rounded"
                                     :class="entry.success ? 'bg-green-500/10 text-green-400 border border-green-500/30' : 'bg-red-500/10 text-red-400 border border-red-500/30'"
@@ -3595,7 +3673,7 @@
                             </div>
                         </div>
                     </template>
-                    <div x-show="reqLogEntries.length === 0" class="py-12 text-center text-gray-600 text-sm" x-text="t('noRequestLogs')"></div>
+                    <div x-show="reqLogEntries.length === 0" class="usage-empty-state flex items-center justify-center py-12 text-center text-gray-600 text-sm" x-text="t('noRequestLogs')"></div>
                 </div>
 
                 <!-- Pagination -->
@@ -3607,11 +3685,11 @@
             </div>
 
             <!-- ─── Tools Installer Tab ────────────────────────────────────── -->
-            <div x-show="activeTab === 'tools'" x-transition class="view-container tools-workspace-view">
-                <div class="tools-workspace-header flex items-center justify-between gap-4 mb-6">
+            <div x-show="activeTab === 'tools'" x-transition class="view-container workspace-view">
+                <div class="workspace-header flex items-center justify-between gap-4 mb-6">
                     <div class="tools-workspace-title flex flex-wrap items-center gap-4">
                         <div>
-                            <div class="tools-workspace-eyebrow text-[11px] font-mono uppercase tracking-[0.18em] text-gray-500" x-text="t('toolsWorkspaceEyebrow')"></div>
+                            <div class="workspace-eyebrow text-[11px] font-mono uppercase tracking-[0.18em] text-gray-500" x-text="t('toolsWorkspaceEyebrow')"></div>
                             <h1 class="text-2xl font-bold text-white tracking-tight mt-2" x-text="t('toolInstaller')"></h1>
                         </div>
                     </div>
@@ -3633,16 +3711,16 @@
                 </div>
 
                 <div class="tools-overview-grid grid gap-4 lg:grid-cols-[minmax(0,1.2fr)_minmax(0,0.8fr)] mb-4">
-                    <div class="view-card tools-overview-card">
+                    <div class="view-card overview-card">
                         <div class="tools-section-kicker text-xs font-mono text-gray-400 uppercase tracking-widest" x-text="t('toolsOverviewKicker')"></div>
-                        <h2 class="tools-overview-title text-xl font-semibold text-white mt-3" x-text="t('toolsOverviewTitle')"></h2>
-                        <div class="tools-overview-meta flex flex-wrap items-center gap-2 mt-4 text-[11px] font-mono text-gray-500">
-                            <span class="tools-meta-chip" x-text="t('detectedOS') + ': ' + toolsOS"></span>
-                            <span class="tools-meta-chip" x-text="t('toolsBatchUpdatesLabel') + ' ' + toolsWithUpdates()"></span>
-                            <span class="tools-meta-chip" x-text="t('toolsBatchNodeLabel') + ' ' + (toolsList.node?.installed ? t('toolsStateReady') : t('toolsStateMissing'))"></span>
+                        <h2 class="overview-title text-xl font-semibold text-white mt-3" x-text="t('toolsOverviewTitle')"></h2>
+                        <div class="overview-meta flex flex-wrap items-center gap-2 mt-4 text-[11px] font-mono text-gray-500">
+                            <span class="meta-chip" x-text="t('detectedOS') + ': ' + toolsOS"></span>
+                            <span class="meta-chip" x-text="t('toolsBatchUpdatesLabel') + ' ' + toolsWithUpdates()"></span>
+                            <span class="meta-chip" x-text="t('toolsBatchNodeLabel') + ' ' + (toolsList.node?.installed ? t('toolsStateReady') : t('toolsStateMissing'))"></span>
                         </div>
                     </div>
-                    <div class="view-card tools-overview-card tools-overview-card-accent">
+                    <div class="view-card overview-card overview-card-accent-purple">
                         <div class="tools-section-kicker text-xs font-mono text-gray-400 uppercase tracking-widest" x-text="t('toolsBatchKicker')"></div>
                         <div class="space-y-3 mt-3">
                             <div class="tools-batch-item flex items-start justify-between gap-3">

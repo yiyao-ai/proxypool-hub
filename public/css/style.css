@@ -371,42 +371,58 @@ html.light .session-identity-chip:hover {
     background: rgba(240, 249, 255, 0.96);
 }
 
-html.light .tools-workspace-eyebrow,
+html.light .workspace-eyebrow,
 html.light .tools-section-kicker {
     color: #64748b;
 }
 
-html.light .tools-meta-chip {
+html.light .meta-chip {
     background: rgba(255, 255, 255, 0.82);
     border-color: rgba(197, 203, 214, 0.78);
 }
 
-html.light .tools-overview-card,
+html.light .overview-card,
 html.light .tools-node-card,
 html.light .tools-cli-card {
     border-color: rgba(197, 203, 214, 0.72);
 }
 
-html.light .tools-overview-card,
+html.light .overview-card {
+    border-color: rgba(197, 203, 214, 0.72);
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.94), rgba(248, 250, 252, 0.9));
+}
+
 html.light .tools-node-card,
 html.light .tools-cli-card {
     background: linear-gradient(180deg, rgba(255, 255, 255, 0.94), rgba(248, 250, 252, 0.9));
 }
 
-html.light .tools-overview-card-accent {
+html.light .overview-card-accent-cyan {
     background:
         linear-gradient(135deg, rgba(255, 255, 255, 0.96), rgba(241, 245, 249, 0.92)),
         radial-gradient(circle at top right, rgba(186, 230, 253, 0.14), transparent 34%);
 }
 
-html.light .tools-overview-title,
+html.light .overview-card-accent-green {
+    background:
+        linear-gradient(135deg, rgba(255, 255, 255, 0.96), rgba(241, 245, 249, 0.92)),
+        radial-gradient(circle at top right, rgba(134, 239, 172, 0.16), transparent 34%);
+}
+
+html.light .overview-card-accent-purple {
+    background:
+        linear-gradient(135deg, rgba(255, 255, 255, 0.96), rgba(241, 245, 249, 0.92)),
+        radial-gradient(circle at top right, rgba(186, 230, 253, 0.14), transparent 34%);
+}
+
+html.light .overview-title,
 html.light .tools-batch-item .text-sm,
 html.light .tools-node-card .text-sm,
 html.light .tools-cli-card .text-sm {
     color: #0f172a;
 }
 
-html.light .tools-overview-copy,
+html.light .overview-copy,
 html.light .tools-batch-item .text-xs,
 html.light .tools-inline-panel .text-xs,
 html.light .tools-node-card .text-\[10px\],
@@ -1014,19 +1030,19 @@ html.light .alert {
     box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
 }
 
-.tools-workspace-view {
+.workspace-view {
     padding-top: 0.35rem;
 }
 
-.tools-workspace-header {
+.workspace-header {
     align-items: flex-start;
 }
 
-.tools-workspace-eyebrow {
+.workspace-eyebrow {
     color: #64748b;
 }
 
-.tools-meta-chip {
+.meta-chip {
     display: inline-flex;
     align-items: center;
     min-height: 1.8rem;
@@ -1036,30 +1052,41 @@ html.light .alert {
     border: 1px solid rgba(148, 163, 184, 0.14);
 }
 
-.tools-overview-card {
+.overview-card {
     border-radius: 1.15rem;
 }
 
-.tools-overview-card-accent {
+.overview-card-accent-cyan {
+    background:
+        linear-gradient(135deg, rgba(18, 22, 34, 0.94), rgba(16, 24, 39, 0.88)),
+        radial-gradient(circle at top right, rgba(34, 211, 238, 0.08), transparent 34%);
+}
+
+.overview-card-accent-green {
+    background:
+        linear-gradient(135deg, rgba(18, 22, 34, 0.94), rgba(16, 24, 39, 0.88)),
+        radial-gradient(circle at top right, rgba(74, 222, 128, 0.1), transparent 34%);
+}
+
+.overview-card-accent-purple {
     background:
         linear-gradient(135deg, rgba(18, 22, 34, 0.94), rgba(16, 24, 39, 0.88)),
         radial-gradient(circle at top right, rgba(168, 85, 247, 0.08), transparent 34%);
+}
+
+.overview-title {
+    letter-spacing: -0.02em;
 }
 
 .tools-section-kicker {
     color: #94a3b8;
 }
 
-.tools-overview-title {
-    letter-spacing: -0.02em;
-}
-
-.tools-overview-copy {
+.overview-copy {
     max-width: 42rem;
     line-height: 1.65;
 }
-
-.tools-overview-meta {
+.overview-meta {
     gap: 0.5rem;
 }
 
@@ -1184,6 +1211,139 @@ html.light .alert {
     line-height: 1rem;
     font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
     font-weight: 600;
+}
+
+.logs-workspace-view {
+    padding-top: 0.35rem;
+}
+
+.logs-workspace-header {
+    align-items: flex-start;
+}
+
+.logs-workspace-eyebrow {
+    color: #64748b;
+}
+
+.logs-meta-chip {
+    background: rgba(255, 255, 255, 0.04);
+    border-color: rgba(148, 163, 184, 0.14);
+}
+
+.logs-toolbar {
+    align-items: center;
+}
+
+.logs-console-toolbar {
+    flex-wrap: wrap;
+}
+
+.logs-filter-group {
+    flex-wrap: wrap;
+}
+
+.logs-empty-state {
+    min-height: 12rem;
+    color: #64748b;
+}
+
+.usage-workspace-view {
+    padding-top: 0.35rem;
+}
+
+.usage-workspace-header {
+    align-items: flex-start;
+}
+
+.usage-workspace-eyebrow {
+    color: #64748b;
+}
+
+.usage-meta-chip {
+    background: rgba(255, 255, 255, 0.04);
+    border-color: rgba(148, 163, 184, 0.14);
+}
+
+.usage-overview-grid {
+    align-items: stretch;
+}
+
+.usage-overview-card {
+    border-radius: 1rem;
+}
+
+.usage-section-card {
+    border-radius: 1.1rem;
+}
+
+.usage-table {
+    width: 100%;
+}
+
+.usage-table th,
+.usage-table td {
+    padding-left: 0.75rem;
+    padding-right: 0.75rem;
+    vertical-align: middle;
+}
+
+.usage-table th:first-child,
+.usage-table td:first-child {
+    padding-left: 0;
+}
+
+.usage-table th:last-child,
+.usage-table td:last-child {
+    padding-right: 0;
+}
+
+.usage-empty-state {
+    min-height: 6rem;
+    color: #64748b;
+}
+
+.pricing-workspace-view,
+.requestlogs-workspace-view,
+.api-explorer-workspace-view {
+    padding-top: 0.35rem;
+}
+
+.pricing-workspace-header,
+.requestlogs-workspace-header,
+.api-explorer-workspace-header {
+    align-items: flex-start;
+}
+
+.pricing-workspace-eyebrow,
+.requestlogs-workspace-eyebrow,
+.api-explorer-workspace-eyebrow {
+    color: #64748b;
+}
+
+.pricing-meta-chip,
+.requestlogs-meta-chip,
+.api-explorer-meta-chip {
+    background: rgba(255, 255, 255, 0.04);
+    border-color: rgba(148, 163, 184, 0.14);
+}
+
+.pricing-section-card,
+.requestlogs-section-card,
+.api-explorer-section-card {
+    border-radius: 1.1rem;
+}
+
+.pricing-toolbar,
+.requestlogs-toolbar {
+    align-items: center;
+}
+
+.requestlogs-filter-card {
+    border-radius: 1rem;
+}
+
+.requestlogs-entry-card {
+    border-radius: 1rem;
 }
 
 .account-empty-state,

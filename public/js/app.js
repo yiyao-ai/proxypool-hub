@@ -313,6 +313,33 @@ document.addEventListener('alpine:init', () => {
             return 'text-gray-500';
         },
 
+        apiKeyStateValue(key) {
+            if (key?.enabled === false) return 'disabled';
+            if (key?.isAvailable) return 'active';
+            return 'idle';
+        },
+
+        apiKeyStateLabel(key) {
+            const state = this.apiKeyStateValue(key);
+            if (state === 'disabled') return this.t('disabled');
+            if (state === 'active') return this.t('activeStatus');
+            return this.t('idleStatus');
+        },
+
+        apiKeyStateDotClass(key) {
+            const state = this.apiKeyStateValue(key);
+            if (state === 'disabled') return 'bg-red-500';
+            if (state === 'active') return 'bg-neon-green shadow-[0_0_8px_rgba(34,197,94,0.6)]';
+            return 'bg-gray-500';
+        },
+
+        apiKeyStateTextClass(key) {
+            const state = this.apiKeyStateValue(key);
+            if (state === 'disabled') return 'text-red-400';
+            if (state === 'active') return 'text-neon-green';
+            return 'text-gray-500';
+        },
+
         get dashboardTotalAccounts() {
             return this.accounts.length + this.claudeAccounts.length + this.antigravityAccounts.length;
         },
@@ -3616,6 +3643,7 @@ document.addEventListener('alpine:init', () => {
                 };
             }
             this.channelSettings = next;
+            this.channelSettingsSaving = {};
             for (const provider of this.channelCatalog) {
                 this.ensureChannelProviderState(provider);
             }
@@ -4098,26 +4126,29 @@ document.addEventListener('alpine:init', () => {
             if (!target) return;
             const saveKey = `${channelId}:${instanceId}`;
             this.channelSettingsSaving[saveKey] = true;
-            const payload = { ...target };
-            const { ok, data } = await this.api(`/api/agent-channels/settings/${encodeURIComponent(channelId)}/${encodeURIComponent(instanceId)}`, {
-                method: 'PUT',
-                body: JSON.stringify(payload)
-            });
+            try {
+                const payload = { ...target };
+                const { ok, data, error } = await this.api(`/api/agent-channels/settings/${encodeURIComponent(channelId)}/${encodeURIComponent(instanceId)}`, {
+                    method: 'PUT',
+                    body: JSON.stringify(payload)
+                });
 
-            if (ok && data?.instance) {
-                const index = providerState.instances.findIndex((instance) => String(instance.id || '') === String(instanceId));
-                if (index >= 0) {
-                    providerState.instances.splice(index, 1, {
-                        ...providerState.instances[index],
-                        ...data.instance
-                    });
+                if (ok && data?.instance) {
+                    const index = providerState.instances.findIndex((instance) => String(instance.id || '') === String(instanceId));
+                    if (index >= 0) {
+                        providerState.instances.splice(index, 1, {
+                            ...providerState.instances[index],
+                            ...data.instance
+                        });
+                    }
+                    await this.loadChannelProviders();
+                    this.showToast(this.t('channelSettingsSaved', channelId), 'success');
+                } else {
+                    this.showToast(data?.error || error || this.t('channelSettingsSaveFailed', channelId), 'error');
                 }
-                await this.loadChannelProviders();
-                this.showToast(this.t('channelSettingsSaved', channelId), 'success');
-            } else {
-                this.showToast(data?.error || this.t('channelSettingsSaveFailed', channelId), 'error');
+            } finally {
+                this.channelSettingsSaving[saveKey] = false;
             }
-            this.channelSettingsSaving[saveKey] = false;
         },
 
         async approveChannelPairing(conversation) {
