@@ -8,6 +8,9 @@ document.addEventListener('alpine:init', () => {
         sidebarCollapsed: localStorage.getItem('proxy-sidebar-collapsed') === 'true' && window.innerWidth >= 1024,
         navSections: {
             workspace: true,
+            assistant: false,
+            cliTools: false,
+            credentials: false,
             configuration: false,
             observability: false
         },
@@ -496,11 +499,14 @@ document.addEventListener('alpine:init', () => {
                 const saved = JSON.parse(localStorage.getItem('proxy-nav-sections') || '{}');
                 this.navSections = {
                     workspace: saved.workspace !== undefined ? !!saved.workspace : (saved.main !== undefined ? !!saved.main : true),
+                    assistant: saved.assistant !== undefined ? !!saved.assistant : false,
+                    cliTools: saved.cliTools !== undefined ? !!saved.cliTools : false,
+                    credentials: saved.credentials !== undefined ? !!saved.credentials : false,
                     configuration: saved.configuration !== undefined ? !!saved.configuration : (saved.system !== undefined ? !!saved.system : false),
                     observability: saved.observability !== undefined ? !!saved.observability : (saved.api !== undefined ? !!saved.api : false)
                 };
             } catch {
-                this.navSections = { workspace: true, configuration: false, observability: false };
+                this.navSections = { workspace: true, assistant: false, cliTools: false, credentials: false, configuration: false, observability: false };
             }
         },
 
@@ -510,7 +516,10 @@ document.addEventListener('alpine:init', () => {
 
         sectionForTab(tab) {
             if (['dashboard', 'chat', 'conversationRecords', 'assistantTasks'].includes(tab)) return 'workspace';
-            if (['accounts', 'channels', 'apikeys', 'tools', 'localModels', 'settings', 'resources'].includes(tab)) return 'configuration';
+            if (['assistantAgent'].includes(tab)) return 'assistant';
+            if (['tools'].includes(tab)) return 'cliTools';
+            if (['accounts', 'apikeys', 'localModels'].includes(tab)) return 'credentials';
+            if (['channels', 'settings', 'routing', 'resources'].includes(tab)) return 'configuration';
             if (['usage', 'pricing', 'apiExplorer', 'requestLogs', 'logs'].includes(tab)) return 'observability';
             return 'workspace';
         },
@@ -592,8 +601,22 @@ document.addEventListener('alpine:init', () => {
                 });
             }
             if (tab === 'settings') {
-                if (!this.modelMappingData) this.loadModelMappings();
                 this.refreshProxyStatus();
+            }
+            if (tab === 'assistantAgent') {
+                this.loadAssistantAgentConfig();
+                this.loadAssistantAgentStatus();
+            }
+            if (tab === 'routing') {
+                this.loadHaikuModelSetting();
+                this.loadAccountStrategySetting();
+                this.loadRoutingPrioritySetting();
+                this.loadRoutingModeSetting();
+                this.loadAppRoutingSettings();
+                this.loadFreeModelsSetting();
+                if (!this.modelMappingData) this.loadModelMappings();
+            }
+            if (tab === 'localModels') {
                 this.loadLocalModelRoutingSetting();
             }
         },
@@ -5045,6 +5068,7 @@ document.addEventListener('alpine:init', () => {
         toolsCheckingUpdates: false,
         toolsUpdating: { claude: false, codex: false, gemini: false, openclaw: false },
         toolsUpdatingAll: false,
+        toolsSubTab: 'install',
 
         async loadToolsStatus() {
             const res = await this.api('/api/tools/status');

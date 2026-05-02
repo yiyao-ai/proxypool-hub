@@ -186,14 +186,53 @@
                     </div>
 
                     <div class="sidebar-group">
-                        <button class="sidebar-section-toggle" @click="toggleNavSection('configuration')" :aria-expanded="isSectionExpanded('configuration')">
-                            <span class="sidebar-section-title text-xs font-bold text-gray-600 uppercase tracking-widest" x-text="t('configuration')"></span>
+                        <button class="sidebar-section-toggle" @click="toggleNavSection('assistant')" :aria-expanded="isSectionExpanded('assistant')">
+                            <span class="sidebar-section-title text-xs font-bold text-gray-600 uppercase tracking-widest" x-text="t('assistantDirectory')"></span>
                             <svg class="sidebar-section-chevron w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"
-                                :class="{ 'rotate-180': isSectionExpanded('configuration') }">
+                                :class="{ 'rotate-180': isSectionExpanded('assistant') }">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
                             </svg>
                         </button>
-                        <nav class="flex flex-col gap-1" x-show="isSectionExpanded('configuration')">
+                        <nav class="flex flex-col gap-1" x-show="isSectionExpanded('assistant')">
+                            <button class="nav-item"
+                                :class="{'active': activeTab === 'assistantAgent'}" @click="setActiveTab('assistantAgent')" :title="sidebarCollapsed ? t('assistantAgentTitle') : ''">
+                                <svg class="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.75 3a.75.75 0 01.75.75v.443c.794.077 1.56.264 2.287.548l.313-.313a.75.75 0 011.06 0l1.415 1.414a.75.75 0 010 1.061l-.313.313c.284.726.47 1.492.548 2.286h.444a.75.75 0 01.75.75v2a.75.75 0 01-.75.75h-.444a7.479 7.479 0 01-.548 2.287l.313.313a.75.75 0 010 1.06l-1.414 1.415a.75.75 0 01-1.061 0l-.313-.313a7.479 7.479 0 01-2.287.548v.444a.75.75 0 01-.75.75h-2a.75.75 0 01-.75-.75v-.444a7.479 7.479 0 01-2.286-.548l-.313.313a.75.75 0 01-1.061 0L4.42 18.58a.75.75 0 010-1.06l.313-.313A7.479 7.479 0 014.186 14.92h-.443a.75.75 0 01-.75-.75v-2a.75.75 0 01.75-.75h.443c.077-.794.264-1.56.548-2.286l-.313-.313a.75.75 0 010-1.061L5.835 4.35a.75.75 0 011.061 0l.313.313A7.479 7.479 0 019.496 4.12V3.75A.75.75 0 0110.246 3h-.496z" />
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9.75A2.25 2.25 0 109 12a2.25 2.25 0 003 2.25" />
+                                </svg>
+                                <span class="sidebar-label" x-text="t('assistantAgentTitle')"></span>
+                            </button>
+                        </nav>
+                    </div>
+
+                    <div class="sidebar-group">
+                        <button class="sidebar-section-toggle" @click="toggleNavSection('cliTools')" :aria-expanded="isSectionExpanded('cliTools')">
+                            <span class="sidebar-section-title text-xs font-bold text-gray-600 uppercase tracking-widest" x-text="t('cliToolsDirectory')"></span>
+                            <svg class="sidebar-section-chevron w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"
+                                :class="{ 'rotate-180': isSectionExpanded('cliTools') }">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+                            </svg>
+                        </button>
+                        <nav class="flex flex-col gap-1" x-show="isSectionExpanded('cliTools')">
+                            <button class="nav-item"
+                                :class="{'active': activeTab === 'tools'}" @click="setActiveTab('tools'); loadToolsStatus()" :title="sidebarCollapsed ? t('toolInstaller') : ''">
+                                <svg class="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path>
+                                </svg>
+                                <span class="sidebar-label" x-text="t('toolInstaller')"></span>
+                            </button>
+                        </nav>
+                    </div>
+
+                    <div class="sidebar-group">
+                        <button class="sidebar-section-toggle" @click="toggleNavSection('credentials')" :aria-expanded="isSectionExpanded('credentials')">
+                            <span class="sidebar-section-title text-xs font-bold text-gray-600 uppercase tracking-widest" x-text="t('credentials')"></span>
+                            <svg class="sidebar-section-chevron w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"
+                                :class="{ 'rotate-180': isSectionExpanded('credentials') }">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+                            </svg>
+                        </button>
+                        <nav class="flex flex-col gap-1" x-show="isSectionExpanded('credentials')">
                             <button class="nav-item"
                                 :class="{'active': activeTab === 'accounts'}" @click="setActiveTab('accounts')" :title="sidebarCollapsed ? t('accounts') : ''">
                                 <svg class="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -209,6 +248,32 @@
                                 <span class="sidebar-label" x-text="t('apiKeys')"></span>
                             </button>
                             <button class="nav-item"
+                                :class="{'active': activeTab === 'localModels'}" @click="setActiveTab('localModels')" :title="sidebarCollapsed ? t('localModels') : ''">
+                                <svg class="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.75 17L6 20.75V6a2 2 0 012-2h8a2 2 0 012 2v5.25M15 15h6m-3-3v6"></path>
+                                </svg>
+                                <span class="sidebar-label" x-text="t('localModels')"></span>
+                            </button>
+                        </nav>
+                    </div>
+
+                    <div class="sidebar-group">
+                        <button class="sidebar-section-toggle" @click="toggleNavSection('configuration')" :aria-expanded="isSectionExpanded('configuration')">
+                            <span class="sidebar-section-title text-xs font-bold text-gray-600 uppercase tracking-widest" x-text="t('configuration')"></span>
+                            <svg class="sidebar-section-chevron w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"
+                                :class="{ 'rotate-180': isSectionExpanded('configuration') }">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+                            </svg>
+                        </button>
+                        <nav class="flex flex-col gap-1" x-show="isSectionExpanded('configuration')">
+                            <button class="nav-item"
+                                :class="{'active': activeTab === 'routing'}" @click="setActiveTab('routing')" :title="sidebarCollapsed ? t('routing') : ''">
+                                <svg class="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 7h16M4 12h10M4 17h7" />
+                                </svg>
+                                <span class="sidebar-label" x-text="t('routing')"></span>
+                            </button>
+                            <button class="nav-item"
                                 :class="{'active': activeTab === 'channels'}" @click="setActiveTab('channels')" :title="sidebarCollapsed ? t('channels') : ''">
                                 <svg class="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 9h8m-8 4h5m-9 8h16a2 2 0 002-2V7a2 2 0 00-2-2h-3l-2-2H9L7 5H4a2 2 0 00-2 2v12a2 2 0 002 2z" />
@@ -216,26 +281,12 @@
                                 <span class="sidebar-label" x-text="t('channels')"></span>
                             </button>
                             <button class="nav-item"
-                                :class="{'active': activeTab === 'tools'}" @click="setActiveTab('tools'); loadToolsStatus()" :title="sidebarCollapsed ? t('toolInstaller') : ''">
-                                <svg class="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path>
-                                </svg>
-                                <span class="sidebar-label" x-text="t('toolInstaller')"></span>
-                            </button>
-                            <button class="nav-item"
-                                :class="{'active': activeTab === 'localModels'}" @click="setActiveTab('localModels')" :title="sidebarCollapsed ? t('localModels') : ''">
-                                <svg class="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.75 17L6 20.75V6a2 2 0 012-2h8a2 2 0 012 2v5.25M15 15h6m-3-3v6"></path>
-                                </svg>
-                                <span class="sidebar-label" x-text="t('localModels')"></span>
-                            </button>
-                            <button class="nav-item"
                                 :class="{'active': activeTab === 'settings'}" @click="setActiveTab('settings')" :title="sidebarCollapsed ? t('settings') : ''">
                                 <svg class="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
                                 </svg>
-                                <span class="sidebar-label" x-text="t('settings')"></span>
+                                <span class="sidebar-label" x-text="t('generalSettings')"></span>
                             </button>
                             <button class="nav-item"
                                 @click="setActiveTab('resources'); window.location.href='/resources/'" :title="sidebarCollapsed ? t('resources') : ''">
@@ -496,157 +547,6 @@
                     </div>
                 </div>
 
-                <div class="mt-6 mb-4 flex items-center justify-between gap-4">
-                    <div>
-                        <div class="text-xs font-mono text-gray-400 uppercase tracking-widest" x-text="t('dashboardCliConsole')"></div>
-                        <p class="text-sm text-gray-500 mt-1" x-text="t('dashboardCliConsoleDesc')"></p>
-                    </div>
-                    <button class="btn btn-xs btn-outline border-space-border text-gray-400 hover:text-white"
-                        @click="refreshProxyStatus()" x-text="t('refresh')"></button>
-                </div>
-
-                <div class="grid gap-6 lg:grid-cols-2">
-                    <div class="view-card dashboard-section-card">
-                        <div class="flex items-center gap-2.5 mb-4">
-                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" class="w-4 h-4 text-neon-cyan">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path>
-                        </svg>
-                        <h3 class="text-xs font-mono text-gray-400 uppercase tracking-widest" x-text="t('usageWithClaude')"></h3>
-                        <span x-show="proxyStatus.claude" class="ml-2 px-2 py-0.5 text-xs rounded-full bg-green-500/20 text-green-400 border border-green-500/30" x-text="t('proxied')"></span>
-                    </div>
-                        <div class="bg-space-800/50 border border-space-border/30 rounded-lg p-4 font-mono text-sm text-gray-300">
-                        <div class="text-gray-500 mb-2" x-text="t('setEnvVars')"></div>
-                        <div class="text-neon-cyan">export ANTHROPIC_BASE_URL=http://localhost:8081</div>
-                        <div class="text-neon-cyan">export ANTHROPIC_API_KEY=any-key</div>
-                        <div class="text-gray-500 mt-2 mb-2" x-text="t('runClaude')"></div>
-                        <div class="text-neon-green">claude</div>
-                    </div>
-
-                        <div class="dashboard-tool-actions mt-4">
-                        <button class="btn btn-sm btn-surface font-sans"
-                            @click="openConfigViewer('claude')" x-text="t('viewConfig')">
-                        </button>
-                        <button class="btn btn-sm btn-surface font-sans gap-1"
-                            @click="configAndLaunch('claude')" :title="t('configAndLaunch')">
-                            <svg class="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 20 20"><path d="M6.3 2.841A1.5 1.5 0 004 4.12V15.88a1.5 1.5 0 002.3 1.279l9.344-5.88a1.5 1.5 0 000-2.557L6.3 2.84z"/></svg>
-                            <span x-text="t('launchTool')"></span>
-                        </button>
-                        <button x-show="proxyStatus.claude" class="btn btn-sm bg-red-500/20 hover:bg-red-500/40 border border-red-500/30 text-red-400 font-sans"
-                            @click="removeClaudeProxy()" x-text="t('removeProxy')">
-                        </button>
-                        <button class="btn btn-sm btn-accent-purple font-sans"
-                            @click="setClaudeCodeProxyTestConfig()" x-text="t('updateClaudeSettings')">
-                        </button>
-                    </div>
-                </div>
-
-                    <div class="view-card dashboard-section-card">
-                        <div class="flex items-center gap-2.5 mb-4">
-                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" class="w-4 h-4 text-neon-green">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path>
-                        </svg>
-                        <h3 class="text-xs font-mono text-gray-400 uppercase tracking-widest" x-text="t('usageWithCodex')"></h3>
-                        <span x-show="proxyStatus.codex" class="ml-2 px-2 py-0.5 text-xs rounded-full bg-green-500/20 text-green-400 border border-green-500/30" x-text="t('proxied')"></span>
-                    </div>
-                        <div class="bg-space-800/50 border border-space-border/30 rounded-lg p-4 font-mono text-sm text-gray-300">
-                        <div class="text-gray-500 mb-2" x-text="t('codexSetConfig')"></div>
-                        <div class="text-neon-cyan text-xs mb-1">~/.codex/config.toml</div>
-                        <div class="text-neon-green">chatgpt_base_url = "http://localhost:8081/backend-api/"</div>
-                        <div class="text-neon-green">openai_base_url = "http://localhost:8081"</div>
-                        <div class="text-gray-500 mt-3 mb-2" x-text="t('runCodex')"></div>
-                        <div class="text-neon-green">codex</div>
-                    </div>
-                        <div class="dashboard-tool-actions mt-4">
-                        <button class="btn btn-sm btn-surface font-sans"
-                            @click="openConfigViewer('codex')" x-text="t('viewConfig')">
-                        </button>
-                        <button class="btn btn-sm btn-surface font-sans gap-1"
-                            @click="configAndLaunch('codex')" :title="t('configAndLaunch')">
-                            <svg class="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 20 20"><path d="M6.3 2.841A1.5 1.5 0 004 4.12V15.88a1.5 1.5 0 002.3 1.279l9.344-5.88a1.5 1.5 0 000-2.557L6.3 2.84z"/></svg>
-                            <span x-text="t('launchTool')"></span>
-                        </button>
-                        <button x-show="proxyStatus.codex" class="btn btn-sm bg-red-500/20 hover:bg-red-500/40 border border-red-500/30 text-red-400 font-sans"
-                            @click="removeCodexProxy()" x-text="t('removeProxy')">
-                        </button>
-                        <button class="btn btn-sm btn-accent-green font-sans"
-                            @click="setCodexProxyConfig()" x-text="t('updateCodexSettings')">
-                        </button>
-                    </div>
-                </div>
-
-                    <div class="view-card dashboard-section-card">
-                        <div class="flex items-center gap-2.5 mb-4">
-                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" class="w-4 h-4 text-blue-400">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path>
-                        </svg>
-                        <h3 class="text-xs font-mono text-gray-400 uppercase tracking-widest" x-text="t('usageWithGemini')"></h3>
-                        <span x-show="proxyStatus.gemini" class="ml-2 px-2 py-0.5 text-xs rounded-full bg-green-500/20 text-green-400 border border-green-500/30" x-text="t('proxied')"></span>
-                    </div>
-                        <div class="bg-space-800/50 border border-space-border/30 rounded-lg p-4 font-mono text-sm text-gray-300">
-                        <div class="text-gray-500 mb-2" x-text="t('geminiSetEnv')"></div>
-                        <div class="text-neon-cyan">set GEMINI_API_KEY=proxy</div>
-                        <div class="text-gray-500 mt-2 mb-2" x-text="t('runGemini')"></div>
-                        <div class="text-neon-green">gemini</div>
-                        <div class="text-gray-500 text-xs mt-2">Select "Gemini API key" when prompted for auth</div>
-                    </div>
-                        <div class="dashboard-tool-actions mt-4">
-                        <button class="btn btn-sm btn-surface font-sans"
-                            @click="openConfigViewer('gemini')" x-text="t('viewConfig')">
-                        </button>
-                        <button class="btn btn-sm btn-surface font-sans gap-1"
-                            @click="configAndLaunch('gemini')" :title="t('configAndLaunch')">
-                            <svg class="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 20 20"><path d="M6.3 2.841A1.5 1.5 0 004 4.12V15.88a1.5 1.5 0 002.3 1.279l9.344-5.88a1.5 1.5 0 000-2.557L6.3 2.84z"/></svg>
-                            <span x-text="t('launchTool')"></span>
-                        </button>
-                        <button x-show="proxyStatus.gemini" class="btn btn-sm bg-red-500/20 hover:bg-red-500/40 border border-red-500/30 text-red-400 font-sans"
-                            @click="removeGeminiProxy()" x-text="t('removeProxy')">
-                        </button>
-                        <button class="btn btn-sm btn-accent-blue font-sans"
-                            @click="setGeminiCliProxyConfig()" x-text="t('updateGeminiSettings')">
-                        </button>
-                    </div>
-                </div>
-
-                    <div class="view-card dashboard-section-card">
-                        <div class="flex items-center gap-2.5 mb-4">
-                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" class="w-4 h-4 text-orange-400">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path>
-                        </svg>
-                        <h3 class="text-xs font-mono text-gray-400 uppercase tracking-widest" x-text="t('usageWithOpenClaw')"></h3>
-                        <span x-show="proxyStatus.openclaw" class="ml-2 px-2 py-0.5 text-xs rounded-full bg-green-500/20 text-green-400 border border-green-500/30" x-text="t('proxied')"></span>
-                    </div>
-                        <div class="bg-space-800/50 border border-space-border/30 rounded-lg p-4 font-mono text-sm text-gray-300">
-                        <div class="text-gray-500 mb-2" x-text="t('openclawSetConfig')"></div>
-                        <div class="text-neon-cyan text-xs mb-1">~/.openclaw/openclaw.json</div>
-                        <div class="text-orange-300">"models": { "mode": "merge", "providers": {</div>
-                        <div class="text-orange-300 pl-4">"cligate": {</div>
-                        <div class="text-orange-300 pl-6">"baseUrl": "http://localhost:8081",</div>
-                        <div class="text-orange-300 pl-6">"apiKey": "sk-ant-proxy",</div>
-                        <div class="text-orange-300 pl-6">"api": "anthropic-messages",</div>
-                        <div class="text-orange-300 pl-6">"models": [{ "id": "...", "contextWindow": ... }]</div>
-                        <div class="text-orange-300 pl-4">}</div>
-                        <div class="text-orange-300">} }</div>
-                        <div class="text-gray-500 mt-3 mb-2" x-text="t('runOpenClaw')"></div>
-                        <div class="text-neon-green">openclaw</div>
-                    </div>
-                        <div class="dashboard-tool-actions mt-4">
-                        <button class="btn btn-sm btn-surface font-sans"
-                            @click="openConfigViewer('openclaw')" x-text="t('viewConfig')">
-                        </button>
-                        <button class="btn btn-sm btn-surface font-sans gap-1"
-                            @click="configAndLaunch('openclaw')" :title="t('configAndLaunch')">
-                            <svg class="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 20 20"><path d="M6.3 2.841A1.5 1.5 0 004 4.12V15.88a1.5 1.5 0 002.3 1.279l9.344-5.88a1.5 1.5 0 000-2.557L6.3 2.84z"/></svg>
-                            <span x-text="t('launchTool')"></span>
-                        </button>
-                        <button x-show="proxyStatus.openclaw" class="btn btn-sm bg-red-500/20 hover:bg-red-500/40 border border-red-500/30 text-red-400 font-sans"
-                            @click="removeOpenClawProxy()" x-text="t('removeProxy')">
-                        </button>
-                        <button class="btn btn-sm btn-accent-orange font-sans"
-                            @click="setOpenClawProxyConfig()" x-text="t('updateOpenClawSettings')">
-                        </button>
-                    </div>
-                </div>
-            </div>
             </div>
 
             <div x-show="activeTab === 'chat'" x-transition class="view-container chat-view h-full flex flex-col min-h-0 overflow-hidden">
@@ -1535,14 +1435,16 @@
                 </div>
             </div>
 
-            <div x-show="activeTab === 'settings'" x-transition class="view-container workspace-view">
+            <div x-show="['settings', 'assistantAgent', 'routing'].includes(activeTab)" x-transition class="view-container workspace-view">
                 <div class="workspace-header flex items-center justify-between gap-4 mb-6">
                     <div>
                         <div class="workspace-eyebrow text-xs font-mono uppercase tracking-[0.32em]" x-text="t('configuration')"></div>
                         <div class="flex flex-wrap items-center gap-4 mt-2">
-                            <h1 class="text-2xl font-bold text-white tracking-tight" x-text="t('settings')"></h1>
+                            <h1 class="text-2xl font-bold text-white tracking-tight"
+                                x-text="activeTab === 'assistantAgent' ? t('assistantAgentTitle') : (activeTab === 'routing' ? t('routing') : t('generalSettings'))"></h1>
                             <div class="meta-chip flex items-center h-6 px-3 rounded-full bg-space-800/80 border border-space-border/50 shadow-sm backdrop-blur-sm">
-                                <span class="text-[10px] font-mono uppercase tracking-wider" x-text="t('serverConfiguration')"></span>
+                                <span class="text-[10px] font-mono uppercase tracking-wider"
+                                    x-text="activeTab === 'assistantAgent' ? t('assistantAgentRuntime') : (activeTab === 'routing' ? t('routingMode') : t('serverConfiguration'))"></span>
                             </div>
                         </div>
                     </div>
@@ -1553,7 +1455,7 @@
                     </div>
                 </div>
 
-                <div class="view-card overview-card overview-card-accent-cyan mb-6">
+                <div x-show="activeTab === 'settings'" class="view-card overview-card overview-card-accent-cyan mb-6">
                     <div class="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
                         <div class="min-w-0">
                             <div class="text-xs font-mono text-gray-400 uppercase tracking-widest" x-text="t('settingsOverviewKicker')"></div>
@@ -1562,12 +1464,12 @@
                         </div>
                         <div class="overview-meta flex flex-wrap gap-2">
                             <span class="meta-chip" x-text="'http://localhost:8081'"></span>
-                            <span class="meta-chip" x-text="t('assistantAgentTitle')"></span>
+                            <span class="meta-chip" x-text="configPath"></span>
                         </div>
                     </div>
                 </div>
 
-                <div class="view-card">
+                <div x-show="activeTab === 'settings'" class="view-card">
                     <div class="flex items-center gap-2.5 mb-4">
                         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" class="w-4 h-4 text-neon-cyan">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
@@ -1590,7 +1492,7 @@
                     </div>
                 </div>
 
-                <div class="view-card mt-6">
+                <div x-show="activeTab === 'assistantAgent'" class="view-card mt-6">
                     <div class="flex items-center gap-2.5 mb-4">
                         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" class="w-4 h-4 text-cyan-300">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.75 3a.75.75 0 01.75.75v.443c.794.077 1.56.264 2.287.548l.313-.313a.75.75 0 011.06 0l1.415 1.414a.75.75 0 010 1.061l-.313.313c.284.726.47 1.492.548 2.286h.444a.75.75 0 01.75.75v2a.75.75 0 01-.75.75h-.444a7.479 7.479 0 01-.548 2.287l.313.313a.75.75 0 010 1.06l-1.414 1.415a.75.75 0 01-1.061 0l-.313-.313a7.479 7.479 0 01-2.287.548v.444a.75.75 0 01-.75.75h-2a.75.75 0 01-.75-.75v-.444a7.479 7.479 0 01-2.286-.548l-.313.313a.75.75 0 01-1.061 0L4.42 18.58a.75.75 0 010-1.06l.313-.313A7.479 7.479 0 014.186 14.92h-.443a.75.75 0 01-.75-.75v-2a.75.75 0 01.75-.75h.443c.077-.794.264-1.56.548-2.286l-.313-.313a.75.75 0 010-1.061L5.835 4.35a.75.75 0 011.061 0l.313.313A7.479 7.479 0 019.496 4.12V3.75A.75.75 0 0110.246 3h-.496z"></path>
@@ -1785,7 +1687,70 @@
                     </div>
                 </div>
 
-                <div class="view-card mt-6">
+                <div x-show="activeTab === 'routing'" class="view-card mt-6">
+                    <div class="flex items-center gap-2.5 mb-4">
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" class="w-4 h-4 text-orange-400">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"></path>
+                        </svg>
+                        <h3 class="text-xs font-mono text-gray-400 uppercase tracking-widest" x-text="t('routingMode')"></h3>
+                    </div>
+                    <div class="flex flex-wrap items-center justify-between gap-4">
+                        <div>
+                            <div class="text-sm text-gray-300" x-text="t('routingModeLabel')"></div>
+                            <div class="text-xs text-gray-500 font-mono" x-text="t('routingModeDesc')"></div>
+                        </div>
+                        <div class="inline-flex items-center gap-2">
+                            <button class="btn btn-xs" :class="routingMode === 'automatic' ? 'bg-orange-400 text-black' : 'btn-outline text-gray-400'"
+                                @click="setRoutingMode('automatic')" :disabled="routingModeSaving" x-text="t('automaticRouting')"></button>
+                            <button class="btn btn-xs" :class="routingMode === 'app-assigned' ? 'bg-orange-400 text-black' : 'btn-outline text-gray-400'"
+                                @click="setRoutingMode('app-assigned')" :disabled="routingModeSaving" x-text="t('appAssignedRouting')"></button>
+                        </div>
+                    </div>
+                </div>
+
+                <div x-show="activeTab === 'routing'" class="view-card mt-6">
+                    <div class="flex items-center gap-2.5 mb-4">
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" class="w-4 h-4 text-neon-cyan">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path>
+                        </svg>
+                        <h3 class="text-xs font-mono text-gray-400 uppercase tracking-widest" x-text="t('routingPriority')"></h3>
+                    </div>
+                    <div class="flex flex-wrap items-center justify-between gap-4">
+                        <div>
+                            <div class="text-sm text-gray-300" x-text="t('routingPriorityLabel')"></div>
+                            <div class="text-xs text-gray-500 font-mono" x-text="t('routingPriorityDesc')"></div>
+                        </div>
+                        <div class="inline-flex items-center gap-2">
+                            <button class="btn btn-xs" :class="routingPriority === 'account-first' ? 'bg-neon-cyan text-black' : 'btn-outline text-gray-400'"
+                                @click="setRoutingPriority('account-first')" :disabled="routingSaving" x-text="t('accountFirst')"></button>
+                            <button class="btn btn-xs" :class="routingPriority === 'apikey-first' ? 'bg-neon-cyan text-black' : 'btn-outline text-gray-400'"
+                                @click="setRoutingPriority('apikey-first')" :disabled="routingSaving" x-text="t('apikeyFirst')"></button>
+                        </div>
+                    </div>
+                </div>
+
+                <div x-show="activeTab === 'routing'" class="view-card mt-6">
+                    <div class="flex items-center gap-2.5 mb-4">
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" class="w-4 h-4 text-neon-purple">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4"></path>
+                        </svg>
+                        <h3 class="text-xs font-mono text-gray-400 uppercase tracking-widest" x-text="t('accountStrategy')"></h3>
+                    </div>
+                    <div class="flex flex-wrap items-center justify-between gap-4">
+                        <div>
+                            <div class="text-sm text-gray-300" x-text="t('strategy')"></div>
+                            <div class="text-xs text-gray-500 font-mono" x-text="t('strategyDesc')"></div>
+                        </div>
+                        <div class="inline-flex items-center gap-2">
+                            <button class="btn btn-xs" :class="accountStrategy === 'random' ? 'bg-neon-purple text-white' : 'btn-outline text-gray-400'"
+                                @click="setAccountStrategy('random')" :disabled="strategySaving" x-text="t('randomStrategy')"></button>
+                            <button class="btn btn-xs" :class="accountStrategy === 'sequential' ? 'bg-neon-purple text-white' : 'btn-outline text-gray-400'"
+                                @click="setAccountStrategy('sequential')" :disabled="strategySaving" x-text="t('sequentialStrategy')"></button>
+                        </div>
+                    </div>
+                </div>
+
+                <div x-show="activeTab === 'routing'" class="view-card mt-6">
                     <div class="flex items-center gap-2.5 mb-4">
                         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" class="w-4 h-4 text-neon-yellow">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"></path>
@@ -1810,7 +1775,7 @@
                     </div>
                 </div>
 
-                <div class="view-card mt-6" :class="{ 'opacity-50 pointer-events-none': !enableFreeModels }">
+                <div x-show="activeTab === 'routing'" class="view-card mt-6" :class="{ 'opacity-50 pointer-events-none': !enableFreeModels }">
                     <div class="flex items-center gap-2.5 mb-4">
                         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" class="w-4 h-4 text-neon-purple">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path>
@@ -1839,95 +1804,7 @@
                     </div>
                 </div>
 
-                <div class="view-card mt-6">
-                    <div class="flex items-center gap-2.5 mb-4">
-                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" class="w-4 h-4 text-emerald-400">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2v10z"></path>
-                        </svg>
-                        <h3 class="text-xs font-mono text-gray-400 uppercase tracking-widest" x-text="t('localModelRoutingTitle')"></h3>
-                    </div>
-                    <div class="flex flex-wrap items-center justify-between gap-4">
-                        <div>
-                            <div class="text-sm text-gray-300" x-text="t('localModelRoutingLabel')"></div>
-                            <div class="text-xs text-gray-500 font-mono" x-text="t('localModelRoutingDesc')"></div>
-                        </div>
-                        <div class="inline-flex items-center gap-3">
-                            <span class="text-xs font-mono" :class="localModelRoutingEnabled ? 'text-neon-green' : 'text-red-400'" x-text="localModelRoutingEnabled ? t('enabled') : t('disabled')"></span>
-                            <button class="relative inline-flex h-6 w-11 items-center rounded-full transition-colors duration-200 focus:outline-none"
-                                :class="localModelRoutingEnabled ? 'bg-neon-green' : 'bg-space-700'"
-                                :disabled="localModelRoutingSaving"
-                                @click="toggleLocalModelRouting()">
-                                <span class="inline-block h-4 w-4 transform rounded-full bg-white transition-transform duration-200"
-                                    :class="localModelRoutingEnabled ? 'translate-x-6' : 'translate-x-1'"></span>
-                            </button>
-                        </div>
-                    </div>
-                </div>
-
-                <div class="view-card mt-6">
-                    <div class="flex items-center gap-2.5 mb-4">
-                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" class="w-4 h-4 text-neon-purple">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4"></path>
-                        </svg>
-                        <h3 class="text-xs font-mono text-gray-400 uppercase tracking-widest" x-text="t('accountStrategy')"></h3>
-                    </div>
-                    <div class="flex flex-wrap items-center justify-between gap-4">
-                        <div>
-                            <div class="text-sm text-gray-300" x-text="t('strategy')"></div>
-                            <div class="text-xs text-gray-500 font-mono" x-text="t('strategyDesc')"></div>
-                        </div>
-                        <div class="inline-flex items-center gap-2">
-                            <button class="btn btn-xs" :class="accountStrategy === 'random' ? 'bg-neon-purple text-white' : 'btn-outline text-gray-400'"
-                                @click="setAccountStrategy('random')" :disabled="strategySaving" x-text="t('randomStrategy')"></button>
-                            <button class="btn btn-xs" :class="accountStrategy === 'sequential' ? 'bg-neon-purple text-white' : 'btn-outline text-gray-400'"
-                                @click="setAccountStrategy('sequential')" :disabled="strategySaving" x-text="t('sequentialStrategy')"></button>
-                        </div>
-                    </div>
-                </div>
-
-                <div class="view-card mt-6">
-                    <div class="flex items-center gap-2.5 mb-4">
-                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" class="w-4 h-4 text-neon-cyan">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path>
-                        </svg>
-                        <h3 class="text-xs font-mono text-gray-400 uppercase tracking-widest" x-text="t('routingPriority')"></h3>
-                    </div>
-                    <div class="flex flex-wrap items-center justify-between gap-4">
-                        <div>
-                            <div class="text-sm text-gray-300" x-text="t('routingPriorityLabel')"></div>
-                            <div class="text-xs text-gray-500 font-mono" x-text="t('routingPriorityDesc')"></div>
-                        </div>
-                        <div class="inline-flex items-center gap-2">
-                            <button class="btn btn-xs" :class="routingPriority === 'account-first' ? 'bg-neon-cyan text-black' : 'btn-outline text-gray-400'"
-                                @click="setRoutingPriority('account-first')" :disabled="routingSaving" x-text="t('accountFirst')"></button>
-                            <button class="btn btn-xs" :class="routingPriority === 'apikey-first' ? 'bg-neon-cyan text-black' : 'btn-outline text-gray-400'"
-                                @click="setRoutingPriority('apikey-first')" :disabled="routingSaving" x-text="t('apikeyFirst')"></button>
-                        </div>
-                    </div>
-                </div>
-
-                <div class="view-card mt-6">
-                    <div class="flex items-center gap-2.5 mb-4">
-                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" class="w-4 h-4 text-orange-400">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"></path>
-                        </svg>
-                        <h3 class="text-xs font-mono text-gray-400 uppercase tracking-widest" x-text="t('routingMode')"></h3>
-                    </div>
-                    <div class="flex flex-wrap items-center justify-between gap-4">
-                        <div>
-                            <div class="text-sm text-gray-300" x-text="t('routingModeLabel')"></div>
-                            <div class="text-xs text-gray-500 font-mono" x-text="t('routingModeDesc')"></div>
-                        </div>
-                        <div class="inline-flex items-center gap-2">
-                            <button class="btn btn-xs" :class="routingMode === 'automatic' ? 'bg-orange-400 text-black' : 'btn-outline text-gray-400'"
-                                @click="setRoutingMode('automatic')" :disabled="routingModeSaving" x-text="t('automaticRouting')"></button>
-                            <button class="btn btn-xs" :class="routingMode === 'app-assigned' ? 'bg-orange-400 text-black' : 'btn-outline text-gray-400'"
-                                @click="setRoutingMode('app-assigned')" :disabled="routingModeSaving" x-text="t('appAssignedRouting')"></button>
-                        </div>
-                    </div>
-                </div>
-
-                <div class="view-card mt-6" :class="{ 'opacity-60': routingMode !== 'app-assigned' }">
+                <div x-show="activeTab === 'routing'" class="view-card mt-6" :class="{ 'opacity-60': routingMode !== 'app-assigned' }">
                     <div class="flex items-center gap-2.5 mb-2">
                         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" class="w-4 h-4 text-green-400">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v10a2 2 0 002 2h2m0-14h6m-6 14h6m-6-14v14m6-14h2a2 2 0 012 2v10a2 2 0 01-2 2h-2"></path>
@@ -2166,7 +2043,7 @@
                 </div>
 
                 <!-- Model Mapping -->
-                <div class="view-card mt-6">
+                <div x-show="activeTab === 'routing'" class="view-card mt-6">
                     <div class="flex items-center justify-between mb-4">
                         <div class="flex items-center gap-2.5">
                             <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" class="w-4 h-4 text-neon-green">
@@ -2857,6 +2734,31 @@
                     </div>
                 </div>
 
+                <div class="view-card mb-6">
+                    <div class="flex items-center gap-2.5 mb-4">
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" class="w-4 h-4 text-emerald-400">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2v10z"></path>
+                        </svg>
+                        <h3 class="text-xs font-mono text-gray-400 uppercase tracking-widest" x-text="t('localModelRoutingTitle')"></h3>
+                    </div>
+                    <div class="flex flex-wrap items-center justify-between gap-4">
+                        <div>
+                            <div class="text-sm text-gray-300" x-text="t('localModelRoutingLabel')"></div>
+                            <div class="text-xs text-gray-500 font-mono" x-text="t('localModelRoutingDesc')"></div>
+                        </div>
+                        <div class="inline-flex items-center gap-3">
+                            <span class="text-xs font-mono" :class="localModelRoutingEnabled ? 'text-neon-green' : 'text-red-400'" x-text="localModelRoutingEnabled ? t('enabled') : t('disabled')"></span>
+                            <button class="relative inline-flex h-6 w-11 items-center rounded-full transition-colors duration-200 focus:outline-none"
+                                :class="localModelRoutingEnabled ? 'bg-neon-green' : 'bg-space-700'"
+                                :disabled="localModelRoutingSaving"
+                                @click="toggleLocalModelRouting()">
+                                <span class="inline-block h-4 w-4 transform rounded-full bg-white transition-transform duration-200"
+                                    :class="localModelRoutingEnabled ? 'translate-x-6' : 'translate-x-1'"></span>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
                 <div class="view-card">
                     <div class="flex items-center justify-between gap-4 mb-4">
                         <div class="flex items-center gap-2.5">
@@ -3008,21 +2910,6 @@
                             </svg>
                             <span x-text="t('addApiKey')"></span>
                         </button>
-                    </div>
-                </div>
-
-                <div class="view-card overview-card overview-card-accent-purple mb-6">
-                    <div class="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-                        <div class="min-w-0">
-                            <div class="text-xs font-mono text-gray-400 uppercase tracking-widest" x-text="t('apiKeysOverviewKicker')"></div>
-                            <h2 class="overview-title text-xl font-semibold text-white mt-2" x-text="t('apiKeysOverviewTitle')"></h2>
-                            <p class="overview-copy text-sm text-gray-400 mt-3" x-text="t('apiKeysOverviewDesc')"></p>
-                        </div>
-                        <div class="overview-meta flex flex-wrap gap-2">
-                            <span class="meta-chip" x-text="apiKeyStats.activeKeys + ' ' + t('activeStatus')"></span>
-                            <span class="meta-chip" x-text="apiKeyStats.totalRequests + ' ' + t('requests')"></span>
-                            <span class="meta-chip" x-text="'$' + apiKeyStats.totalCost.toFixed(2)"></span>
-                        </div>
                     </div>
                 </div>
 
@@ -3689,19 +3576,18 @@
                 <div class="workspace-header flex items-center justify-between gap-4 mb-6">
                     <div class="tools-workspace-title flex flex-wrap items-center gap-4">
                         <div>
-                            <div class="workspace-eyebrow text-[11px] font-mono uppercase tracking-[0.18em] text-gray-500" x-text="t('toolsWorkspaceEyebrow')"></div>
-                            <h1 class="text-2xl font-bold text-white tracking-tight mt-2" x-text="t('toolInstaller')"></h1>
+                            <h1 class="text-2xl font-bold text-white tracking-tight" x-text="t('toolInstaller')"></h1>
                         </div>
                     </div>
                     <div class="tools-workspace-actions flex items-center gap-2">
-                        <button class="btn btn-xs btn-outline h-8 gap-1 text-amber-400 border-amber-500/50 hover:text-amber-300 hover:border-amber-400"
+                        <button class="btn btn-sm bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 text-amber-300 gap-1.5"
                             @click="checkToolUpdates()" :disabled="toolsCheckingUpdates">
                             <svg class="w-3.5 h-3.5" :class="{'animate-spin': toolsCheckingUpdates}" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
                             </svg>
                             <span x-text="toolsCheckingUpdates ? t('checkingUpdates') : t('checkUpdates')"></span>
                         </button>
-                        <button class="btn btn-xs btn-outline h-8 gap-1" @click="loadToolsStatus()">
+                        <button class="btn btn-sm btn-surface gap-1.5" @click="loadToolsStatus()">
                             <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
                             </svg>
@@ -3710,6 +3596,22 @@
                     </div>
                 </div>
 
+                <div class="mb-5 inline-flex rounded-2xl border border-space-border/40 bg-space-900/50 p-1.5 backdrop-blur-sm">
+                    <button class="btn btn-sm border-none rounded-xl"
+                        :class="toolsSubTab === 'install'
+                            ? 'btn-accent-green'
+                            : 'btn-ghost text-gray-500'"
+                        @click="toolsSubTab = 'install'"
+                        x-text="t('toolsTabInstall')"></button>
+                    <button class="btn btn-sm border-none rounded-xl"
+                        :class="toolsSubTab === 'configure'
+                            ? 'btn-accent-orange'
+                            : 'btn-ghost text-gray-500'"
+                        @click="toolsSubTab = 'configure'; refreshProxyStatus()"
+                        x-text="t('toolsTabConfigure')"></button>
+                </div>
+
+                <div x-show="toolsSubTab === 'install'">
                 <div class="tools-overview-grid grid gap-4 lg:grid-cols-[minmax(0,1.2fr)_minmax(0,0.8fr)] mb-4">
                     <div class="view-card overview-card">
                         <div class="tools-section-kicker text-xs font-mono text-gray-400 uppercase tracking-widest" x-text="t('toolsOverviewKicker')"></div>
@@ -3890,6 +3792,171 @@
                             </template>
                         </div>
                     </template>
+                </div>
+                </div>
+
+                <div x-show="toolsSubTab === 'configure'">
+                    <div class="view-card overview-card overview-card-accent-cyan mb-4">
+                        <div class="tools-section-kicker text-xs font-mono text-gray-400 uppercase tracking-widest" x-text="t('toolsConfigureKicker')"></div>
+                        <h2 class="overview-title text-xl font-semibold text-white mt-3" x-text="t('toolsConfigureTitle')"></h2>
+                        <p class="overview-copy text-sm text-gray-400 mt-3" x-text="t('toolsConfigureDesc')"></p>
+                        <div class="overview-meta flex flex-wrap items-center gap-2 mt-4 text-[11px] font-mono text-gray-500">
+                            <span class="meta-chip" x-text="dashboardProxyReadyCount + ' / 4 ' + t('dashboardProxyReadyTitle')"></span>
+                            <span class="meta-chip">Claude / Codex / Gemini / OpenClaw</span>
+                        </div>
+                    </div>
+
+                    <div class="mb-4 flex items-center justify-between gap-4">
+                        <div>
+                            <div class="text-xs font-mono text-gray-400 uppercase tracking-widest" x-text="t('dashboardCliConsole')"></div>
+                            <p class="text-sm text-gray-500 mt-1" x-text="t('dashboardCliConsoleDesc')"></p>
+                        </div>
+                        <button class="btn btn-sm btn-surface"
+                            @click="refreshProxyStatus()" x-text="t('refresh')"></button>
+                    </div>
+
+                    <div class="grid gap-6 lg:grid-cols-2">
+                        <div class="view-card dashboard-section-card">
+                            <div class="flex items-center gap-2.5 mb-4">
+                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" class="w-4 h-4 text-neon-cyan">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path>
+                            </svg>
+                            <h3 class="text-xs font-mono text-gray-400 uppercase tracking-widest" x-text="t('usageWithClaude')"></h3>
+                            <span x-show="proxyStatus.claude" class="ml-2 px-2 py-0.5 text-xs rounded-full bg-green-500/20 text-green-400 border border-green-500/30" x-text="t('proxied')"></span>
+                        </div>
+                            <div class="bg-space-800/50 border border-space-border/30 rounded-lg p-4 font-mono text-sm text-gray-300">
+                            <div class="text-gray-500 mb-2" x-text="t('setEnvVars')"></div>
+                            <div class="text-neon-cyan">export ANTHROPIC_BASE_URL=http://localhost:8081</div>
+                            <div class="text-neon-cyan">export ANTHROPIC_API_KEY=any-key</div>
+                            <div class="text-gray-500 mt-2 mb-2" x-text="t('runClaude')"></div>
+                            <div class="text-neon-green">claude</div>
+                        </div>
+
+                            <div class="dashboard-tool-actions mt-4">
+                            <button class="btn btn-sm btn-surface font-sans rounded-xl"
+                                @click="openConfigViewer('claude')" x-text="t('viewConfig')">
+                            </button>
+                            <button class="btn btn-sm bg-neon-cyan/90 hover:bg-neon-cyan text-space-950 border-none font-sans gap-1 rounded-xl"
+                                @click="configAndLaunch('claude')" :title="t('configAndLaunch')">
+                                <svg class="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 20 20"><path d="M6.3 2.841A1.5 1.5 0 004 4.12V15.88a1.5 1.5 0 002.3 1.279l9.344-5.88a1.5 1.5 0 000-2.557L6.3 2.84z"/></svg>
+                                <span x-text="t('launchTool')"></span>
+                            </button>
+                            <button x-show="proxyStatus.claude" class="btn btn-sm bg-red-500/15 hover:bg-red-500/25 border border-red-500/25 text-red-300 font-sans rounded-xl"
+                                @click="removeClaudeProxy()" x-text="t('removeProxy')">
+                            </button>
+                            <button class="btn btn-sm btn-accent-purple font-sans rounded-xl"
+                                @click="setClaudeCodeProxyTestConfig()" x-text="t('updateClaudeSettings')">
+                            </button>
+                        </div>
+                    </div>
+
+                        <div class="view-card dashboard-section-card">
+                            <div class="flex items-center gap-2.5 mb-4">
+                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" class="w-4 h-4 text-neon-green">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path>
+                            </svg>
+                            <h3 class="text-xs font-mono text-gray-400 uppercase tracking-widest" x-text="t('usageWithCodex')"></h3>
+                            <span x-show="proxyStatus.codex" class="ml-2 px-2 py-0.5 text-xs rounded-full bg-green-500/20 text-green-400 border border-green-500/30" x-text="t('proxied')"></span>
+                        </div>
+                            <div class="bg-space-800/50 border border-space-border/30 rounded-lg p-4 font-mono text-sm text-gray-300">
+                            <div class="text-gray-500 mb-2" x-text="t('codexSetConfig')"></div>
+                            <div class="text-neon-cyan text-xs mb-1">~/.codex/config.toml</div>
+                            <div class="text-neon-green">chatgpt_base_url = "http://localhost:8081/backend-api/"</div>
+                            <div class="text-neon-green">openai_base_url = "http://localhost:8081"</div>
+                            <div class="text-gray-500 mt-3 mb-2" x-text="t('runCodex')"></div>
+                            <div class="text-neon-green">codex</div>
+                        </div>
+                            <div class="dashboard-tool-actions mt-4">
+                            <button class="btn btn-sm btn-surface font-sans rounded-xl"
+                                @click="openConfigViewer('codex')" x-text="t('viewConfig')">
+                            </button>
+                            <button class="btn btn-sm bg-neon-cyan/90 hover:bg-neon-cyan text-space-950 border-none font-sans gap-1 rounded-xl"
+                                @click="configAndLaunch('codex')" :title="t('configAndLaunch')">
+                                <svg class="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 20 20"><path d="M6.3 2.841A1.5 1.5 0 004 4.12V15.88a1.5 1.5 0 002.3 1.279l9.344-5.88a1.5 1.5 0 000-2.557L6.3 2.84z"/></svg>
+                                <span x-text="t('launchTool')"></span>
+                            </button>
+                            <button x-show="proxyStatus.codex" class="btn btn-sm bg-red-500/15 hover:bg-red-500/25 border border-red-500/25 text-red-300 font-sans rounded-xl"
+                                @click="removeCodexProxy()" x-text="t('removeProxy')">
+                            </button>
+                            <button class="btn btn-sm btn-accent-green font-sans rounded-xl"
+                                @click="setCodexProxyConfig()" x-text="t('updateCodexSettings')">
+                            </button>
+                        </div>
+                    </div>
+
+                        <div class="view-card dashboard-section-card">
+                            <div class="flex items-center gap-2.5 mb-4">
+                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" class="w-4 h-4 text-blue-400">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path>
+                            </svg>
+                            <h3 class="text-xs font-mono text-gray-400 uppercase tracking-widest" x-text="t('usageWithGemini')"></h3>
+                            <span x-show="proxyStatus.gemini" class="ml-2 px-2 py-0.5 text-xs rounded-full bg-green-500/20 text-green-400 border border-green-500/30" x-text="t('proxied')"></span>
+                        </div>
+                            <div class="bg-space-800/50 border border-space-border/30 rounded-lg p-4 font-mono text-sm text-gray-300">
+                            <div class="text-gray-500 mb-2" x-text="t('geminiSetEnv')"></div>
+                            <div class="text-neon-cyan">set GEMINI_API_KEY=proxy</div>
+                            <div class="text-gray-500 mt-2 mb-2" x-text="t('runGemini')"></div>
+                            <div class="text-neon-green">gemini</div>
+                            <div class="text-gray-500 text-xs mt-2">Select "Gemini API key" when prompted for auth</div>
+                        </div>
+                            <div class="dashboard-tool-actions mt-4">
+                            <button class="btn btn-sm btn-surface font-sans rounded-xl"
+                                @click="openConfigViewer('gemini')" x-text="t('viewConfig')">
+                            </button>
+                            <button class="btn btn-sm bg-neon-cyan/90 hover:bg-neon-cyan text-space-950 border-none font-sans gap-1 rounded-xl"
+                                @click="configAndLaunch('gemini')" :title="t('configAndLaunch')">
+                                <svg class="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 20 20"><path d="M6.3 2.841A1.5 1.5 0 004 4.12V15.88a1.5 1.5 0 002.3 1.279l9.344-5.88a1.5 1.5 0 000-2.557L6.3 2.84z"/></svg>
+                                <span x-text="t('launchTool')"></span>
+                            </button>
+                            <button x-show="proxyStatus.gemini" class="btn btn-sm bg-red-500/15 hover:bg-red-500/25 border border-red-500/25 text-red-300 font-sans rounded-xl"
+                                @click="removeGeminiProxy()" x-text="t('removeProxy')">
+                            </button>
+                            <button class="btn btn-sm btn-accent-blue font-sans rounded-xl"
+                                @click="setGeminiCliProxyConfig()" x-text="t('updateGeminiSettings')">
+                            </button>
+                        </div>
+                    </div>
+
+                        <div class="view-card dashboard-section-card">
+                            <div class="flex items-center gap-2.5 mb-4">
+                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" class="w-4 h-4 text-orange-400">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path>
+                            </svg>
+                            <h3 class="text-xs font-mono text-gray-400 uppercase tracking-widest" x-text="t('usageWithOpenClaw')"></h3>
+                            <span x-show="proxyStatus.openclaw" class="ml-2 px-2 py-0.5 text-xs rounded-full bg-green-500/20 text-green-400 border border-green-500/30" x-text="t('proxied')"></span>
+                        </div>
+                            <div class="bg-space-800/50 border border-space-border/30 rounded-lg p-4 font-mono text-sm text-gray-300">
+                            <div class="text-gray-500 mb-2" x-text="t('openclawSetConfig')"></div>
+                            <div class="text-neon-cyan text-xs mb-1">~/.openclaw/openclaw.json</div>
+                            <div class="text-orange-300">"models": { "mode": "merge", "providers": {</div>
+                            <div class="text-orange-300 pl-4">"cligate": {</div>
+                            <div class="text-orange-300 pl-6">"baseUrl": "http://localhost:8081",</div>
+                            <div class="text-orange-300 pl-6">"apiKey": "sk-ant-proxy",</div>
+                            <div class="text-orange-300 pl-6">"api": "anthropic-messages",</div>
+                            <div class="text-orange-300 pl-6">"models": [{ "id": "...", "contextWindow": ... }]</div>
+                            <div class="text-orange-300 pl-4">}</div>
+                            <div class="text-orange-300">} }</div>
+                            <div class="text-gray-500 mt-3 mb-2" x-text="t('runOpenClaw')"></div>
+                            <div class="text-neon-green">openclaw</div>
+                        </div>
+                            <div class="dashboard-tool-actions mt-4">
+                            <button class="btn btn-sm btn-surface font-sans rounded-xl"
+                                @click="openConfigViewer('openclaw')" x-text="t('viewConfig')">
+                            </button>
+                            <button class="btn btn-sm bg-neon-cyan/90 hover:bg-neon-cyan text-space-950 border-none font-sans gap-1 rounded-xl"
+                                @click="configAndLaunch('openclaw')" :title="t('configAndLaunch')">
+                                <svg class="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 20 20"><path d="M6.3 2.841A1.5 1.5 0 004 4.12V15.88a1.5 1.5 0 002.3 1.279l9.344-5.88a1.5 1.5 0 000-2.557L6.3 2.84z"/></svg>
+                                <span x-text="t('launchTool')"></span>
+                            </button>
+                            <button x-show="proxyStatus.openclaw" class="btn btn-sm bg-red-500/15 hover:bg-red-500/25 border border-red-500/25 text-red-300 font-sans rounded-xl"
+                                @click="removeOpenClawProxy()" x-text="t('removeProxy')">
+                            </button>
+                            <button class="btn btn-sm btn-accent-orange font-sans rounded-xl"
+                                @click="setOpenClawProxyConfig()" x-text="t('updateOpenClawSettings')">
+                            </button>
+                        </div>
+                    </div>
+                    </div>
                 </div>
             </div>
                 </div>
