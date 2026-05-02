@@ -8,7 +8,7 @@
     <title>CliGate</title>
     <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🚀</text></svg>">
     <script src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js" defer></script>
-    <link rel="stylesheet" href="/css/style.css?v=20260502-settings-localmodels-header-1">
+    <link rel="stylesheet" href="/css/style.css?v=20260503-sidebar-section-spacing-1">
 </head>
 
 <body class="bg-space-950 text-gray-300 font-sans antialiased min-h-screen selection:bg-neon-purple selection:text-white"
@@ -147,7 +147,7 @@
                 <div class="sidebar-scroll flex-1 min-h-0 overflow-y-auto px-2">
                     <div class="sidebar-group">
                         <button class="sidebar-section-toggle" @click="toggleNavSection('workspace')" :aria-expanded="isSectionExpanded('workspace')">
-                            <span class="sidebar-section-title text-xs font-bold text-gray-600 uppercase tracking-widest" x-text="t('workspace')"></span>
+                            <span class="sidebar-section-title text-gray-600 uppercase tracking-widest" x-text="t('workspace')"></span>
                             <svg class="sidebar-section-chevron w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"
                                 :class="{ 'rotate-180': isSectionExpanded('workspace') }">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
@@ -187,7 +187,7 @@
 
                     <div class="sidebar-group">
                         <button class="sidebar-section-toggle" @click="toggleNavSection('assistant')" :aria-expanded="isSectionExpanded('assistant')">
-                            <span class="sidebar-section-title text-xs font-bold text-gray-600 uppercase tracking-widest" x-text="t('assistantDirectory')"></span>
+                            <span class="sidebar-section-title text-gray-600 uppercase tracking-widest" x-text="t('assistantDirectory')"></span>
                             <svg class="sidebar-section-chevron w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"
                                 :class="{ 'rotate-180': isSectionExpanded('assistant') }">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
@@ -207,7 +207,7 @@
 
                     <div class="sidebar-group">
                         <button class="sidebar-section-toggle" @click="toggleNavSection('cliTools')" :aria-expanded="isSectionExpanded('cliTools')">
-                            <span class="sidebar-section-title text-xs font-bold text-gray-600 uppercase tracking-widest" x-text="t('cliToolsDirectory')"></span>
+                            <span class="sidebar-section-title text-gray-600 uppercase tracking-widest" x-text="t('cliToolsDirectory')"></span>
                             <svg class="sidebar-section-chevron w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"
                                 :class="{ 'rotate-180': isSectionExpanded('cliTools') }">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
@@ -226,7 +226,7 @@
 
                     <div class="sidebar-group">
                         <button class="sidebar-section-toggle" @click="toggleNavSection('credentials')" :aria-expanded="isSectionExpanded('credentials')">
-                            <span class="sidebar-section-title text-xs font-bold text-gray-600 uppercase tracking-widest" x-text="t('credentials')"></span>
+                            <span class="sidebar-section-title text-gray-600 uppercase tracking-widest" x-text="t('credentials')"></span>
                             <svg class="sidebar-section-chevron w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"
                                 :class="{ 'rotate-180': isSectionExpanded('credentials') }">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
@@ -258,8 +258,27 @@
                     </div>
 
                     <div class="sidebar-group">
+                        <button class="sidebar-section-toggle" @click="toggleNavSection('channels')" :aria-expanded="isSectionExpanded('channels')">
+                            <span class="sidebar-section-title text-gray-600 uppercase tracking-widest" x-text="t('channels')"></span>
+                            <svg class="sidebar-section-chevron w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"
+                                :class="{ 'rotate-180': isSectionExpanded('channels') }">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+                            </svg>
+                        </button>
+                        <nav class="flex flex-col gap-1" x-show="isSectionExpanded('channels')">
+                            <button class="nav-item"
+                                :class="{'active': activeTab === 'channels'}" @click="setActiveTab('channels')" :title="sidebarCollapsed ? t('channels') : ''">
+                                <svg class="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 9h8m-8 4h5m-9 8h16a2 2 0 002-2V7a2 2 0 00-2-2h-3l-2-2H9L7 5H4a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                                </svg>
+                                <span class="sidebar-label" x-text="t('channels')"></span>
+                            </button>
+                        </nav>
+                    </div>
+
+                    <div class="sidebar-group">
                         <button class="sidebar-section-toggle" @click="toggleNavSection('configuration')" :aria-expanded="isSectionExpanded('configuration')">
-                            <span class="sidebar-section-title text-xs font-bold text-gray-600 uppercase tracking-widest" x-text="t('configuration')"></span>
+                            <span class="sidebar-section-title text-gray-600 uppercase tracking-widest" x-text="t('configuration')"></span>
                             <svg class="sidebar-section-chevron w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"
                                 :class="{ 'rotate-180': isSectionExpanded('configuration') }">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
@@ -274,13 +293,6 @@
                                 <span class="sidebar-label" x-text="t('routing')"></span>
                             </button>
                             <button class="nav-item"
-                                :class="{'active': activeTab === 'channels'}" @click="setActiveTab('channels')" :title="sidebarCollapsed ? t('channels') : ''">
-                                <svg class="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 9h8m-8 4h5m-9 8h16a2 2 0 002-2V7a2 2 0 00-2-2h-3l-2-2H9L7 5H4a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                                </svg>
-                                <span class="sidebar-label" x-text="t('channels')"></span>
-                            </button>
-                            <button class="nav-item"
                                 :class="{'active': activeTab === 'settings'}" @click="setActiveTab('settings')" :title="sidebarCollapsed ? t('settings') : ''">
                                 <svg class="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
@@ -288,19 +300,12 @@
                                 </svg>
                                 <span class="sidebar-label" x-text="t('generalSettings')"></span>
                             </button>
-                            <button class="nav-item"
-                                @click="setActiveTab('resources'); window.location.href='/resources/'" :title="sidebarCollapsed ? t('resources') : ''">
-                                <svg class="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6.253v13m0-13C10.832 5.483 9.246 5 7.5 5 4.462 5 2 6.79 2 9v8c0-2.21 2.462-4 5.5-4 1.746 0 3.332.483 4.5 1.253m0-8C13.168 5.483 14.754 5 16.5 5c3.038 0 5.5 1.79 5.5 4v8c0-2.21-2.462-4-5.5-4-1.746 0-3.332.483-4.5 1.253" />
-                                </svg>
-                                <span class="sidebar-label" x-text="t('resources')"></span>
-                            </button>
                         </nav>
                     </div>
 
                     <div class="sidebar-group">
                         <button class="sidebar-section-toggle" @click="toggleNavSection('observability')" :aria-expanded="isSectionExpanded('observability')">
-                            <span class="sidebar-section-title text-xs font-bold text-gray-600 uppercase tracking-widest" x-text="t('observability')"></span>
+                            <span class="sidebar-section-title text-gray-600 uppercase tracking-widest" x-text="t('observability')"></span>
                             <svg class="sidebar-section-chevron w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"
                                 :class="{ 'rotate-180': isSectionExpanded('observability') }">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
@@ -341,6 +346,27 @@
                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                                 </svg>
                                 <span class="sidebar-label" x-text="t('logs')"></span>
+                            </button>
+                        </nav>
+                    </div>
+
+                    <div class="sidebar-group">
+                        <button class="sidebar-section-toggle" @click="toggleNavSection('resources')" :aria-expanded="isSectionExpanded('resources')">
+                            <span class="sidebar-section-title text-gray-600 uppercase tracking-widest" x-text="t('resources')"></span>
+                            <svg class="sidebar-section-chevron w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"
+                                :class="{ 'rotate-180': isSectionExpanded('resources') }">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+                            </svg>
+                        </button>
+                        <nav class="flex flex-col gap-1" x-show="isSectionExpanded('resources')">
+                            <button class="nav-item"
+                                :class="{'active': activeTab === 'resources'}"
+                                @click="setActiveTab('resources'); window.location.href='/resources/'"
+                                :title="sidebarCollapsed ? t('resources') : ''">
+                                <svg class="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6.253v13m0-13C10.832 5.483 9.246 5 7.5 5 4.462 5 2 6.79 2 9v8c0-2.21 2.462-4 5.5-4 1.746 0 3.332.483 4.5 1.253m0-8C13.168 5.483 14.754 5 16.5 5c3.038 0 5.5 1.79 5.5 4v8c0-2.21-2.462-4-5.5-4-1.746 0-3.332.483-4.5 1.253" />
+                                </svg>
+                                <span class="sidebar-label" x-text="t('resources')"></span>
                             </button>
                         </nav>
                     </div>

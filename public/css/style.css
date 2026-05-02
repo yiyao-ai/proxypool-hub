@@ -201,7 +201,7 @@ html.light .sidebar-footer-link:hover {
 }
 
 html.light .sidebar-section-toggle:hover {
-    background: rgba(255, 255, 255, 0.72);
+    background: rgba(226, 232, 240, 0.92);
 }
 
 html.light .sidebar-collapse-btn {
@@ -2014,6 +2014,8 @@ table .btn-outline:hover {
 
 .sidebar.collapsed {
     width: 3.5rem; /* 56px collapsed — icons only */
+    padding-left: 0.25rem;
+    padding-right: 0.25rem;
 }
 
 .sidebar.collapsed .sidebar-label,
@@ -2029,15 +2031,17 @@ table .btn-outline:hover {
 
 .sidebar.collapsed .nav-item {
     justify-content: center;
-    width: calc(100% - 0.25rem);
-    padding-left: 0.875rem;
-    padding-right: 0.875rem;
-    margin-left: 0.25rem;
-    margin-right: 0.25rem;
+    width: 100%;
+    padding-left: 0;
+    padding-right: 0;
+    margin-left: 0;
+    margin-right: 0;
+    min-height: 2.6rem;
+    border-radius: 0.9rem;
 }
 
 .sidebar.collapsed .sidebar-inner {
-    width: 3.5rem;
+    width: 100%;
     align-items: center;
 }
 
@@ -2045,12 +2049,34 @@ table .btn-outline:hover {
     justify-content: center;
     padding-left: 0;
     padding-right: 0;
+    margin-bottom: 0.5rem;
+}
+
+.sidebar.collapsed .sidebar-scroll {
+    width: 100%;
+    padding-left: 0;
+    padding-right: 0;
+    gap: 0;
+}
+
+.sidebar.collapsed .sidebar-group {
+    width: 100%;
+    padding: 0;
+    border-top: none;
+}
+
+.sidebar.collapsed .sidebar-group:first-child {
+    padding-top: 0;
+}
+
+.sidebar.collapsed .sidebar-group + .sidebar-group {
+    margin-top: 0.5rem;
 }
 
 .sidebar-scroll {
     display: flex;
     flex-direction: column;
-    gap: 1rem;
+    gap: 0;
     scrollbar-width: thin;
     scrollbar-color: rgba(148, 163, 184, 0.35) transparent;
 }
@@ -2060,13 +2086,27 @@ table .btn-outline:hover {
 }
 
 .sidebar-group {
-    padding: 0.7rem 0;
+    padding: 0;
     border-top: 1px solid rgba(148, 163, 184, 0.06);
 }
 
 .sidebar-group:first-child {
     padding-top: 0;
     border-top: none;
+}
+
+/* Keep collapsed sidebar spacing controlled here, after the base group rules. */
+.sidebar.collapsed .sidebar-scroll {
+    gap: 0 !important;
+}
+
+.sidebar.collapsed .sidebar-group {
+    padding: 0 !important;
+    border-top: 0 !important;
+}
+
+.sidebar.collapsed .sidebar-group + .sidebar-group {
+    margin-top: 0.5rem !important;
 }
 
 .sidebar-head {
@@ -2078,9 +2118,10 @@ table .btn-outline:hover {
     align-items: center;
     justify-content: space-between;
     width: 100%;
+    min-height: 2.75rem;
     padding: 0 0.875rem;
-    margin-bottom: 0.6rem;
-    color: #94a3b8;
+    margin-bottom: 0;
+    color: #cbd5e1;
     background: transparent;
     border: none;
     border-radius: 0.75rem;
@@ -2089,8 +2130,12 @@ table .btn-outline:hover {
 }
 
 .sidebar-section-toggle:hover {
-    color: #e2e8f0;
-    background: rgba(255, 255, 255, 0.03);
+    color: #f8fafc;
+    background: rgba(255, 255, 255, 0.08);
+}
+
+.sidebar-section-toggle[aria-expanded="true"] {
+    margin-bottom: 0.18rem;
 }
 
 .sidebar-section-chevron {
@@ -2104,8 +2149,10 @@ table .btn-outline:hover {
 }
 
 .sidebar-section-title {
-    color: #94a3b8;
-    letter-spacing: 0.16em;
+    color: inherit;
+    font-size: 1rem;
+    font-weight: 800;
+    letter-spacing: 0.18em;
 }
 
 .sidebar-collapse-btn {

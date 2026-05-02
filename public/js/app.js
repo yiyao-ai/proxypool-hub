@@ -502,11 +502,13 @@ document.addEventListener('alpine:init', () => {
                     assistant: saved.assistant !== undefined ? !!saved.assistant : false,
                     cliTools: saved.cliTools !== undefined ? !!saved.cliTools : false,
                     credentials: saved.credentials !== undefined ? !!saved.credentials : false,
+                    channels: saved.channels !== undefined ? !!saved.channels : false,
                     configuration: saved.configuration !== undefined ? !!saved.configuration : (saved.system !== undefined ? !!saved.system : false),
+                    resources: saved.resources !== undefined ? !!saved.resources : false,
                     observability: saved.observability !== undefined ? !!saved.observability : (saved.api !== undefined ? !!saved.api : false)
                 };
             } catch {
-                this.navSections = { workspace: true, assistant: false, cliTools: false, credentials: false, configuration: false, observability: false };
+                this.navSections = { workspace: true, assistant: false, cliTools: false, credentials: false, channels: false, configuration: false, observability: false, resources: false };
             }
         },
 
@@ -519,7 +521,9 @@ document.addEventListener('alpine:init', () => {
             if (['assistantAgent'].includes(tab)) return 'assistant';
             if (['tools'].includes(tab)) return 'cliTools';
             if (['accounts', 'apikeys', 'localModels'].includes(tab)) return 'credentials';
-            if (['channels', 'settings', 'routing', 'resources'].includes(tab)) return 'configuration';
+            if (['channels'].includes(tab)) return 'channels';
+            if (['settings', 'routing'].includes(tab)) return 'configuration';
+            if (['resources'].includes(tab)) return 'resources';
             if (['usage', 'pricing', 'apiExplorer', 'requestLogs', 'logs'].includes(tab)) return 'observability';
             return 'workspace';
         },
