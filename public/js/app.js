@@ -1909,6 +1909,14 @@ document.addEventListener('alpine:init', () => {
             if (!Array.isArray(session.runtimePendingApprovals)) {
                 session.runtimePendingApprovals = [];
             }
+            if (Array.isArray(session.messages)) {
+                session.messages.forEach((message) => {
+                    if (message && message.kind === 'agent-command'
+                        && typeof message.commandOutputCollapsed !== 'boolean') {
+                        message.commandOutputCollapsed = true;
+                    }
+                });
+            }
         },
 
         async pollAssistantRunUntilFinal(sessionId, runId, attempts = 0) {
@@ -2207,6 +2215,12 @@ document.addEventListener('alpine:init', () => {
             const isForegroundSession = isActiveSession && this.activeTab === 'chat';
             if (event.type === 'worker.started') {
                 session.runtimeStatus = 'running';
+            } else if (event.type === 'worker.input') {
+                this.appendAgentRuntimeMessage(chatSessionId, {
+                    kind: 'agent-input',
+                    content: payload.text || '',
+                    turnNumber: payload.turnNumber || 0
+                });
             } else if (event.type === 'worker.message') {
                 this.appendAgentRuntimeMessage(chatSessionId, {
                     content: payload.text || '',
@@ -2218,7 +2232,8 @@ document.addEventListener('alpine:init', () => {
                     content: payload.command || '',
                     commandOutput: payload.output || '',
                     commandStatus: payload.status || '',
-                    exitCode: payload.exitCode
+                    exitCode: payload.exitCode,
+                    commandOutputCollapsed: true
                 });
             } else if (event.type === 'worker.file_change') {
                 const changes = Array.isArray(payload.changes) ? payload.changes : [];

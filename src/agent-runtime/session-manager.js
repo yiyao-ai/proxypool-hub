@@ -454,6 +454,12 @@ export class AgentRuntimeSessionManager {
 
     logger.info(`[AgentRuntime] Starting ${patched.provider} turn ${patched.turnCount} | session=${patched.id}`);
 
+    this._emitEvent(sessionId, AGENT_EVENT_TYPE.INPUT, {
+      text: String(input || ''),
+      turnId,
+      turnNumber: patched.turnCount
+    });
+
     handle = await provider.startTurn({
       session: patched,
       input,

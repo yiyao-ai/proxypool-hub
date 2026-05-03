@@ -13,6 +13,7 @@ export const AGENT_SESSION_STATUS = Object.freeze({
 export const AGENT_EVENT_TYPE = Object.freeze({
   STARTED: 'worker.started',
   PROGRESS: 'worker.progress',
+  INPUT: 'worker.input',
   MESSAGE: 'worker.message',
   COMMAND: 'worker.command',
   FILE_CHANGE: 'worker.file_change',

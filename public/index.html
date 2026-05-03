@@ -695,16 +695,20 @@
                             </template>
 
                             <template x-for="(message, index) in chatMessages" :key="index">
-                                <div class="flex chat-message-row" :class="message.role === 'user' ? 'justify-end' : 'justify-start'">
+                                <div class="flex chat-message-row" :class="(message.role === 'user' || message.kind === 'agent-input') ? 'justify-end' : 'justify-start'">
                                     <div class="chat-message-bubble max-w-[90%] rounded-2xl px-4 py-3 border"
-                                        :class="message.role === 'user'
-                                            ? 'text-white'
-                                            : (message.isError ? 'bg-red-500/10 border-red-500/30 text-red-200' : 'text-gray-100')">
+                                        :class="[
+                                            message.role === 'user'
+                                                ? 'text-white'
+                                                : (message.isError ? 'bg-red-500/10 border-red-500/30 text-red-200' : 'text-gray-100'),
+                                            message.kind === 'agent-input' ? 'chat-message-bubble-dispatch' : ''
+                                        ]">
                                         <div class="chat-message-meta flex items-center gap-2 mb-2">
                                             <span class="text-[10px] font-mono uppercase tracking-wider"
                                                 :class="message.role === 'user' ? 'text-neon-cyan' : (message.isError ? 'text-red-300' : 'text-gray-400')"
                                                 x-text="message.role === 'user' ? t('you') : t('assistant')"></span>
                                             <span class="text-[10px] font-mono text-gray-500" x-show="message.mappedModel" x-text="message.mappedModel"></span>
+                                            <span class="text-[10px] font-mono text-violet-300" x-show="message.kind === 'agent-input'" x-text="t('agentRuntimeDispatch')"></span>
                                             <span class="text-[10px] font-mono text-gray-500" x-show="message.kind === 'agent-command'" x-text="t('agentRuntimeCommand')"></span>
                                             <span class="text-[10px] font-mono text-gray-500" x-show="message.kind === 'agent-file-change'" x-text="t('agentRuntimeFilesChanged')"></span>
                                         </div>
@@ -715,9 +719,18 @@
                                             <pre class="whitespace-pre-wrap break-words text-[11px] font-mono text-gray-300"
                                                 x-text="formatAssistantRunObservability(message.observability, message.runStatus)"></pre>
                                         </div>
-                                        <div class="chat-message-detail mt-3 rounded-xl border border-space-border/30 bg-space-950/50 p-3" x-show="message.kind === 'agent-command' && message.commandOutput">
-                                            <div class="text-[10px] font-mono uppercase tracking-wider text-gray-500 mb-2" x-text="t('agentRuntimeCommandOutput')"></div>
-                                            <pre class="whitespace-pre-wrap break-words text-xs font-mono text-gray-300" x-text="message.commandOutput"></pre>
+                                        <div class="chat-message-detail chat-command-output mt-3 rounded-xl border border-space-border/30 bg-space-950/50 p-3" x-show="message.kind === 'agent-command' && message.commandOutput">
+                                            <button type="button"
+                                                class="chat-command-output-toggle w-full flex items-center justify-between gap-2 text-left"
+                                                @click="message.commandOutputCollapsed = !message.commandOutputCollapsed">
+                                                <span class="text-[10px] font-mono uppercase tracking-wider text-gray-500" x-text="t('agentRuntimeCommandOutput')"></span>
+                                                <span class="chat-command-output-chevron text-[11px] font-mono text-gray-400"
+                                                    :title="message.commandOutputCollapsed ? t('agentRuntimeCommandOutputExpand') : t('agentRuntimeCommandOutputCollapse')"
+                                                    x-text="message.commandOutputCollapsed ? '▶' : '▼'"></span>
+                                            </button>
+                                            <pre class="chat-command-output-body whitespace-pre-wrap break-words text-xs font-mono text-gray-300 mt-2"
+                                                x-show="!message.commandOutputCollapsed"
+                                                x-text="message.commandOutput"></pre>
                                         </div>
                                         <div class="chat-message-callout chat-message-callout-question mt-3 rounded-xl border border-cyan-500/30 bg-cyan-500/10 p-3" x-show="message.kind === 'agent-question'">
                                             <div class="text-[10px] font-mono uppercase tracking-wider text-cyan-300 mb-2" x-text="t('agentRuntimeQuestion')"></div>

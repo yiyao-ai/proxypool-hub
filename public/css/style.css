@@ -2052,27 +2052,6 @@ table .btn-outline:hover {
     margin-bottom: 0.5rem;
 }
 
-.sidebar.collapsed .sidebar-scroll {
-    width: 100%;
-    padding-left: 0;
-    padding-right: 0;
-    gap: 0;
-}
-
-.sidebar.collapsed .sidebar-group {
-    width: 100%;
-    padding: 0;
-    border-top: none;
-}
-
-.sidebar.collapsed .sidebar-group:first-child {
-    padding-top: 0;
-}
-
-.sidebar.collapsed .sidebar-group + .sidebar-group {
-    margin-top: 0.5rem;
-}
-
 .sidebar-scroll {
     display: flex;
     flex-direction: column;
@@ -2097,16 +2076,10 @@ table .btn-outline:hover {
 
 /* Keep collapsed sidebar spacing controlled here, after the base group rules. */
 .sidebar.collapsed .sidebar-scroll {
+    width: 100%;
+    padding-left: 0;
+    padding-right: 0;
     gap: 0 !important;
-}
-
-.sidebar.collapsed .sidebar-group {
-    padding: 0 !important;
-    border-top: 0 !important;
-}
-
-.sidebar.collapsed .sidebar-group + .sidebar-group {
-    margin-top: 0.5rem !important;
 }
 
 .sidebar-head {
@@ -2686,6 +2659,13 @@ table .btn-outline:hover {
     box-shadow: 0 10px 24px rgba(30, 64, 175, 0.1);
 }
 
+.chat-message-row.justify-end .chat-message-bubble-dispatch {
+    background:
+        linear-gradient(180deg, rgba(139, 92, 246, 0.2), rgba(124, 58, 237, 0.14));
+    border-color: rgba(167, 139, 250, 0.34);
+    box-shadow: 0 10px 22px rgba(124, 58, 237, 0.14);
+}
+
 .chat-message-meta {
     align-items: center;
     margin-bottom: 0.65rem;
@@ -2703,6 +2683,27 @@ table .btn-outline:hover {
     border-radius: 0.95rem;
     border-color: rgba(148, 163, 184, 0.16);
     background: rgba(255, 255, 255, 0.05);
+}
+
+.chat-command-output-toggle {
+    background: transparent;
+    border: 0;
+    padding: 0;
+    cursor: pointer;
+    color: inherit;
+}
+
+.chat-command-output-toggle:hover .chat-command-output-chevron {
+    color: #cbd5f5;
+}
+
+.chat-command-output-chevron {
+    transition: color 120ms ease;
+}
+
+.chat-command-output-body {
+    max-height: 360px;
+    overflow-y: auto;
 }
 
 .chat-message-callout {
@@ -3024,6 +3025,13 @@ html.light .chat-message-row.justify-start .chat-message-bubble {
     background: linear-gradient(180deg, rgba(224, 231, 255, 0.95), rgba(239, 246, 255, 0.94));
     border-color: rgba(165, 180, 252, 0.72);
     box-shadow: 0 10px 22px rgba(165, 180, 252, 0.14);
+}
+
+html.light .chat-message-row.justify-end .chat-message-bubble-dispatch {
+    color: #1e1b4b;
+    background: linear-gradient(180deg, rgba(221, 214, 254, 0.96), rgba(237, 233, 254, 0.94));
+    border-color: rgba(167, 139, 250, 0.7);
+    box-shadow: 0 10px 22px rgba(167, 139, 250, 0.18);
 }
 
 html.light .chat-message-body {
