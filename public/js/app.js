@@ -1,6 +1,6 @@
 document.addEventListener('alpine:init', () => {
     Alpine.data('app', () => ({
-        version: '1.0.9',
+        version: '1.2.0',
         connectionStatus: 'connecting',
         activeTab: 'dashboard',
         isSmallScreen: window.innerWidth < 1024,
@@ -4420,6 +4420,26 @@ document.addEventListener('alpine:init', () => {
 
         // ─── Model Mapping ─────────────────────────────────────────────
 
+        normalizeModelMappingProvider(type) {
+            switch (type) {
+                case 'openai':
+                case 'moonshot':
+                case 'minimax':
+                case 'zhipu':
+                    return 'openai';
+                case 'anthropic':
+                    return 'anthropic';
+                case 'gemini':
+                    return 'gemini';
+                case 'vertex-ai':
+                    return 'vertex-ai';
+                case 'deepseek':
+                    return 'deepseek';
+                default:
+                    return type || null;
+            }
+        },
+
         async loadModelMappings() {
             const { ok, data } = await this.api('/api/model-mappings');
             if (ok && data) {
@@ -4431,24 +4451,27 @@ document.addEventListener('alpine:init', () => {
                     // Check API keys
                     const keysResp = await this.api('/api/keys');
                     const keys = keysResp.ok ? (Array.isArray(keysResp.data) ? keysResp.data : keysResp.data?.keys || []) : [];
-                    for (const k of keys) configuredTypes.add(k.type);
+                    for (const k of keys) {
+                        const normalized = this.normalizeModelMappingProvider(k.type);
+                        if (normalized) configuredTypes.add(normalized);
+                    }
 
                     // Check ChatGPT accounts → openai provider
                     if (this.accounts.length > 0) configuredTypes.add('openai');
 
                     // Check Claude accounts → anthropic provider
                     if (this.claudeAccounts.length > 0) configuredTypes.add('anthropic');
-                    if (this.antigravityAccounts.length > 0) configuredTypes.add('google');
+                    if (this.antigravityAccounts.length > 0) configuredTypes.add('gemini');
                 } catch {
                     // fallback: still include account-based providers
                     if (this.accounts.length > 0) configuredTypes.add('openai');
                     if (this.claudeAccounts.length > 0) configuredTypes.add('anthropic');
-                    if (this.antigravityAccounts.length > 0) configuredTypes.add('google');
+                    if (this.antigravityAccounts.length > 0) configuredTypes.add('gemini');
                 }
 
                 this.modelMappingProviders = configuredTypes.size > 0
                     ? allProviders.filter(p => configuredTypes.has(p))
-                    : [];
+                    : allProviders;
             }
         },
 

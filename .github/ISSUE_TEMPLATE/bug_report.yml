@@ -13,7 +13,7 @@ body:
     attributes:
       label: CliGate Version
       description: Run `cligate --version` or check the dashboard header
-      placeholder: "e.g. 1.0.5"
+      placeholder: "e.g. 1.2.0"
     validations:
       required: true
 
@@ -26,6 +26,20 @@ body:
         - npm global install
         - Electron desktop app
         - From source (git clone)
+    validations:
+      required: true
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Affected Area
+      options:
+        - Installation / release
+        - Accounts / OAuth
+        - App routing / model mapping
+        - Agent runtime / channels
+        - Web dashboard UX
+        - Other
     validations:
       required: true
 

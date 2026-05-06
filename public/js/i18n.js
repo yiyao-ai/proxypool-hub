@@ -567,7 +567,7 @@ const i18n = {
     testMappingPlaceholder: 'e.g. gpt-5.4-mini',
     modelMappingReset: 'Model mappings reset to defaults',
     updateFailed: 'Update failed',
-    noProvidersConfigured: 'No API key providers configured. Add an API key first to configure model mappings.',
+    noProvidersConfigured: 'No mappable providers detected yet. Add an API key or account source first, then configure model mappings.',
 
     // API Keys page
     apiKeys: 'API Keys',
@@ -1351,7 +1351,7 @@ const i18n = {
     testMappingPlaceholder: '例如 gpt-5.4-mini',
     modelMappingReset: '模型映射已重置为默认值',
     updateFailed: '更新失败',
-    noProvidersConfigured: '尚未配置 API 密钥供应商。请先添加 API 密钥以配置模型映射。',
+    noProvidersConfigured: '当前还没有检测到可映射的供应商来源。请先添加 API 密钥或账户来源，再配置模型映射。',
     apiKeys: 'API 密钥',
     manageApiKeys: '管理 API 密钥',
     addApiKey: '添加密钥',

@@ -182,6 +182,8 @@ cligate start
 
 Download the latest release from [Releases](https://github.com/codeking-ai/cligate/releases).
 
+Starting with `v1.2.0`, a tagged release is expected to publish both GitHub release artifacts and the npm package from the same workflow. If `npx cligate@latest` or `npm install -g cligate` returns a registry `404`, check whether the matching GitHub tag finished the publish workflow successfully.
+
 ---
 
 ## Setup
@@ -203,6 +205,10 @@ Dashboard opens at **http://localhost:8081**
 4. Optionally configure **Channels** (Telegram / Feishu) or **Local Models** for local runtime routing
    Feishu local desktop setups should use **WebSocket** mode; **Webhook** mode is only needed when you have a public callback URL
 5. Accounts are automatically saved and tokens are auto-refreshed
+
+Antigravity note:
+- Browser OAuth requires `ANTIGRAVITY_GOOGLE_CLIENT_SECRET` in the server environment before you start the Google login flow
+- If that secret is unavailable, use the manual import flow instead of browser OAuth
 
 **CLI**:
 ```bash
@@ -352,6 +358,12 @@ See [API Documentation](./docs/API.md) for the full reference.
 - **WeChat** — Scan to add the author, note "CliGate" to join the group
 
   <img src="./images/wechat.jpg" alt="WeChat" width="200">
+
+Issue routing:
+- Use `Installation / release` for npm publish, desktop release, or version mismatch problems
+- Use `Accounts / OAuth` for ChatGPT, Claude, or Antigravity login and token refresh failures
+- Use `App routing / model mapping` when bindings or model mapping do not take effect
+- Use `Web dashboard UX` when the product flow is hard to understand or requires too many steps
 
 ---
 

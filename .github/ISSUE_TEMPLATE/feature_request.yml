@@ -18,6 +18,8 @@ body:
         - Dashboard UI improvement
         - Account management
         - API Key management
+        - Agent runtime / channels
+        - App routing / model mapping
         - Performance / Stability
         - Documentation
         - Other

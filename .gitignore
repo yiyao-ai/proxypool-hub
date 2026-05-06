@@ -21,3 +21,4 @@ dist-electron/
 .test-server-*.out.log
 .test-server-*.err.log
 tests/reports/
+.tmp/

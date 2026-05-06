@@ -7,6 +7,37 @@ on:
       - 'v*'
 
 jobs:
+  publish-npm:
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Verify package version matches tag
+        run: |
+          node -e "const pkg=require('./package.json'); const tag=process.env.GITHUB_REF_NAME.replace(/^v/, ''); if (pkg.version !== tag) { console.error(`package.json version ${pkg.version} does not match tag ${tag}`); process.exit(1); }"
+
+      - name: Release readiness checks
+        run: npm run release:check
+
+      - name: Publish npm package
+        run: npm publish --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
   build:
     strategy:
       matrix:
@@ -30,7 +61,7 @@ jobs:
           node-version: 24
 
       - name: Install dependencies
-        run: npm install
+        run: npm ci
 
       - name: Build desktop app
         run: npx electron-builder --${{ matrix.platform }} --publish never
@@ -48,7 +79,7 @@ jobs:
           if-no-files-found: ignore
 
   release:
-    needs: build
+    needs: [publish-npm, build]
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     permissions:

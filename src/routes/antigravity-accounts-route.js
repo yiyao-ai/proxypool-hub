@@ -14,6 +14,7 @@ import {
 } from '../antigravity-account-manager.js';
 import {
     GOOGLE_OAUTH_CONFIG,
+    hasAntigravityClientSecret,
     generateState,
     getAuthorizationUrl,
     startCallbackServer,
@@ -57,6 +58,15 @@ export function handleAntigravityOAuthCleanup(req, res) {
 }
 
 export async function handleAddAntigravityAccount(req, res) {
+    if (!hasAntigravityClientSecret()) {
+        return res.status(400).json({
+            success: false,
+            error: 'ANTIGRAVITY_GOOGLE_CLIENT_SECRET is required before starting Antigravity OAuth.',
+            hint: 'Set ANTIGRAVITY_GOOGLE_CLIENT_SECRET in the environment or use manual account import instead.',
+            status: 'misconfigured'
+        });
+    }
+
     const { port } = req.body || {};
     const callbackPort = port || GOOGLE_OAUTH_CONFIG.callbackPort;
     const state = generateState();
@@ -107,6 +117,13 @@ export async function handleAddAntigravityAccountManual(req, res) {
     try {
         const { code, port } = req.body || {};
         if (code) {
+            if (!hasAntigravityClientSecret()) {
+                return res.status(400).json({
+                    success: false,
+                    error: 'ANTIGRAVITY_GOOGLE_CLIENT_SECRET is required before exchanging an Antigravity OAuth code.',
+                    hint: 'Set ANTIGRAVITY_GOOGLE_CLIENT_SECRET in the environment or import a refresh token manually.'
+                });
+            }
             const extracted = extractCodeFromInput(code);
             const tokens = await exchangeCodeForTokens(extracted.code, port || GOOGLE_OAUTH_CONFIG.callbackPort);
             const result = await addOAuthAccount(tokens);

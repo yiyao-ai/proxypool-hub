@@ -7,6 +7,7 @@
 import express from 'express';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
+import { readFileSync } from 'fs';
 
 import { getStatus, ACCOUNTS_FILE } from '../account-manager.js';
 
@@ -151,6 +152,7 @@ import {
 } from './antigravity-accounts-route.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
+const PACKAGE_JSON = JSON.parse(readFileSync(join(__dirname, '..', '..', 'package.json'), 'utf8'));
 
 export function registerApiRoutes(app, { port }) {
   // ─── Static Web UI ─────────────────────────────────────────────────────────
@@ -163,7 +165,7 @@ export function registerApiRoutes(app, { port }) {
 
   // ─── Health ────────────────────────────────────────────────────────────────
   app.get('/health', (req, res) => {
-    res.json({ status: 'ok', ...getStatus(), configPath: ACCOUNTS_FILE });
+    res.json({ status: 'ok', version: PACKAGE_JSON.version, ...getStatus(), configPath: ACCOUNTS_FILE });
   });
 
   // ─── Anthropic Messages API ────────────────────────────────────────────────

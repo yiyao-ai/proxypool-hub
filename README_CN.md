@@ -181,6 +181,8 @@ cligate start
 
 从 [Releases](https://github.com/codeking-ai/cligate/releases) 下载最新安装包。
 
+从 `v1.2.0` 开始，打 tag 的正式发布应当由同一套 workflow 同时发布 GitHub Release 安装包和 npm 包。如果 `npx cligate@latest` 或 `npm install -g cligate` 返回 registry `404`，优先检查对应 GitHub tag 的发布流程是否成功完成。
+
 ---
 
 ## 配置说明
@@ -202,6 +204,10 @@ cligate start
 4. 如有需要，再去 **渠道** 或 **本地模型** 页面配置 Telegram / 飞书或本地运行时  
    飞书在本地桌面环境推荐使用 **WebSocket** 模式；只有在具备公网回调地址时才需要 **Webhook**
 5. 账户自动保存，token 自动刷新
+
+Antigravity 说明：
+- 浏览器 OAuth 登录前必须先在服务端环境中设置 `ANTIGRAVITY_GOOGLE_CLIENT_SECRET`
+- 如果没有这个 secret，请不要走浏览器登录，改用手动导入方式
 
 **命令行**：
 ```bash
@@ -351,6 +357,12 @@ openai_base_url = "http://localhost:8081"
 - **微信** — 扫码添加作者微信，备注「CliGate」拉你进群
 
   <img src="./images/wechat.jpg" alt="微信" width="200">
+
+GitHub issue 建议按下面分类提交：
+- `Installation / release`：npm 发布、桌面安装包、版本不一致
+- `Accounts / OAuth`：ChatGPT / Claude / Antigravity 登录或 token 刷新失败
+- `App routing / model mapping`：应用绑定或模型映射不生效
+- `Web dashboard UX`：流程难理解、步骤过多、可用性问题
 
 ---
 

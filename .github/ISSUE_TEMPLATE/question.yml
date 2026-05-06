@@ -27,7 +27,19 @@ body:
     id: version
     attributes:
       label: CliGate Version
-      placeholder: "e.g. 1.0.5"
+      placeholder: "e.g. 1.2.0"
+
+  - type: dropdown
+    id: topic
+    attributes:
+      label: Topic
+      options:
+        - Installation / publishing
+        - Accounts / OAuth
+        - App routing / model mapping
+        - Agent runtime / channels
+        - Dashboard usage
+        - Other
 
   - type: dropdown
     id: os

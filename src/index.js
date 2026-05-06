@@ -6,14 +6,19 @@
 import { startServer } from './server.js';
 import { logger } from './utils/logger.js';
 import { getStatus, ACCOUNTS_FILE } from './account-manager.js';
+import { readFileSync } from 'fs';
+import { fileURLToPath } from 'url';
+import { dirname, join } from 'path';
 
 const PORT = Number(process.env.PORT || 8081);
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const packageJson = JSON.parse(readFileSync(join(__dirname, '..', 'package.json'), 'utf8'));
 
 startServer({ port: PORT });
 
 console.log(`
 ╔══════════════════════════════════════════════════════════════╗
-║                      CliGate v1.0.6                             ║
+║                      CliGate v${packageJson.version}                             ║
 ║                   (Direct API Mode)                          ║
 ╠══════════════════════════════════════════════════════════════╣
 ║  Server:   http://localhost:${PORT}                          ║

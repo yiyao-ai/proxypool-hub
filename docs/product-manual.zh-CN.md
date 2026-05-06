@@ -22,6 +22,8 @@ CliGate 默认运行在本机，不依赖第三方中转服务器。大多数场
 1. 直接运行：`npx cligate@latest start`
 2. 全局安装后运行：`cligate start`
 
+从 `v1.2.0` 开始，正式 tag 发布应同时产出 GitHub 桌面安装包和 npm 包。如果 npm 返回 `404`，优先检查对应 GitHub tag 的发布流程是否成功。
+
 启动成功后，默认仪表盘地址为：
 
 `http://localhost:8081`
@@ -104,6 +106,10 @@ ChatGPT 账户通过 OAuth 添加。添加成功后，CliGate 会在本地保存
 ### Claude 账户
 
 Claude 账户通过 Claude OAuth 添加。Claude 账户既可以用于 Anthropic 兼容请求，也可以在聊天页中作为直接对话来源。
+
+### Antigravity 账户
+
+Antigravity 浏览器 OAuth 登录依赖服务端环境变量 `ANTIGRAVITY_GOOGLE_CLIENT_SECRET`。如果没有这个 secret，请使用手动导入，不要直接走浏览器登录流程。
 
 ### API Key
 

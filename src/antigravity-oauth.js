@@ -20,6 +20,10 @@ const GOOGLE_OAUTH_CONFIG = {
 
 export { GOOGLE_OAUTH_CONFIG };
 
+export function hasAntigravityClientSecret() {
+    return Boolean(GOOGLE_OAUTH_CONFIG.clientSecret);
+}
+
 export function generateState() {
     return crypto.randomBytes(16).toString('hex');
 }
@@ -213,6 +217,7 @@ export function extractCodeFromInput(input) {
 
 export default {
     GOOGLE_OAUTH_CONFIG,
+    hasAntigravityClientSecret,
     generateState,
     getAuthorizationUrl,
     startCallbackServer,

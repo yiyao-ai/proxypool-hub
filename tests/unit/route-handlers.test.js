@@ -327,6 +327,7 @@ test('handleSetDirectMode: rejects null body with 400', async () => {
 // ─── accounts-route ───────────────────────────────────────────────────────────
 
 import { handleSwitchAccount } from '../../src/routes/accounts-route.js';
+import { handleAddAntigravityAccount } from '../../src/routes/antigravity-accounts-route.js';
 
 test('handleSwitchAccount: rejects missing email with 400', () => {
   const req = mockReq({});
@@ -353,6 +354,15 @@ test('handleSwitchAccount: returns result for non-existent email (graceful)', ()
   // Should return a response (success or failure) but not throw
   assert.ok(res._body !== null);
   assert.ok('success' in res._body);
+});
+
+test('handleAddAntigravityAccount: rejects OAuth setup when client secret is missing', async () => {
+  const req = mockReq({});
+  const res = mockRes();
+  await handleAddAntigravityAccount(req, res);
+  assert.equal(res._status, 400);
+  assert.equal(res._body.success, false);
+  assert.match(String(res._body.error || ''), /ANTIGRAVITY_GOOGLE_CLIENT_SECRET/);
 });
 
 import { handleAddAccountManual } from '../../src/routes/accounts-route.js';

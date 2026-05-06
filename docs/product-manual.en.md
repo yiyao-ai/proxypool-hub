@@ -22,6 +22,8 @@ You can start CliGate in either of these ways:
 1. Run directly: `npx cligate@latest start`
 2. Run after global install: `cligate start`
 
+From `v1.2.0` onward, tagged releases are expected to publish GitHub desktop artifacts and the npm package together. If npm returns `404`, verify the matching GitHub tag and release workflow first.
+
 The default dashboard address is:
 
 `http://localhost:8081`
@@ -102,6 +104,10 @@ ChatGPT accounts are added through OAuth. After they are added, CliGate stores t
 ### Claude Accounts
 
 Claude accounts are added through Claude OAuth. They can serve Anthropic-compatible requests and can also be selected directly as a chat source in Web Chat.
+
+### Antigravity Accounts
+
+Antigravity browser OAuth requires `ANTIGRAVITY_GOOGLE_CLIENT_SECRET` in the server environment. If that secret is not available, use manual import instead of the browser login flow.
 
 ### API Keys
 
