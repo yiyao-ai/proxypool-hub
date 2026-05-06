@@ -2,6 +2,7 @@ import { ASSISTANT_CONTROL_MODE, ASSISTANT_RUN_STATUS } from './models.js';
 import assistantSessionStore, { AssistantSessionStore } from './session-store.js';
 import assistantRunStore, { AssistantRunStore } from './run-store.js';
 import assistantObservationService, { AssistantObservationService } from './observation-service.js';
+import assistantClarificationStore from './clarification-store.js';
 import AssistantRunner from './runner.js';
 import agentOrchestratorMessageService from '../agent-orchestrator/message-service.js';
 import assistantTaskViewService from './task-view-service.js';
@@ -179,13 +180,6 @@ function shouldDeferBackgroundCallback(result = null) {
     && sessionIds.length > 0;
 }
 
-function hasPendingRuntimeInteraction(conversation = null) {
-  return Boolean(
-    String(conversation?.lastPendingApprovalId || '').trim()
-    || String(conversation?.lastPendingQuestionId || '').trim()
-  );
-}
-
 function buildAggregatedRuntimeMessage({ sessions = [], runText = '' } = {}) {
   const zh = /[\u3400-\u9fff]/.test(String(runText || ''));
   const lines = sessions.map((session, index) => {
@@ -215,6 +209,49 @@ function buildAggregatedRuntimeMessage({ sessions = [], runText = '' } = {}) {
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function syncPendingRuntimeMarkers(conversationStore, messageService, conversation = null) {
+  const sessionId = String(conversation?.activeRuntimeSessionId || '').trim();
+  if (!conversation?.id || !sessionId) {
+    return conversation;
+  }
+
+  const patch = {};
+  const pendingApprovalId = String(conversation?.lastPendingApprovalId || '').trim();
+  if (pendingApprovalId) {
+    const stillPending = messageService.listPendingApprovals(sessionId)
+      .some((entry) => String(entry?.approvalId || '').trim() === pendingApprovalId);
+    if (!stillPending) {
+      patch.lastPendingApprovalId = null;
+    }
+  }
+
+  const pendingQuestionId = String(conversation?.lastPendingQuestionId || '').trim();
+  if (pendingQuestionId) {
+    const stillPending = messageService.listPendingQuestions(sessionId)
+      .some((entry) => (
+        String(entry?.questionId || '').trim() === pendingQuestionId
+        && String(entry?.status || '').trim() === 'pending'
+      ));
+    if (!stillPending) {
+      patch.lastPendingQuestionId = null;
+    }
+  }
+
+  const pendingClarificationId = String(conversation?.lastPendingClarificationId || '').trim();
+  if (pendingClarificationId) {
+    const clarification = assistantClarificationStore.get(pendingClarificationId);
+    if (!clarification || clarification.status !== 'pending' || clarification.conversationId !== conversation.id) {
+      patch.lastPendingClarificationId = null;
+    }
+  }
+
+  if (Object.keys(patch).length === 0) {
+    return conversation;
+  }
+
+  return conversationStore.patch(conversation.id, patch) || conversation;
 }
 
 export class AssistantModeService {
@@ -414,6 +451,12 @@ export class AssistantModeService {
         }
       });
     }
+
+    nextConversation = syncPendingRuntimeMarkers(
+      this.conversationStore,
+      this.messageService,
+      nextConversation
+    );
 
     return {
       type: 'assistant_response',
@@ -661,10 +704,6 @@ export class AssistantModeService {
     }
 
     if (!parsed && !assistantModeActive) {
-      return null;
-    }
-
-    if (!parsed && assistantModeActive && hasPendingRuntimeInteraction(conversation)) {
       return null;
     }
 

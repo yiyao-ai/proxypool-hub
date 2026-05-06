@@ -129,9 +129,18 @@ export class AgentChannelOutboundDispatcher {
         }
 
         const supervisorPatch = buildConversationSupervisorPatch({ conversation, session, event });
+        const taskIdFromSession = String(session?.metadata?.taskId || '').trim();
         const synced = syncSupervisorTaskForRuntimeEvent({
           conversation,
-          session,
+          session: taskIdFromSession
+            ? {
+                ...session,
+                metadata: {
+                  ...(session?.metadata || {}),
+                  taskId: taskIdFromSession
+                }
+              }
+            : session,
           event,
           taskMemory: supervisorPatch?.metadata?.supervisor?.taskMemory || conversation?.metadata?.supervisor?.taskMemory || null,
           store: this.supervisorTaskStore

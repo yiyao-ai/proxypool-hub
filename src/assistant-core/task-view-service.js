@@ -124,6 +124,9 @@ function normalizeSupervisorStoreTask(task = null) {
     summary: task.summary || '',
     result: task.result || '',
     error: task.error || '',
+    cwd: task.cwd || '',
+    cwdBasename: task.cwdBasename || '',
+    lastConversationId: task.lastConversationId || task.conversationId || '',
     originKind: task.metadata?.originKind || '',
     sourceTaskId: task.sourceTaskId || task.metadata?.sourceTaskId || '',
     updatedAt: task.updatedAt || task.lastUpdateAt || ''
@@ -170,6 +173,9 @@ function summarizeTask(task = null) {
     summary: task.summary || '',
     result: task.result || '',
     error: task.error || '',
+    cwd: task.cwd || '',
+    cwdBasename: task.cwdBasename || '',
+    lastConversationId: task.lastConversationId || task.conversationId || '',
     originKind: task.originKind || '',
     sourceTaskId: task.sourceTaskId || '',
     updatedAt: task.updatedAt || ''

@@ -188,6 +188,20 @@ document.addEventListener('alpine:init', () => {
         agentRuntimeProviders: [],
         agentRuntimeSessions: [],
         agentRuntimeSessionsLoading: false,
+        agentRuntimeCollapsedCwds: {},
+        assistantMind: {
+            pendingClarification: null,
+            pendingQuestions: [],
+            pendingApprovals: [],
+            knownCwds: [],
+            recentTasks: []
+        },
+        assistantMindSummary: {
+            knownCwdCount: 0
+        },
+        assistantMindLoading: false,
+        assistantAliasEditingFor: '',
+        assistantAliasInput: '',
         chatRuntimeProvider: 'codex',
         chatRuntimeEventSource: null,
         chatLoading: false,
@@ -1560,6 +1574,60 @@ document.addEventListener('alpine:init', () => {
             return 'bg-space-800 text-gray-300 border-space-border/40';
         },
 
+        agentRuntimeCwdBasename(cwd) {
+            const text = String(cwd || '').trim().replace(/[\\/]+$/, '');
+            if (!text) return '';
+            const parts = text.split(/[\\/]+/).filter(Boolean);
+            return parts[parts.length - 1] || text;
+        },
+
+        agentRuntimeGroups() {
+            // 按 cwd 把 agentRuntimeSessions 分组；保持 session 时间顺序在组内
+            // 排序规则：组内最近活动时间倒序；空 cwd 组始终末位
+            const groupMap = new Map();
+            for (const session of this.agentRuntimeSessions || []) {
+                const cwd = String(session?.cwd || '').trim();
+                const key = cwd || '__no_cwd__';
+                if (!groupMap.has(key)) {
+                    groupMap.set(key, {
+                        key,
+                        cwd,
+                        basename: this.agentRuntimeCwdBasename(cwd),
+                        sessions: [],
+                        latestUpdatedAt: ''
+                    });
+                }
+                const group = groupMap.get(key);
+                group.sessions.push(session);
+                if (String(session.updatedAt || '') > String(group.latestUpdatedAt || '')) {
+                    group.latestUpdatedAt = session.updatedAt || '';
+                }
+            }
+            return [...groupMap.values()].sort((a, b) => {
+                if (a.key === '__no_cwd__') return 1;
+                if (b.key === '__no_cwd__') return -1;
+                return String(b.latestUpdatedAt || '').localeCompare(String(a.latestUpdatedAt || ''));
+            });
+        },
+
+        isAgentRuntimeCwdCollapsed(group, index) {
+            const key = String(group?.key || '');
+            if (key in (this.agentRuntimeCollapsedCwds || {})) {
+                return this.agentRuntimeCollapsedCwds[key] === true;
+            }
+            // 默认仅最近活动的组（index 0）展开，其余折叠
+            return index !== 0;
+        },
+
+        toggleAgentRuntimeCwdGroup(group, index) {
+            const key = String(group?.key || '');
+            const currentlyCollapsed = this.isAgentRuntimeCwdCollapsed(group, index);
+            this.agentRuntimeCollapsedCwds = {
+                ...this.agentRuntimeCollapsedCwds,
+                [key]: !currentlyCollapsed
+            };
+        },
+
         channelProviderStatusClass(provider) {
             const status = provider?.status || {};
             if (status.running) return 'bg-green-500/10 text-green-300 border-green-500/30';
@@ -2763,6 +2831,94 @@ document.addEventListener('alpine:init', () => {
             this.chatHistoryOpen = true;
             if (tab === 'runtime') {
                 this.loadAgentRuntimeSessions();
+            } else if (tab === 'mind') {
+                this.loadAssistantMind();
+            }
+        },
+
+        async cancelAssistantClarification(clarificationId) {
+            const id = String(clarificationId || '').trim();
+            if (!id) return;
+            const { ok, error } = await this.api(`/api/assistant/clarifications/${encodeURIComponent(id)}/cancel`, { method: 'POST' });
+            if (!ok) {
+                this.showToast(`取消澄清失败: ${error || ''}`, 'error');
+                return;
+            }
+            this.assistantMind = { ...this.assistantMind, pendingClarification: null };
+            this.showToast(this.t('assistantMindClarificationCancelled'), 'success');
+        },
+
+        async submitAssistantAlias(workspaceRef) {
+            const alias = String(this.assistantAliasInput || '').trim();
+            if (!alias) {
+                this.showToast(this.t('assistantMindAliasEmpty'), 'warning');
+                return;
+            }
+            const { ok, error } = await this.api('/api/assistant/workspaces/aliases', {
+                method: 'POST',
+                body: { workspaceRef, alias }
+            });
+            if (!ok) {
+                this.showToast(`保存别名失败: ${error || ''}`, 'error');
+                return;
+            }
+            this.assistantAliasInput = '';
+            this.assistantAliasEditingFor = '';
+            await this.loadAssistantMind();
+        },
+
+        async loadAssistantMind() {
+            this.assistantMindLoading = true;
+            try {
+                // Workspace context（knownCwds 全局）
+                const wsRes = await this.api('/api/assistant/workspace-context');
+                const wsKnownCwds = wsRes.ok ? (wsRes.data?.knownCwds || []) : [];
+
+                let pendingClarification = null;
+                let pendingQuestions = [];
+                let pendingApprovals = [];
+                let recentTasks = [];
+
+                // 当前 chat 会话的后端 conversation id（chat-ui 路径）
+                const session = this.getActiveChatSession();
+                let conversationId = '';
+                if (session?.id) {
+                    const cs = await this.api(`/api/chat/sessions/${encodeURIComponent(session.id)}`);
+                    conversationId = cs.ok ? String(cs.data?.session?.conversationId || '') : '';
+                }
+
+                if (conversationId) {
+                    const convRes = await this.api(`/api/assistant/conversations/${encodeURIComponent(conversationId)}`);
+                    if (convRes.ok && convRes.data) {
+                        pendingClarification = convRes.data.pendingClarification || null;
+                        pendingQuestions = Array.isArray(convRes.data.pendingQuestions) ? convRes.data.pendingQuestions : [];
+                        pendingApprovals = Array.isArray(convRes.data.pendingApprovals) ? convRes.data.pendingApprovals : [];
+                    }
+                    const taskRes = await this.api(`/api/assistant/tasks?conversationId=${encodeURIComponent(conversationId)}&limit=8`);
+                    if (taskRes.ok && Array.isArray(taskRes.data?.tasks)) {
+                        recentTasks = taskRes.data.tasks.map((t) => ({
+                            id: t.id || t.taskId,
+                            title: t.task?.title || t.title || '',
+                            status: t.state || t.task?.status || '',
+                            updatedAt: t.updatedAt || ''
+                        }));
+                    }
+                }
+
+                this.assistantMind = {
+                    pendingClarification,
+                    pendingQuestions,
+                    pendingApprovals,
+                    knownCwds: wsKnownCwds,
+                    recentTasks
+                };
+                this.assistantMindSummary = {
+                    knownCwdCount: wsKnownCwds.length
+                };
+            } catch (err) {
+                this.showToast(`Mind 加载失败: ${err.message || err}`, 'error');
+            } finally {
+                this.assistantMindLoading = false;
             }
         },
 

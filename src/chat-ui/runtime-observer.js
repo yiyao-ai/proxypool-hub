@@ -62,10 +62,19 @@ export class ChatUiRuntimeObserver {
     });
 
     for (const conversation of conversations) {
+      const taskIdFromSession = String(session?.metadata?.taskId || '').trim();
       const supervisorPatch = buildConversationSupervisorPatch({ conversation, session, event });
       const synced = syncSupervisorTaskForRuntimeEvent({
         conversation,
-        session,
+        session: taskIdFromSession
+          ? {
+              ...session,
+              metadata: {
+                ...(session?.metadata || {}),
+                taskId: taskIdFromSession
+              }
+            }
+          : session,
         event,
         taskMemory: supervisorPatch?.metadata?.supervisor?.taskMemory || conversation?.metadata?.supervisor?.taskMemory || null,
         store: this.supervisorTaskStore

@@ -5,9 +5,11 @@ import agentChannelDeliveryStore from '../agent-channels/delivery-store.js';
 import assistantMemoryService from './memory-service.js';
 import assistantPolicyService from './policy-service.js';
 import assistantWorkspaceStore from './workspace-store.js';
+import assistantClarificationStore from './clarification-store.js';
 import { resolveWorkspaceScopeRef, buildWorkspaceMetadata } from './scope-resolver.js';
 import { buildTrackedSupervisorSessionIds, buildTrackedSupervisorTaskIds } from '../agent-orchestrator/supervisor-task-memory.js';
 import supervisorTaskStore from '../agent-orchestrator/supervisor-task-store.js';
+import { normalizeWorkspaceRef } from './workspace-store.js';
 
 function providerLabel(providerId) {
   if (providerId === 'claude-code') return 'Claude Code';
@@ -25,6 +27,7 @@ function summarizeRuntimeSession(session = {}) {
     title: session.title || '',
     summary: session.summary || '',
     error: session.error || '',
+    cwd: session.cwd || session?.metadata?.cwd || '',
     updatedAt: session.updatedAt || ''
   };
 }
@@ -104,6 +107,9 @@ function projectTaskRecord(task = null) {
     summary: task.summary || '',
     result: task.result || '',
     error: task.error || '',
+    cwd: task.cwd || task.metadata?.cwd || '',
+    cwdBasename: task.cwdBasename || task.metadata?.cwdBasename || '',
+    lastConversationId: task.lastConversationId || task.metadata?.lastConversationId || task.conversationId || '',
     updatedAt: task.updatedAt || task.lastUpdateAt || ''
   };
 }
@@ -156,6 +162,7 @@ export class AssistantObservationService {
     this.memoryService = memoryService;
     this.policyService = policyService;
     this.workspaceStore = workspaceStore;
+    this.clarificationStore = assistantClarificationStore;
   }
 
   buildConversationObservation(conversation) {
@@ -357,7 +364,17 @@ export class AssistantObservationService {
     const activeRuntime = conversation.activeRuntimeSessionId
       ? this.runtimeSessionManager.getSession(conversation.activeRuntimeSessionId)
       : null;
+    const pendingApprovals = activeRuntime?.id
+      ? this.runtimeSessionManager.approvalService.listPending(activeRuntime.id)
+      : [];
+    const pendingQuestions = activeRuntime?.id
+      ? this.runtimeSessionManager.listPendingQuestions(activeRuntime.id)
+        .filter((entry) => String(entry?.status || '').trim() === 'pending')
+      : [];
     const latestTask = chooseTaskFromConversation(conversation, this.taskStore, this.supervisorTaskStore);
+    const pendingClarification = conversation?.lastPendingClarificationId
+      ? this.clarificationStore.get(conversation.lastPendingClarificationId)
+      : this.clarificationStore.getPendingByConversationId(conversation.id);
     const deliveries = this.deliveryStore.listByConversation(conversation.id, {
       limit: Math.max(1, deliveryLimit)
     });
@@ -429,6 +446,31 @@ export class AssistantObservationService {
             updatedAt: latestTask.updatedAt || ''
           }
         : null,
+      pendingApprovals: pendingApprovals.map((entry) => ({
+        approvalId: entry.approvalId,
+        turnId: entry.turnId || '',
+        title: entry.title || '',
+        summary: entry.summary || '',
+        createdAt: entry.createdAt || '',
+        rawRequest: entry.rawRequest || null
+      })),
+      pendingQuestions: pendingQuestions.map((entry) => ({
+        questionId: entry.questionId,
+        turnId: entry.turnId || '',
+        text: entry.text || '',
+        options: entry.options || [],
+        createdAt: entry.createdAt || '',
+        rawRequest: entry.rawRequest || null
+      })),
+      pendingClarification: pendingClarification && pendingClarification.status === 'pending'
+        ? {
+            id: pendingClarification.id,
+            question: pendingClarification.question,
+            candidates: pendingClarification.candidates || [],
+            askedAt: pendingClarification.askedAt || pendingClarification.createdAt || '',
+            ttlSec: Number(pendingClarification.ttlSec || 0)
+          }
+        : null,
       deliveries: deliveries.map((entry) => ({
         id: entry.id,
         direction: entry.direction,
@@ -452,7 +494,16 @@ export class AssistantObservationService {
     const runtimeSessions = this.listRuntimeSessions({ limit: runtimeLimit });
     const conversations = this.listConversations({ limit: conversationLimit });
     const memory = this.memoryService.resolvePreferences({});
-    const workspaces = this.workspaceStore.list({ limit: 50 }).map((entry) => buildWorkspaceMetadata({ workspace: entry }));
+    const workspaceEntries = this.workspaceStore.list({ limit: 50 });
+    const workspaces = workspaceEntries.map((entry) => buildWorkspaceMetadata({ workspace: entry }));
+    const knownCwds = workspaceEntries.map((entry) => ({
+      ...buildWorkspaceMetadata({ workspace: entry }),
+      aliases: Array.isArray(entry?.aliases) ? entry.aliases : [],
+      summary: String(entry?.summary || '').trim(),
+      taskIds: Array.isArray(entry?.taskIds) ? entry.taskIds : [],
+      openTaskIds: Array.isArray(entry?.openTaskIds) ? entry.openTaskIds : [],
+      lastTouchedAt: String(entry?.lastTouchedAt || entry?.updatedAt || '').trim()
+    }));
     const policy = {
       globalUser: this.policyService.listPolicies({
         scope: 'global_user',
@@ -492,8 +543,69 @@ export class AssistantObservationService {
       memory,
       policy,
       workspaces,
+      knownCwds,
       runtimeSessions,
       conversations
+    };
+  }
+
+  getRecentTasks({ limit = 20, conversationId = '' } = {}) {
+    const tasks = this.supervisorTaskStore.list({
+      conversationId: String(conversationId || ''),
+      limit: Math.max(limit * 3, limit)
+    }).map(projectTaskRecord).filter(Boolean);
+    return tasks.slice(0, Math.max(1, limit));
+  }
+
+  getKnownCwds({ recent = true, limit = 20 } = {}) {
+    const entries = this.workspaceStore.list({ limit: Math.max(limit * 3, limit) });
+    const sorted = recent
+      ? [...entries].sort((left, right) => String(right.lastTouchedAt || right.updatedAt || '').localeCompare(String(left.lastTouchedAt || left.updatedAt || '')))
+      : entries;
+    return sorted.slice(0, Math.max(1, limit)).map((entry) => ({
+      ...buildWorkspaceMetadata({ workspace: entry }),
+      aliases: Array.isArray(entry?.aliases) ? entry.aliases : [],
+      summary: String(entry?.summary || '').trim(),
+      taskIds: Array.isArray(entry?.taskIds) ? entry.taskIds : [],
+      openTaskIds: Array.isArray(entry?.openTaskIds) ? entry.openTaskIds : [],
+      lastTouchedAt: String(entry?.lastTouchedAt || entry?.updatedAt || '').trim()
+    }));
+  }
+
+  getCwdInfo({ cwd = '', workspaceId = '' } = {}) {
+    const normalizedWorkspaceId = String(workspaceId || '').trim();
+    const normalizedCwd = normalizeWorkspaceRef(cwd);
+    const workspace = normalizedWorkspaceId
+      ? this.workspaceStore.list({ limit: 500 }).find((entry) => String(entry?.id || '').trim() === normalizedWorkspaceId) || null
+      : this.workspaceStore.getByRef(normalizedCwd);
+    if (!workspace) return null;
+
+    const taskIds = Array.isArray(workspace?.taskIds) ? workspace.taskIds : [];
+    const openTaskIds = new Set(Array.isArray(workspace?.openTaskIds) ? workspace.openTaskIds : []);
+    const linkedTasks = taskIds
+      .map((taskId) => this.supervisorTaskStore.get(taskId))
+      .filter(Boolean)
+      .map((task) => ({
+        id: task.id,
+        title: task.title || '',
+        status: task.status || '',
+        conversationId: task.conversationId || '',
+        lastConversationId: task.lastConversationId || task.conversationId || '',
+        cwd: task.cwd || '',
+        cwdBasename: task.cwdBasename || '',
+        isOpen: openTaskIds.has(task.id),
+        updatedAt: task.updatedAt || task.lastUpdateAt || ''
+      }))
+      .sort((left, right) => String(right.updatedAt || '').localeCompare(String(left.updatedAt || '')));
+
+    return {
+      ...buildWorkspaceMetadata({ workspace }),
+      aliases: Array.isArray(workspace?.aliases) ? workspace.aliases : [],
+      summary: String(workspace?.summary || '').trim(),
+      taskIds,
+      openTaskIds: Array.from(openTaskIds),
+      lastTouchedAt: String(workspace?.lastTouchedAt || workspace?.updatedAt || '').trim(),
+      linkedTasks
     };
   }
 

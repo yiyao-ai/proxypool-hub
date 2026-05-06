@@ -14,6 +14,7 @@ import AgentRuntimeSessionStore from '../../src/agent-runtime/session-store.js';
 import { SupervisorTaskStore } from '../../src/agent-orchestrator/supervisor-task-store.js';
 import { TaskExecutionService } from '../../src/agent-orchestrator/task-execution-service.js';
 import { AgentOrchestratorMessageService } from '../../src/agent-orchestrator/message-service.js';
+import { AssistantWorkspaceStore } from '../../src/assistant-core/workspace-store.js';
 
 function createTempDir(prefix) {
   return mkdtempSync(join(tmpdir(), prefix));
@@ -38,9 +39,17 @@ class FakeProvider {
   }
 }
 
+class FakeClaudeProvider extends FakeProvider {
+  constructor() {
+    super();
+    this.id = 'claude-code';
+  }
+}
+
 function createFixture() {
   const registry = new AgentRuntimeRegistry();
   registry.register(new FakeProvider());
+  registry.register(new FakeClaudeProvider());
   const runtimeSessionManager = new AgentRuntimeSessionManager({
     registry,
     store: new AgentRuntimeSessionStore({
@@ -55,9 +64,13 @@ function createFixture() {
   const supervisorTaskStore = new SupervisorTaskStore({
     configDir: createTempDir('cligate-task-execution-supervisor-')
   });
+  const workspaceStore = new AssistantWorkspaceStore({
+    configDir: createTempDir('cligate-task-execution-workspace-')
+  });
   const taskExecutionService = new TaskExecutionService({
     runtimeSessionManager,
-    supervisorTaskStore
+    supervisorTaskStore,
+    workspaceStore
   });
   const messageService = new AgentOrchestratorMessageService({
     runtimeSessionManager,
@@ -68,22 +81,25 @@ function createFixture() {
   return {
     runtimeSessionManager,
     supervisorTaskStore,
+    workspaceStore,
     taskExecutionService,
     messageService
   };
 }
 
 test('TaskExecutionService starts a fresh execution and binds it to the supervisor task', async () => {
-  const { taskExecutionService, supervisorTaskStore } = createFixture();
+  const { taskExecutionService, supervisorTaskStore, workspaceStore } = createFixture();
 
   const session = await taskExecutionService.startTaskExecution({
     taskId: 'task-alpha',
     conversationId: 'conv-alpha',
     provider: 'codex',
-    input: 'inspect repo'
+    input: 'inspect repo',
+    cwd: 'd:\\repo-a\\'
   });
 
   const task = supervisorTaskStore.get('task-alpha');
+  const workspace = workspaceStore.getByRef('D:\\repo-a');
   assert.ok(session.id);
   assert.equal(session.execution.executionId, session.id);
   assert.equal(session.execution.runtimeSessionId, session.id);
@@ -94,6 +110,12 @@ test('TaskExecutionService starts a fresh execution and binds it to the supervis
   assert.ok(task.executionIds.includes(session.id));
   assert.equal(task.metadata.latestExecutionId, session.id);
   assert.equal(task.metadata.executionKind, 'runtime_session');
+  assert.equal(task.cwd, 'd:\\repo-a\\');
+  assert.equal(task.cwdBasename, 'repo-a');
+  assert.equal(task.workspaceId, workspace?.id);
+  assert.equal(task.metadata.workspaceId, workspace?.id);
+  assert.ok(workspace?.taskIds.includes('task-alpha'));
+  assert.ok(workspace?.openTaskIds.includes('task-alpha'));
 });
 
 test('AgentOrchestratorMessageService continues a task through its primary execution', async () => {
@@ -423,7 +445,7 @@ test('AgentOrchestratorMessageService starts a related sibling task with source-
   assert.match(String(result.message || ''), /related task/i);
 });
 
-test('AgentOrchestratorMessageService chooses the non-focus active task for alternate-task phrasing', async () => {
+test('AgentOrchestratorMessageService routes alternate-task phrasing through an existing runtime follow-up path', async () => {
   const { messageService, runtimeSessionManager, supervisorTaskStore } = createFixture();
 
   const primary = await messageService.startRuntimeTask({
@@ -461,6 +483,9 @@ test('AgentOrchestratorMessageService chooses the non-focus active task for alte
     goal: 'build x page',
     status: 'waiting_approval'
   });
+  runtimeSessionManager.patchSession(alternate.id, {
+    status: 'waiting_approval'
+  });
 
   const result = await messageService.routeUserMessage({
     message: { text: '我的另外一个任务呢，执行的咋样了' },
@@ -493,7 +518,95 @@ test('AgentOrchestratorMessageService chooses the non-focus active task for alte
     }
   });
 
-  assert.equal(result.type, 'command_error');
-  assert.match(String(result.message || ''), /Build X page|Claude Code/i);
-  assert.match(String(result.message || ''), /permission decision|waiting on a permission decision/i);
+  assert.equal(result.type, 'runtime_continued');
+  assert.ok([primary.id, alternate.id].includes(result.session.id));
+  const turns = runtimeSessionManager.listTurns(result.session.id, { limit: 10 });
+  assert.equal(turns[0]?.input, '我的另外一个任务呢，执行的咋样了');
+});
+
+test('continueTaskExecution falls back to a new session when the primary execution record is gone', async () => {
+  const { taskExecutionService, supervisorTaskStore, runtimeSessionManager } = createFixture();
+
+  const session = await taskExecutionService.startTaskExecution({
+    taskId: 'task-fallback-missing',
+    conversationId: 'conv-fallback-missing',
+    provider: 'codex',
+    input: 'first round',
+    cwd: 'D:\\fallback'
+  });
+
+  const persistedTask = supervisorTaskStore.get('task-fallback-missing');
+  // 给 task 写一个 summary 模拟"上次跑完了"
+  supervisorTaskStore.save({
+    ...persistedTask,
+    summary: '已完成第一轮分析：项目主入口在 main.py'
+  });
+  // 模拟 codex thread 丢失：把 runtime session 记录直接抹掉，但保留 supervisor task
+  runtimeSessionManager.sessions.delete(session.id);
+
+  const result = await taskExecutionService.continueTaskExecution({
+    taskId: 'task-fallback-missing',
+    input: '继续看看下一个'
+  });
+
+  const updatedTask = supervisorTaskStore.get('task-fallback-missing');
+  assert.notEqual(result.id, session.id);
+  assert.equal(result.execution.role, 'fallback');
+  assert.equal(result.execution.taskId, 'task-fallback-missing');
+  // 原 primary 不变；新 session 进入 executionIds
+  assert.equal(updatedTask.primaryExecutionId, persistedTask.primaryExecutionId);
+  assert.ok(updatedTask.executionIds.includes(result.id));
+  // 第一轮 input 带 prior outcome 前缀
+  const newTurns = runtimeSessionManager.listTurns(result.id, { limit: 5 });
+  const firstInput = String(newTurns[0]?.input || '');
+  assert.match(firstInput, /Resuming task/);
+  assert.match(firstInput, /Current request:/);
+  assert.match(firstInput, /继续看看下一个/);
+});
+
+test('continueTaskExecution falls back when the primary execution session is cancelled', async () => {
+  const { taskExecutionService, supervisorTaskStore, runtimeSessionManager } = createFixture();
+
+  const session = await taskExecutionService.startTaskExecution({
+    taskId: 'task-fallback-cancelled',
+    conversationId: 'conv-fallback-cancelled',
+    provider: 'codex',
+    input: 'first round',
+    cwd: 'D:\\fallback-cancelled'
+  });
+
+  // 标记 session 为 cancelled
+  runtimeSessionManager.cancelSession(session.id);
+
+  const result = await taskExecutionService.continueTaskExecution({
+    taskId: 'task-fallback-cancelled',
+    input: '换个角度再来一次'
+  });
+
+  const updatedTask = supervisorTaskStore.get('task-fallback-cancelled');
+  assert.notEqual(result.id, session.id);
+  assert.equal(result.execution.role, 'fallback');
+  assert.ok(updatedTask.executionIds.includes(result.id));
+  assert.ok(updatedTask.executionIds.includes(session.id));
+});
+
+test('continueTaskExecution propagates non-fallback errors instead of silently spawning new session', async () => {
+  const { taskExecutionService } = createFixture();
+
+  await taskExecutionService.startTaskExecution({
+    taskId: 'task-fallback-running',
+    conversationId: 'conv-fallback-running',
+    provider: 'codex',
+    input: 'first round',
+    cwd: 'D:\\fallback-running'
+  });
+
+  // 传一个空 input 触发 'input is required'（来自 sendInput），该错误不应被 fallback 吞掉。
+  await assert.rejects(
+    () => taskExecutionService.continueTaskExecution({
+      taskId: 'task-fallback-running',
+      input: ''
+    }),
+    /input is required/i
+  );
 });

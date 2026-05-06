@@ -211,6 +211,7 @@ export class AgentChannelRouter {
       cwd: options.cwd,
       model: options.model,
       metadata: {
+        assistantMode: conversation?.metadata?.assistantCore?.mode || 'direct-runtime',
         source: {
           kind: 'channel',
           channel: message.channel,

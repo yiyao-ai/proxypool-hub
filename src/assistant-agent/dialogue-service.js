@@ -5,6 +5,7 @@ import assistantTaskViewService from '../assistant-core/task-view-service.js';
 import assistantObservationService from '../assistant-core/observation-service.js';
 import assistantLlmClient, { AssistantLlmClient } from './llm-client.js';
 import AssistantReactEngine from './react-engine.js';
+import { resolveReferenceContext } from './reference-resolver.js';
 
 // CliGate Assistant mainline dialogue path.
 // When available, /cligate should prefer this agent path; runner fallback is only a safety rail.
@@ -45,6 +46,39 @@ export class AssistantDialogueService {
       messageService,
       taskViewService: this.taskViewService
     });
+  }
+
+  buildRecentIntentTimeline({ conversationContext = null, taskSpace = null } = {}) {
+    const deliveries = Array.isArray(conversationContext?.deliveries)
+      ? conversationContext.deliveries
+      : [];
+    const workspaceContext = this.observationService.getWorkspaceContext({
+      runtimeLimit: 4,
+      conversationLimit: 4
+    });
+    return deliveries
+      .filter((entry) => String(entry?.direction || '').trim() === 'inbound')
+      .slice(0, 8)
+      .reverse()
+      .map((entry) => {
+        const userText = String(entry?.payload?.text || entry?.payload?.content || '').trim();
+        const resolution = resolveReferenceContext({
+          text: userText,
+          taskSpace,
+          workspaceContext,
+          conversationContext
+        });
+        return {
+          ts: entry?.createdAt || '',
+          userText,
+          action: resolution?.intent || 'user_message',
+          resolvedTargetTaskId: String(resolution?.summary?.preferredTaskId || '').trim(),
+          resolvedTargetCwd: String(resolution?.summary?.preferredWorkspaceRef || '').trim(),
+          referenceConfidence: String(resolution?.summary?.confidence || '').trim(),
+          resolutionAction: String(resolution?.summary?.recommendedAction || '').trim(),
+          shouldAskUser: resolution?.summary?.shouldAskUser === true
+        };
+      });
   }
 
   async run({ run, conversation, text, defaultRuntimeProvider = 'codex', cwd = '', model = '' } = {}) {
@@ -93,6 +127,16 @@ export class AssistantDialogueService {
       runtimeLimit: 6,
       conversationLimit: 6
     });
+    const referenceResolution = resolveReferenceContext({
+      text,
+      taskSpace,
+      workspaceContext,
+      conversationContext
+    });
+    const recentIntentTimeline = this.buildRecentIntentTimeline({
+      conversationContext,
+      taskSpace
+    });
 
     try {
       const executed = await this.reactEngine.run({
@@ -103,6 +147,8 @@ export class AssistantDialogueService {
         taskSpace,
         conversationContext,
         workspaceContext,
+        referenceResolution,
+        recentIntentTimeline,
         defaultRuntimeProvider,
         cwd,
         model

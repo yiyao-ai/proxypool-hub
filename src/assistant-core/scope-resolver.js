@@ -35,12 +35,17 @@ export function buildWorkspaceMetadata({ workspace = null, workspaceRef = '' } =
 }
 
 export function resolveGlobalUserScopeRef({ conversation = null, metadata = {} } = {}) {
+  // v2.5: UserProfile 是 per-CliGate-install 单一身份（§7.5）。同一 CliGate
+  // 用户在钉钉 / 飞书 / chat-ui 的体验应当共享语言、provider、风格等长期偏好。
+  // 因此 global_user scope 默认归一到 'default-user'，仅当上层显式提供
+  // metadata.globalUserId / metadata.userId / 对话里登记过 assistantCore.globalUserId
+  // 时才采用其他身份（为多用户预留扩展点，但暂未启用）。
+  // 不再以 conversation.externalUserId（钉钉用户名 / chat-ui 'local-user'）
+  // 作为 global_user 身份——那些值是 channel 标识，不是 CliGate 用户身份。
   const explicit = normalizeText(
     metadata?.globalUserId
       || metadata?.userId
-      || conversation?.externalUserId
       || conversation?.metadata?.assistantCore?.globalUserId
-      || conversation?.metadata?.channelContext?.externalUserId
   );
   return explicit || 'default-user';
 }

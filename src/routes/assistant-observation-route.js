@@ -1,4 +1,8 @@
 import assistantObservationService from '../assistant-core/observation-service.js';
+import assistantClarificationStore from '../assistant-core/clarification-store.js';
+import assistantWorkspaceStore, { normalizeWorkspaceRef } from '../assistant-core/workspace-store.js';
+import chatUiConversationStore from '../chat-ui/conversation-store.js';
+import agentChannelConversationStore from '../agent-channels/conversation-store.js';
 
 function parseLimit(value, fallback = 20, max = 200) {
   const parsed = Number.parseInt(String(value || ''), 10);
@@ -106,11 +110,60 @@ export function handleGetAssistantConversationContext(req, res) {
   });
 }
 
+export function handleCancelAssistantClarification(req, res) {
+  const id = String(req.params.id || '').trim();
+  if (!id) {
+    return res.status(400).json({ success: false, error: 'clarificationId is required' });
+  }
+  const current = assistantClarificationStore.get(id);
+  if (!current) {
+    return res.status(404).json({ success: false, error: 'clarification not found' });
+  }
+  const cancelled = assistantClarificationStore.cancel(id);
+  // 顺手清掉 conversation 上的 lastPendingClarificationId
+  const conversationId = String(cancelled?.conversationId || '').trim();
+  if (conversationId) {
+    for (const store of [chatUiConversationStore, agentChannelConversationStore]) {
+      const conversation = store.get?.(conversationId);
+      if (conversation && conversation.lastPendingClarificationId === id) {
+        store.patch?.(conversationId, { lastPendingClarificationId: null });
+      }
+    }
+  }
+  return res.json({ success: true, clarification: cancelled });
+}
+
+export function handleAddAssistantWorkspaceAlias(req, res) {
+  const workspaceRef = String(req.body?.workspaceRef || '').trim();
+  const alias = String(req.body?.alias || '').trim();
+  if (!workspaceRef) {
+    return res.status(400).json({ success: false, error: 'workspaceRef is required' });
+  }
+  if (!alias) {
+    return res.status(400).json({ success: false, error: 'alias is required' });
+  }
+  const normalizedRef = normalizeWorkspaceRef(workspaceRef);
+  if (!normalizedRef) {
+    return res.status(400).json({ success: false, error: 'invalid workspaceRef' });
+  }
+  const existing = assistantWorkspaceStore.getByRef(normalizedRef);
+  if (!existing) {
+    return res.status(404).json({ success: false, error: 'workspace not found' });
+  }
+  const next = assistantWorkspaceStore.upsert({
+    workspaceRef: normalizedRef,
+    patch: { aliases: [alias] }
+  });
+  return res.json({ success: true, workspace: next });
+}
+
 export default {
   handleGetAssistantWorkspaceContext,
   handleListAssistantRuntimeSessions,
   handleGetAssistantRuntimeSession,
   handleGetAssistantRuntimeTurn,
   handleListAssistantConversations,
-  handleGetAssistantConversationContext
+  handleGetAssistantConversationContext,
+  handleCancelAssistantClarification,
+  handleAddAssistantWorkspaceAlias
 };

@@ -39,6 +39,32 @@ export class AssistantConversationControlService {
       metadata: buildMetadataPatch(current.metadata || {})
     });
   }
+
+  linkTaskToConversation({
+    conversationId,
+    taskId,
+    runtimeSessionId = '',
+    metadata = {}
+  } = {}) {
+    const current = this.conversationStore.get(String(conversationId || ''));
+    if (!current) return null;
+
+    const normalizedTaskId = String(taskId || '').trim();
+    const normalizedSessionId = String(runtimeSessionId || '').trim();
+    return this.conversationStore.bindSupervisorTask(current.id, normalizedTaskId, {
+      ...(normalizedSessionId ? { activeRuntimeSessionId: normalizedSessionId } : {}),
+      trackedRuntimeSessionIds: normalizedSessionId
+        ? [
+            ...(Array.isArray(current?.trackedRuntimeSessionIds) ? current.trackedRuntimeSessionIds : []),
+            normalizedSessionId
+          ]
+        : current?.trackedRuntimeSessionIds || [],
+      metadata: {
+        ...(current.metadata || {}),
+        ...(metadata && typeof metadata === 'object' ? metadata : {})
+      }
+    });
+  }
 }
 
 export const assistantConversationControlService = new AssistantConversationControlService();

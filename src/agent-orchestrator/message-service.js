@@ -673,12 +673,43 @@ export class AgentOrchestratorMessageService {
     });
   }
 
-  async resolveApproval({ sessionId, approvalId, decision } = {}) {
-    return this.runtimeSessionManager.resolveApproval(
-      String(sessionId || ''),
-      String(approvalId || ''),
-      String(decision || '')
+  async resolveApproval({ sessionId, approvalId, decision, remember = 'none', conversationId = '' } = {}) {
+    const normalizedSessionId = String(sessionId || '');
+    const normalizedApprovalId = String(approvalId || '');
+    const normalizedDecision = String(decision || '');
+    const normalizedRemember = String(remember || 'none');
+
+    // v2.5 Bug 3：在 resolve 之前先抓 approval 详情（resolve 后状态会变），
+    // 这样 remember 路径才能拿到 rawRequest / provider 等信息建 policy。
+    const approvalSnapshot = normalizedRemember !== 'none' && normalizedDecision === 'approve'
+      ? this.runtimeSessionManager.approvalService.getApproval(normalizedSessionId, normalizedApprovalId)
+      : null;
+
+    const resolved = await this.runtimeSessionManager.resolveApproval(
+      normalizedSessionId,
+      normalizedApprovalId,
+      normalizedDecision
     );
+
+    let policy = null;
+    if (approvalSnapshot && resolved?.status === 'approved' && this.policyService?.rememberApproval) {
+      const scope = normalizedRemember === 'conversation' ? 'conversation' : 'runtime_session';
+      const scopeRef = scope === 'conversation'
+        ? String(conversationId || '').trim()
+        : normalizedSessionId;
+      if (scopeRef) {
+        policy = this.policyService.rememberApproval({
+          approval: approvalSnapshot,
+          scope,
+          scopeRef
+        });
+      }
+    }
+
+    if (policy) {
+      return { ...resolved, policy };
+    }
+    return resolved;
   }
 
   async answerQuestion({ sessionId, questionId, answer } = {}) {
@@ -686,6 +717,14 @@ export class AgentOrchestratorMessageService {
       String(sessionId || ''),
       String(questionId || ''),
       answer
+    );
+  }
+
+  cancelPendingQuestion({ sessionId, questionId, reason = '' } = {}) {
+    return this.runtimeSessionManager.cancelPendingQuestion(
+      String(sessionId || ''),
+      String(questionId || ''),
+      String(reason || '')
     );
   }
 
@@ -719,6 +758,11 @@ export class AgentOrchestratorMessageService {
     }
 
     const parsed = parseLeadingCommand(text);
+    const assistantMode = String(
+      metadata?.assistantMode
+      || conversation?.metadata?.assistantCore?.mode
+      || ''
+    ).trim().toLowerCase() === 'assistant';
     const taskRoute = selectTaskRoute(conversation, {
       text,
       parsed,
@@ -768,7 +812,7 @@ export class AgentOrchestratorMessageService {
       }
     }
 
-    if (resolvedSessionId && pendingApprovalId && !parsed?.command) {
+    if (!assistantMode && resolvedSessionId && pendingApprovalId && !parsed?.command) {
       const approval = this.runtimeSessionManager.approvalService.getApproval(resolvedSessionId, pendingApprovalId);
       if (approval && approval.status === 'pending') {
         if (isApprovalAffirmative(text) || isApprovalNegative(text)) {
@@ -958,7 +1002,7 @@ export class AgentOrchestratorMessageService {
       };
     }
 
-    if (resolvedSessionId && pendingQuestionId) {
+    if (!assistantMode && resolvedSessionId && pendingQuestionId) {
       const question = await this.answerQuestion({
         sessionId: resolvedSessionId,
         questionId: pendingQuestionId,

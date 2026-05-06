@@ -78,6 +78,64 @@ const TOOL_SCHEMAS = Object.freeze({
     },
     required: ['query']
   },
+  recall: {
+    type: 'object',
+    properties: {
+      query: { type: 'string' },
+      scope: { type: 'string', enum: ['workspace', 'conversation'] },
+      conversationId: { type: 'string' },
+      limit: { type: 'integer', minimum: 1, maximum: 20 }
+    },
+    required: ['query']
+  },
+  find_task_by_keyword: {
+    type: 'object',
+    properties: {
+      query: { type: 'string' },
+      conversationId: { type: 'string' },
+      limit: { type: 'integer', minimum: 1, maximum: 20 }
+    },
+    required: ['query']
+  },
+  list_known_cwds: {
+    type: 'object',
+    properties: {
+      recent: { type: 'boolean' },
+      limit: { type: 'integer', minimum: 1, maximum: 20 }
+    }
+  },
+  get_cwd_info: {
+    type: 'object',
+    properties: {
+      cwd: { type: 'string' },
+      workspaceId: { type: 'string' }
+    }
+  },
+  add_cwd_alias: {
+    type: 'object',
+    properties: {
+      cwd: { type: 'string' },
+      workspaceId: { type: 'string' },
+      alias: { type: 'string' }
+    },
+    required: ['alias']
+  },
+  link_task_to_conversation: {
+    type: 'object',
+    properties: {
+      taskId: { type: 'string' },
+      runtimeSessionId: { type: 'string' }
+    },
+    required: ['taskId']
+  },
+  resolve_reference: {
+    type: 'object',
+    properties: {
+      phrase: { type: 'string' },
+      conversationId: { type: 'string' }
+    },
+    required: ['phrase']
+  },
   search_project_memory: {
     type: 'object',
     properties: {
@@ -173,7 +231,16 @@ const TOOL_SCHEMAS = Object.freeze({
     properties: {
       sessionId: { type: 'string' },
       approvalId: { type: 'string' },
-      decision: { type: 'string', enum: ['approve', 'deny'] }
+      decision: { type: 'string', enum: ['approve', 'deny'] },
+      remember: {
+        type: 'string',
+        enum: ['none', 'session', 'conversation'],
+        description: 'When the user grants a sticky approval ("允许后续所有操作 / 本会话同意 / 这次对话都同意 / from now on"), set "session" or "conversation" so the same kind of request auto-passes later. Default "none" = one-shot approval.'
+      },
+      conversationId: {
+        type: 'string',
+        description: 'Required only when remember="conversation".'
+      }
     },
     required: ['sessionId', 'approvalId', 'decision']
   },
@@ -185,6 +252,53 @@ const TOOL_SCHEMAS = Object.freeze({
       answer: { type: 'string' }
     },
     required: ['sessionId', 'questionId', 'answer']
+  },
+  cancel_pending_question: {
+    type: 'object',
+    properties: {
+      sessionId: { type: 'string' },
+      questionId: { type: 'string' },
+      reason: { type: 'string' }
+    },
+    required: ['sessionId', 'questionId']
+  },
+  ask_user: {
+    type: 'object',
+    properties: {
+      question: { type: 'string' },
+      candidates: {
+        type: 'array',
+        items: {
+          type: 'object',
+          properties: {
+            kind: { type: 'string', enum: ['task', 'workspace', 'session', 'free'] },
+            id: { type: 'string' },
+            label: { type: 'string' },
+            confidence: { type: 'number' }
+          },
+          required: ['kind', 'id', 'label']
+        }
+      },
+      ttlSec: { type: 'integer', minimum: 1, maximum: 86400 }
+    },
+    required: ['question']
+  },
+  resolve_clarification: {
+    type: 'object',
+    properties: {
+      clarificationId: { type: 'string' },
+      candidateId: { type: 'string' },
+      freeText: { type: 'string' }
+    },
+    required: ['clarificationId']
+  },
+  cancel_pending_clarification: {
+    type: 'object',
+    properties: {
+      clarificationId: { type: 'string' },
+      reason: { type: 'string' }
+    },
+    required: ['clarificationId']
   },
   summarize_runtime_result: {
     type: 'object',

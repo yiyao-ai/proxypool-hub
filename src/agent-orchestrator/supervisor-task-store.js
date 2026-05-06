@@ -18,6 +18,13 @@ function toNullableText(value) {
   return normalized || null;
 }
 
+function toLowerBasename(value) {
+  const normalized = toText(value).replace(/[\\/]+$/, '');
+  if (!normalized) return '';
+  const parts = normalized.split(/[\\/]+/).filter(Boolean);
+  return String(parts[parts.length - 1] || '').trim().toLowerCase();
+}
+
 function normalizeExecutionIds(value, primaryExecutionId = '') {
   const ids = [];
   const seen = new Set();
@@ -50,6 +57,12 @@ export function createSupervisorTask({
   lastUserTurnAt = '',
   lastAssistantTurnAt = '',
   sourceTaskId = '',
+  cwd = '',
+  cwdBasename = '',
+  workspaceId = '',
+  intent = '',
+  postmortem = null,
+  lastConversationId = '',
   metadata = {}
 } = {}) {
   const now = nowIso();
@@ -74,6 +87,12 @@ export function createSupervisorTask({
     lastUserTurnAt: toText(lastUserTurnAt) || '',
     lastAssistantTurnAt: toText(lastAssistantTurnAt) || '',
     sourceTaskId: toNullableText(sourceTaskId),
+    cwd: toText(cwd),
+    cwdBasename: toText(cwdBasename) || toLowerBasename(cwd),
+    workspaceId: toNullableText(workspaceId),
+    intent: toText(intent),
+    postmortem: postmortem && typeof postmortem === 'object' ? postmortem : null,
+    lastConversationId: toNullableText(lastConversationId) || toNullableText(conversationId),
     metadata: metadata && typeof metadata === 'object' ? metadata : {},
     createdAt: now,
     updatedAt: now
@@ -177,6 +196,12 @@ export class SupervisorTaskStore {
       lastUserTurnAt: toText(task.lastUserTurnAt),
       lastAssistantTurnAt: toText(task.lastAssistantTurnAt),
       sourceTaskId: toNullableText(task.sourceTaskId),
+      cwd: toText(task.cwd),
+      cwdBasename: toText(task.cwdBasename) || toLowerBasename(task.cwd),
+      workspaceId: toNullableText(task.workspaceId) || toNullableText(task?.metadata?.workspaceId),
+      intent: toText(task.intent),
+      postmortem: task.postmortem && typeof task.postmortem === 'object' ? task.postmortem : null,
+      lastConversationId: toNullableText(task.lastConversationId) || toNullableText(task.conversationId),
       metadata: task.metadata && typeof task.metadata === 'object' ? task.metadata : {},
       createdAt: toText(task.createdAt) || nowIso(),
       updatedAt: nowIso()
@@ -211,12 +236,21 @@ export class SupervisorTaskStore {
     lastUserTurnAt,
     lastAssistantTurnAt,
     sourceTaskId,
+    cwd = '',
+    cwdBasename = '',
+    workspaceId = '',
+    intent = '',
+    postmortem = null,
+    lastConversationId = '',
     metadata = {}
   } = {}) {
+    const normalizedTaskId = toText(taskId);
     const normalizedRuntimeSessionId = toText(runtimeSessionId);
-    const existing = this.get(taskId) || this.findByRuntimeSessionId(normalizedRuntimeSessionId);
+    const existing = normalizedTaskId
+      ? this.get(normalizedTaskId)
+      : this.findByRuntimeSessionId(normalizedRuntimeSessionId);
     const next = existing || createSupervisorTask({
-      id: toText(taskId),
+      id: normalizedTaskId,
       conversationId,
       title: title || goal || normalizedRuntimeSessionId,
       goal,
@@ -240,9 +274,16 @@ export class SupervisorTaskStore {
         (next.executionIds || []).concat(normalizedRuntimeSessionId ? [normalizedRuntimeSessionId] : []),
         next.primaryExecutionId || normalizedRuntimeSessionId
       ),
+      cwd: toText(cwd || next.cwd),
+      cwdBasename: toText(cwdBasename || next.cwdBasename || toLowerBasename(cwd || next.cwd)),
+      workspaceId: toNullableText(workspaceId || next.workspaceId || next?.metadata?.workspaceId),
+      intent: toText(intent || next.intent),
+      postmortem: postmortem && typeof postmortem === 'object' ? postmortem : next.postmortem || null,
+      lastConversationId: toNullableText(lastConversationId || conversationId || next.lastConversationId || next.conversationId),
       metadata: {
         ...(next.metadata || {}),
         ...(metadata && typeof metadata === 'object' ? metadata : {}),
+        workspaceId: toText(workspaceId || next.workspaceId || next?.metadata?.workspaceId || ''),
         runtimeSessionId: normalizedRuntimeSessionId || next.metadata?.runtimeSessionId || '',
         provider: toText(provider || next.metadata?.provider || '')
       }

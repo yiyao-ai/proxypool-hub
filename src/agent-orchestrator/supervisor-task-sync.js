@@ -1,4 +1,7 @@
 import supervisorTaskStore from './supervisor-task-store.js';
+import assistantWorkspaceStore from '../assistant-core/workspace-store.js';
+import { normalizeWorkspaceRef } from '../assistant-core/workspace-store.js';
+import assistantReflectionService from '../assistant-agent/reflection-service.js';
 import {
   finalizeSupervisorTaskMemory,
   normalizeSupervisorTaskMemory,
@@ -13,6 +16,52 @@ function nowIso() {
 
 function toText(value) {
   return String(value || '').trim();
+}
+
+function isTerminalTaskStatus(status = '') {
+  return ['completed', 'failed', 'cancelled'].includes(toText(status));
+}
+
+function syncWorkspaceForTask({
+  workspaceStore = assistantWorkspaceStore,
+  cwd = '',
+  taskId = '',
+  provider = '',
+  summary = '',
+  status = '',
+  updatedAt = ''
+} = {}) {
+  const workspaceRef = normalizeWorkspaceRef(cwd);
+  const normalizedTaskId = toText(taskId);
+  if (!workspaceRef || !normalizedTaskId) {
+    return null;
+  }
+  const existing = workspaceStore.getByRef(workspaceRef);
+  const currentOpenTaskIds = Array.isArray(existing?.openTaskIds) ? existing.openTaskIds : [];
+  const nextOpenTaskIds = isTerminalTaskStatus(status)
+    ? currentOpenTaskIds.filter((entry) => entry !== normalizedTaskId)
+    : [...currentOpenTaskIds, normalizedTaskId];
+  const workspace = workspaceStore.upsert({
+    workspaceRef,
+    patch: {
+      defaultRuntimeProvider: toText(provider) || existing?.defaultRuntimeProvider || '',
+      ...(toText(summary) ? { summary: toText(summary) } : {}),
+      taskIds: [normalizedTaskId],
+      lastTouchedAt: toText(updatedAt) || nowIso(),
+      metadata: {
+        source: 'supervisor_task_sync'
+      }
+    }
+  });
+  return workspaceStore.replaceOpenTaskIds(workspaceRef, nextOpenTaskIds, {
+    defaultRuntimeProvider: workspace?.defaultRuntimeProvider || toText(provider),
+    ...(toText(summary) ? { summary: toText(summary) } : {}),
+    taskIds: [normalizedTaskId],
+    lastTouchedAt: toText(updatedAt) || nowIso(),
+    metadata: {
+      source: 'supervisor_task_sync'
+    }
+  }) || workspace;
 }
 
 export function deriveTaskStatus(session = null, { pendingApproval = null, pendingQuestion = null, fallbackStatus = '' } = {}) {
@@ -56,7 +105,8 @@ export function syncSupervisorTaskForRuntimeStart({
   userInput = '',
   originKind = 'direct',
   activate = true,
-  store = supervisorTaskStore
+  store = supervisorTaskStore,
+  workspaceStore = assistantWorkspaceStore
 } = {}) {
   if (!conversation?.id || !session?.id) {
     const normalizedTaskMemory = normalizeSupervisorTaskMemory(taskMemory);
@@ -80,9 +130,8 @@ export function syncSupervisorTaskForRuntimeStart({
   const summary = toText(supervisorContext?.summary || '');
   const normalizedTaskMemory = normalizeSupervisorTaskMemory(taskMemory);
   const rememberedTask = normalizedTaskMemory.bySession?.[session.id] || null;
-  const activeTaskId = toText(normalizedTaskMemory.activeTaskId);
   const supervisorTask = store.upsertForRuntime({
-    taskId: rememberedTask?.taskId || activeTaskId || '',
+    taskId: rememberedTask?.taskId || toText(session?.metadata?.taskId) || '',
     conversationId: conversation.id,
     runtimeSessionId: session.id,
     provider: session.provider,
@@ -96,6 +145,10 @@ export function syncSupervisorTaskForRuntimeStart({
     awaitingPayload: awaiting.awaitingPayload,
     lastUserTurnAt: nowIso(),
     sourceTaskId: supervisorContext?.sourceTaskId || '',
+    cwd: toText(session?.cwd),
+    workspaceId: toText(session?.metadata?.workspaceId),
+    intent: toText(userInput),
+    lastConversationId: conversation.id,
     metadata: {
       originKind: toText(supervisorContext?.kind || originKind),
       sourceTitle: toText(supervisorContext?.sourceTitle),
@@ -121,9 +174,28 @@ export function syncSupervisorTaskForRuntimeStart({
     pendingApprovalTitle: toText(pendingApproval?.title),
     pendingQuestion: toText(pendingQuestion?.text)
   }, { activate });
+  const workspace = syncWorkspaceForTask({
+    workspaceStore,
+    cwd: session?.cwd,
+    taskId: supervisorTask?.id,
+    provider: session?.provider,
+    summary: summary || title,
+    status,
+    updatedAt: session?.updatedAt || session?.createdAt || nowIso()
+  });
+  const finalizedSupervisorTask = workspace?.id && supervisorTask?.workspaceId !== workspace.id
+    ? store.save({
+        ...supervisorTask,
+        workspaceId: workspace.id,
+        metadata: {
+          ...(supervisorTask.metadata || {}),
+          workspaceId: workspace.id
+        }
+      })
+    : supervisorTask;
 
   return {
-    supervisorTask,
+    supervisorTask: finalizedSupervisorTask,
     taskMemory: nextTaskMemory,
     brief: buildSupervisorBrief({
       taskMemory: nextTaskMemory,
@@ -138,7 +210,9 @@ export function syncSupervisorTaskForRuntimeTerminal({
   taskMemory = null,
   patch = {},
   terminalKind = '',
-  store = supervisorTaskStore
+  store = supervisorTaskStore,
+  workspaceStore = assistantWorkspaceStore,
+  reflectionService = assistantReflectionService
 } = {}) {
   if (!session?.id) {
     const normalizedTaskMemory = normalizeSupervisorTaskMemory(taskMemory);
@@ -159,7 +233,7 @@ export function syncSupervisorTaskForRuntimeTerminal({
   const result = patch?.result !== undefined ? patch.result : '';
   const error = patch?.error !== undefined ? patch.error : session.error;
   const supervisorTask = store.upsertForRuntime({
-    taskId: toText(patch?.taskId || currentRecord?.taskId),
+    taskId: toText(patch?.taskId || currentRecord?.taskId || session?.metadata?.taskId),
     conversationId: toText(conversationId),
     runtimeSessionId: session.id,
     provider: session.provider,
@@ -172,6 +246,9 @@ export function syncSupervisorTaskForRuntimeTerminal({
     awaitingKind: '',
     awaitingPayload: null,
     lastAssistantTurnAt: nowIso(),
+    cwd: toText(session?.cwd),
+    workspaceId: toText(session?.metadata?.workspaceId),
+    lastConversationId: toText(conversationId),
     metadata: {
       originKind: toText(currentRecord?.originKind)
     }
@@ -181,9 +258,37 @@ export function syncSupervisorTaskForRuntimeTerminal({
     ...patch,
     taskId: supervisorTask.id
   }, terminalKind);
+  const workspace = syncWorkspaceForTask({
+    workspaceStore,
+    cwd: session?.cwd,
+    taskId: supervisorTask?.id,
+    provider: session?.provider,
+    summary: toText(summary || supervisorTask?.summary || supervisorTask?.title),
+    status: nextStatus,
+    updatedAt: session?.updatedAt || nowIso()
+  });
+  const finalizedSupervisorTask = workspace?.id && supervisorTask?.workspaceId !== workspace.id
+    ? store.save({
+        ...supervisorTask,
+        workspaceId: workspace.id,
+        metadata: {
+          ...(supervisorTask.metadata || {}),
+          workspaceId: workspace.id
+        }
+      })
+    : supervisorTask;
+  const savedReflection = reflectionService?.saveTaskPostmortem?.({
+    task: finalizedSupervisorTask
+  }) || null;
+  const postmortemTask = savedReflection?.payload
+    ? store.save({
+        ...finalizedSupervisorTask,
+        postmortem: savedReflection.payload
+      })
+    : finalizedSupervisorTask;
 
   return {
-    supervisorTask,
+    supervisorTask: postmortemTask,
     taskMemory: nextTaskMemory,
     brief: buildSupervisorBrief({
       taskMemory: nextTaskMemory,
@@ -197,7 +302,9 @@ export function syncSupervisorTaskForRuntimeEvent({
   session = null,
   event = null,
   taskMemory = null,
-  store = supervisorTaskStore
+  store = supervisorTaskStore,
+  workspaceStore = assistantWorkspaceStore,
+  reflectionService = assistantReflectionService
 } = {}) {
   if (!session?.id || !event?.type) {
     const normalizedTaskMemory = normalizeSupervisorTaskMemory(taskMemory);
@@ -239,7 +346,8 @@ export function syncSupervisorTaskForRuntimeEvent({
       userInput: session.title || '',
       originKind: 'direct',
       activate: conversation?.activeRuntimeSessionId === session.id,
-      store
+      store,
+      workspaceStore
     });
   }
 
@@ -257,7 +365,9 @@ export function syncSupervisorTaskForRuntimeEvent({
         pendingQuestion: ''
       },
       terminalKind: 'completed',
-      store
+      store,
+      workspaceStore,
+      reflectionService
     });
   }
 
@@ -274,7 +384,9 @@ export function syncSupervisorTaskForRuntimeEvent({
         pendingQuestion: ''
       },
       terminalKind: 'failed',
-      store
+      store,
+      workspaceStore,
+      reflectionService
     });
   }
 

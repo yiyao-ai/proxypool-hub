@@ -243,6 +243,10 @@ export class AgentRuntimeSessionManager {
     return this.sessions.get(sessionId) || null;
   }
 
+  patchSession(sessionId, patch = {}) {
+    return this._patchSession(String(sessionId || ''), patch);
+  }
+
   getEvents(sessionId, options = {}) {
     const recent = this.eventBus.getRecentEvents(sessionId, options.limit || 200);
     if (recent.length > 0) {
@@ -402,6 +406,25 @@ export class AgentRuntimeSessionManager {
     return question;
   }
 
+  cancelPendingQuestion(sessionId, questionId, reason = '') {
+    const session = this.getSession(sessionId);
+    if (!session) {
+      throw new Error('session not found');
+    }
+
+    const questions = this.questionsBySession.get(sessionId) || [];
+    const question = questions.find((entry) => entry.questionId === questionId && entry.status === 'pending');
+    if (!question) {
+      throw new Error('question not found');
+    }
+
+    question.status = 'cancelled';
+    question.cancelledAt = nowIso();
+    question.cancelReason = String(reason || '').trim();
+    this._refreshInteractiveState(sessionId);
+    return question;
+  }
+
   cancelSession(sessionId) {
     const session = this.getSession(sessionId);
     if (!session) {
@@ -445,6 +468,10 @@ export class AgentRuntimeSessionManager {
     const turnState = { settled: false };
     let handle = null;
     const deferredApprovalResponses = [];
+    // Bug 1 (v2.5)：provider 通过 onProviderEvent 已经发过 COMPLETED/FAILED 时，
+    // 后续 onTurnFinished/onTurnFailed 不再重发——避免 codex/claude provider 末尾
+    // 的"成果消息"和 session-manager 的"终态消息"双发。
+    let providerTerminalEmitted = false;
     const patched = this._patchSession(sessionId, {
       status: AGENT_SESSION_STATUS.RUNNING,
       currentTurnId: turnId,
@@ -473,6 +500,9 @@ export class AgentRuntimeSessionManager {
           ...(payload || {}),
           turnId
         });
+        if (type === AGENT_EVENT_TYPE.COMPLETED || type === AGENT_EVENT_TYPE.FAILED) {
+          providerTerminalEmitted = true;
+        }
       },
       onApprovalRequest: ({ kind = 'tool_permission', title, summary, rawRequest }) => {
         const approval = this.approvalService.createApproval({
@@ -600,10 +630,12 @@ export class AgentRuntimeSessionManager {
           summary: terminalSummary,
           completedAt: nowIso()
         });
-        this._emitEvent(sessionId, AGENT_EVENT_TYPE.COMPLETED, {
-          summary: terminalSummary,
-          turnId
-        });
+        if (!providerTerminalEmitted) {
+          this._emitEvent(sessionId, AGENT_EVENT_TYPE.COMPLETED, {
+            summary: terminalSummary,
+            turnId
+          });
+        }
       },
       onTurnFailed: (error) => {
         turnState.settled = true;
@@ -628,10 +660,12 @@ export class AgentRuntimeSessionManager {
           }),
           completedAt: nowIso()
         });
-        this._emitEvent(sessionId, AGENT_EVENT_TYPE.FAILED, {
-          message,
-          turnId
-        });
+        if (!providerTerminalEmitted) {
+          this._emitEvent(sessionId, AGENT_EVENT_TYPE.FAILED, {
+            message,
+            turnId
+          });
+        }
       }
     });
 

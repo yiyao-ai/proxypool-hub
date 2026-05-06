@@ -16,6 +16,19 @@ function normalizeText(value) {
   return String(value || '').trim();
 }
 
+function buildUserProfile(values = {}) {
+  const profile = {
+    replyLanguage: normalizeText(values.reply_language),
+    responseStyle: normalizeText(values.response_style),
+    preferredRuntimeProvider: normalizeText(values.preferred_runtime_provider),
+    executionStyle: normalizeText(values.execution_style)
+  };
+  if (!profile.replyLanguage && !profile.responseStyle && !profile.preferredRuntimeProvider && !profile.executionStyle) {
+    return null;
+  }
+  return profile;
+}
+
 function detectSaveScope(text, scopeRefs = {}) {
   const source = normalizeText(text).toLowerCase();
   if (!source) return { scope: 'conversation', scopeRef: scopeRefs.conversation || '' };
@@ -120,7 +133,8 @@ export class AssistantMemoryService {
 
     return {
       values: merged,
-      layers
+      layers,
+      userProfile: buildUserProfile(merged)
     };
   }
 

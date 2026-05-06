@@ -88,6 +88,8 @@ export class AssistantReactEngine {
     taskSpace = null,
     conversationContext = null,
     workspaceContext = null,
+    referenceResolution = null,
+    recentIntentTimeline = null,
     defaultRuntimeProvider = 'codex',
     cwd = '',
     model = ''
@@ -101,6 +103,8 @@ export class AssistantReactEngine {
       taskSpace,
       conversationContext,
       workspaceContext,
+      referenceResolution,
+      recentIntentTimeline,
       defaultRuntimeProvider,
       cwd,
       model

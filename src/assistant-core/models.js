@@ -95,3 +95,32 @@ export function createAssistantRunCheckpoint({
     updatedAt: nowIso()
   };
 }
+
+export function createPendingClarification({
+  conversationId = '',
+  question = '',
+  candidates = [],
+  ttlSec = 1800,
+  status = 'pending'
+} = {}) {
+  const now = nowIso();
+  return {
+    id: crypto.randomUUID(),
+    conversationId: String(conversationId || ''),
+    askedAt: now,
+    question: String(question || ''),
+    candidates: Array.isArray(candidates)
+      ? candidates.map((entry, index) => ({
+          kind: String(entry?.kind || 'free'),
+          id: String(entry?.id || `candidate_${index + 1}`),
+          label: String(entry?.label || entry?.id || `Candidate ${index + 1}`),
+          confidence: Number.isFinite(Number(entry?.confidence)) ? Number(entry.confidence) : undefined
+        }))
+      : [],
+    status: String(status || 'pending'),
+    ttlSec: Math.max(0, Number(ttlSec || 0)) || 1800,
+    resolution: null,
+    createdAt: now,
+    updatedAt: now
+  };
+}

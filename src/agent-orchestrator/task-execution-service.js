@@ -1,8 +1,53 @@
 import agentRuntimeSessionManager from '../agent-runtime/session-manager.js';
 import supervisorTaskStore from './supervisor-task-store.js';
+import assistantWorkspaceStore from '../assistant-core/workspace-store.js';
+import { createSupervisorTask } from './supervisor-task-store.js';
+import { normalizeWorkspaceRef } from '../assistant-core/workspace-store.js';
 
 function toText(value) {
   return String(value || '').trim();
+}
+
+function isTerminalTaskStatus(status = '') {
+  return ['completed', 'failed', 'cancelled'].includes(toText(status));
+}
+
+function syncWorkspaceTaskBinding(workspaceStore, workspaceRef, {
+  taskId = '',
+  provider = '',
+  summary = '',
+  taskStatus = '',
+  timestamp = '',
+  metadata = {}
+} = {}) {
+  const normalizedWorkspaceRef = normalizeWorkspaceRef(workspaceRef);
+  const normalizedTaskId = toText(taskId);
+  if (!workspaceStore || !normalizedWorkspaceRef || !normalizedTaskId) {
+    return null;
+  }
+
+  const current = workspaceStore.getByRef(normalizedWorkspaceRef);
+  const currentOpenTaskIds = Array.isArray(current?.openTaskIds) ? current.openTaskIds : [];
+  const nextOpenTaskIds = isTerminalTaskStatus(taskStatus)
+    ? currentOpenTaskIds.filter((entry) => entry !== normalizedTaskId)
+    : [...currentOpenTaskIds, normalizedTaskId];
+  const workspace = workspaceStore.upsert({
+    workspaceRef: normalizedWorkspaceRef,
+    patch: {
+      defaultRuntimeProvider: toText(provider) || current?.defaultRuntimeProvider || '',
+      ...(toText(summary) ? { summary: toText(summary) } : {}),
+      taskIds: [normalizedTaskId],
+      lastTouchedAt: toText(timestamp) || new Date().toISOString(),
+      metadata
+    }
+  });
+  return workspaceStore.replaceOpenTaskIds(normalizedWorkspaceRef, nextOpenTaskIds, {
+    defaultRuntimeProvider: workspace?.defaultRuntimeProvider || toText(provider),
+    ...(toText(summary) ? { summary: toText(summary) } : {}),
+    taskIds: [normalizedTaskId],
+    lastTouchedAt: toText(timestamp) || new Date().toISOString(),
+    metadata
+  }) || workspace;
 }
 
 function withDefaultRuntimeOptions(provider, metadata = {}) {
@@ -55,10 +100,12 @@ function buildExecutionRecord({
 export class TaskExecutionService {
   constructor({
     runtimeSessionManager = agentRuntimeSessionManager,
-    supervisorTaskStore: supervisorTaskStoreArg = supervisorTaskStore
+    supervisorTaskStore: supervisorTaskStoreArg = supervisorTaskStore,
+    workspaceStore = assistantWorkspaceStore
   } = {}) {
     this.runtimeSessionManager = runtimeSessionManager;
     this.supervisorTaskStore = supervisorTaskStoreArg;
+    this.workspaceStore = workspaceStore;
   }
 
   async startTaskExecution({
@@ -75,6 +122,7 @@ export class TaskExecutionService {
     const normalizedRole = toText(role) || 'primary';
     const normalizedSourceTaskId = toText(metadata?.sourceTaskId);
     const existingTask = normalizedTaskId ? this.supervisorTaskStore.get(normalizedTaskId) : null;
+    const resolvedTaskId = normalizedTaskId || createSupervisorTask().id;
     const session = await this.runtimeSessionManager.createSession({
       provider,
       input,
@@ -84,7 +132,7 @@ export class TaskExecutionService {
         ...(metadata || {}),
         cwd,
         conversationId,
-        taskId: normalizedTaskId || undefined,
+        taskId: resolvedTaskId,
         executionRole: normalizedRole,
         executionId: undefined
       })
@@ -103,8 +151,21 @@ export class TaskExecutionService {
     });
 
     if (conversationId || normalizedTaskId || normalizedSourceTaskId) {
+      const normalizedWorkspaceRef = normalizeWorkspaceRef(session.cwd || cwd);
+      const workspace = normalizedWorkspaceRef
+        ? syncWorkspaceTaskBinding(this.workspaceStore, normalizedWorkspaceRef, {
+            taskId: resolvedTaskId,
+            provider: session.provider,
+            summary: session.title || input,
+            taskStatus: session.status,
+            timestamp: session.updatedAt || session.createdAt,
+            metadata: {
+              source: 'task_execution_start'
+            }
+          })
+        : null;
       const supervisorTask = this.supervisorTaskStore.upsertForRuntime({
-        taskId: normalizedTaskId,
+        taskId: resolvedTaskId,
         conversationId,
         runtimeSessionId: session.id,
         provider: session.provider,
@@ -112,6 +173,10 @@ export class TaskExecutionService {
         goal: input,
         status: session.status,
         sourceTaskId: normalizedSourceTaskId,
+        cwd: session.cwd || cwd,
+        workspaceId: workspace?.id || '',
+        intent: input,
+        lastConversationId: conversationId,
         metadata: {
           taskId: normalizedTaskId,
           conversationId: toText(conversationId),
@@ -120,12 +185,31 @@ export class TaskExecutionService {
             ? session.id
             : toText(existingTask?.primaryExecutionId || ''),
           latestExecutionId: session.id,
+          workspaceId: workspace?.id || '',
           executionKind: 'runtime_session',
           originKind: toText(metadata?.originKind),
           runtimeSessionId: session.id,
           provider: session.provider
         }
       });
+      this.runtimeSessionManager.patchSession(session.id, {
+        metadata: {
+          ...(session.metadata || {}),
+          taskId: supervisorTask.id,
+          conversationId: toText(conversationId || session.metadata?.conversationId || ''),
+          executionRole: normalizedRole,
+          ...(workspace?.id ? { workspaceId: workspace.id } : {})
+        }
+        });
+      if (workspace?.id && supervisorTask?.metadata?.workspaceId !== workspace.id) {
+        this.supervisorTaskStore.save({
+          ...supervisorTask,
+          metadata: {
+            ...(supervisorTask.metadata || {}),
+            workspaceId: workspace.id
+          }
+        });
+      }
       if (existingTask?.id && normalizedRole !== 'primary') {
         this.supervisorTaskStore.save({
           ...supervisorTask,
@@ -153,20 +237,106 @@ export class TaskExecutionService {
     if (!resolvedSessionId) {
       throw new Error('task execution target is required');
     }
-    const session = await this.runtimeSessionManager.sendInput(resolvedSessionId, input);
+
+    const existingSession = this.runtimeSessionManager.getSession(resolvedSessionId);
+    const sessionStatus = toText(existingSession?.status).toLowerCase();
+    const cancelledOrMissing = !existingSession || sessionStatus === 'cancelled';
+
+    if (!cancelledOrMissing) {
+      try {
+        const session = await this.runtimeSessionManager.sendInput(resolvedSessionId, input);
+        return {
+          ...session,
+          execution: buildExecutionRecord({
+            taskId: normalizedTaskId || toText(task?.id),
+            executionId: resolvedSessionId,
+            runtimeSessionId: resolvedSessionId,
+            executor: session.provider,
+            role: normalizedTaskId && task?.primaryExecutionId === resolvedSessionId ? 'primary' : '',
+            status: session.status,
+            summary: session.summary,
+            error: session.error,
+            createdAt: session.createdAt,
+            updatedAt: session.updatedAt
+          })
+        };
+      } catch (error) {
+        const message = String(error?.message || '');
+        // Only fall back when the session record itself is gone.
+        // 'session is already running' / quota / spawn failures should propagate.
+        if (!/session not found/i.test(message)) {
+          throw error;
+        }
+      }
+    }
+
+    // Dead-session fallback (§8.4 B path): spawn a new session bound to the same task.
+    if (!task?.id) {
+      throw new Error('task not found; cannot start fallback session');
+    }
+
+    const provider = toText(
+      task.executorStrategy
+      || task?.metadata?.provider
+      || existingSession?.provider
+    );
+    if (!provider) {
+      throw new Error('cannot determine provider for fallback session');
+    }
+
+    const cwd = toText(task.cwd || task?.metadata?.cwd || existingSession?.cwd || '');
+    const model = toText(task?.metadata?.model || existingSession?.model || '');
+    const conversationId = toText(task.lastConversationId || task.conversationId || '');
+    const priorOutcome = toText(
+      task?.postmortem?.outcome
+      || task.summary
+      || task.result
+    );
+    const taskTitle = toText(task.title || task.goal || task.id);
+    const inputBody = toText(input);
+    const prefixedInput = priorOutcome
+      ? `[Resuming task: ${taskTitle}]\nPrior outcome (last session ${resolvedSessionId}):\n${priorOutcome}\n\nCurrent request:\n${inputBody}`
+      : inputBody;
+
+    const fallbackSession = await this.runtimeSessionManager.createSession({
+      provider,
+      input: prefixedInput,
+      cwd,
+      model,
+      metadata: withDefaultRuntimeOptions(provider, {
+        taskId: task.id,
+        sourceTaskId: task.id,
+        conversationId,
+        executionRole: 'fallback',
+        originKind: 'remembered_follow_up',
+        cwd
+      })
+    });
+
+    const updatedTask = this.supervisorTaskStore.save({
+      ...task,
+      executionIds: [...new Set([...(task.executionIds || []), fallbackSession.id])],
+      lastUpdateAt: new Date().toISOString(),
+      metadata: {
+        ...(task.metadata || {}),
+        latestExecutionId: fallbackSession.id,
+        runtimeSessionId: fallbackSession.id
+      }
+    });
+
     return {
-      ...session,
+      ...fallbackSession,
       execution: buildExecutionRecord({
-        taskId: normalizedTaskId || toText(task?.id),
-        executionId: resolvedSessionId,
-        runtimeSessionId: resolvedSessionId,
-        executor: session.provider,
-        role: normalizedTaskId && task?.primaryExecutionId === resolvedSessionId ? 'primary' : '',
-        status: session.status,
-        summary: session.summary,
-        error: session.error,
-        createdAt: session.createdAt,
-        updatedAt: session.updatedAt
+        taskId: updatedTask.id,
+        executionId: fallbackSession.id,
+        runtimeSessionId: fallbackSession.id,
+        executor: fallbackSession.provider,
+        role: 'fallback',
+        status: fallbackSession.status,
+        summary: fallbackSession.summary,
+        error: fallbackSession.error,
+        createdAt: fallbackSession.createdAt,
+        updatedAt: fallbackSession.updatedAt
       })
     };
   }

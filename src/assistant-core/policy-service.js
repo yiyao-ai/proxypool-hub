@@ -86,19 +86,44 @@ export class AssistantPolicyService {
     scopeRef,
     options = {}
   } = {}) {
+    if (!scopeRef) {
+      return null;
+    }
+    // 文件 / 命令类的 approval 走原有 path-pattern 路径
     const draft = buildApprovalSessionPolicy(approval, options);
-    if (!draft || !scopeRef) {
+    if (draft) {
+      return this.createApprovalPolicy({
+        scope,
+        scopeRef,
+        provider: draft.provider,
+        toolName: draft.toolName,
+        decision: draft.decision,
+        pathPatterns: draft.pathPatterns,
+        commandPrefixes: draft.commandPrefixes,
+        metadata: draft.metadata
+      });
+    }
+    // 兜底（v2.5 Bug 3）：当 approval 不含 path/command（如 WebFetch / 联网请求等），
+    // 退化为"该 provider + 该 tool 在本 scope 的 wildcard 通过"。这正是用户说
+    //   "本会话允许后续所有操作"
+    // 的语义——不再继续追问同类请求。
+    const rawRequest = approval?.rawRequest || {};
+    const toolName = String(rawRequest?.tool_name || rawRequest?.display_name || '').trim();
+    if (!toolName) {
       return null;
     }
     return this.createApprovalPolicy({
       scope,
       scopeRef,
-      provider: draft.provider,
-      toolName: draft.toolName,
-      decision: draft.decision,
-      pathPatterns: draft.pathPatterns,
-      commandPrefixes: draft.commandPrefixes,
-      metadata: draft.metadata
+      provider: approval?.provider || '',
+      toolName,
+      decision: 'allow',
+      pathPatterns: [],
+      commandPrefixes: [],
+      metadata: {
+        approvalId: approval?.approvalId || null,
+        reason: 'session_approval_memory_wildcard'
+      }
     });
   }
 
@@ -222,11 +247,19 @@ export class AssistantPolicyService {
       });
     }
 
-    if (['send_runtime_input', 'cancel_runtime_session', 'resolve_runtime_approval', 'answer_runtime_question'].includes(normalizedTool)) {
+    if (['send_runtime_input', 'cancel_runtime_session', 'resolve_runtime_approval', 'answer_runtime_question', 'cancel_pending_question'].includes(normalizedTool)) {
       return buildPolicyDecision({
         allowed: Boolean(runtimeSession?.id || input.sessionId),
         reason: runtimeSession?.id || input.sessionId ? 'runtime_scope_available' : 'runtime_scope_required',
         riskLevel: normalizedTool === 'cancel_runtime_session' ? 'medium' : 'low'
+      });
+    }
+
+    if (['ask_user', 'resolve_clarification', 'cancel_pending_clarification'].includes(normalizedTool)) {
+      return buildPolicyDecision({
+        allowed: Boolean(conversation?.id),
+        reason: conversation?.id ? 'conversation_scope_available' : 'conversation_scope_required',
+        riskLevel: 'low'
       });
     }
 

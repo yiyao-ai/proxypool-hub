@@ -83,6 +83,7 @@ export class ChatUiConversationService {
       model,
       metadata: {
         ...(metadata || {}),
+        assistantMode: conversation?.metadata?.assistantCore?.mode || 'direct-runtime',
         source: {
           kind: 'chat-ui',
           sessionId: String(sessionId || ''),

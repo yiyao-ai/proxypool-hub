@@ -50,6 +50,7 @@ export function createChannelConversation({
     trackedTaskIds: [],
     lastPendingApprovalId: null,
     lastPendingQuestionId: null,
+    lastPendingClarificationId: null,
     title: String(title || `${externalUserId || 'unknown'} / ${channel || 'channel'}`),
     metadata: {
       assistantCore: {

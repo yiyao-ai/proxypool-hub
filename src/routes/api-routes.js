@@ -59,7 +59,9 @@ import {
   handleGetAssistantRuntimeSession,
   handleGetAssistantRuntimeTurn,
   handleListAssistantConversations,
-  handleGetAssistantConversationContext
+  handleGetAssistantConversationContext,
+  handleCancelAssistantClarification,
+  handleAddAssistantWorkspaceAlias
 } from './assistant-observation-route.js';
 import {
   handleListAssistantRuns,
@@ -368,6 +370,8 @@ export function registerApiRoutes(app, { port }) {
   app.get('/api/assistant/runtime-sessions/:id/turns/:turnId', handleGetAssistantRuntimeTurn);
   app.get('/api/assistant/conversations', handleListAssistantConversations);
   app.get('/api/assistant/conversations/:id', handleGetAssistantConversationContext);
+  app.post('/api/assistant/clarifications/:id/cancel', handleCancelAssistantClarification);
+  app.post('/api/assistant/workspaces/aliases', handleAddAssistantWorkspaceAlias);
   app.get('/api/assistant/runs', handleListAssistantRuns);
   app.get('/api/assistant/runs/:id', handleGetAssistantRun);
   app.post('/api/assistant/runs/:id/resume', handleResumeAssistantRun);

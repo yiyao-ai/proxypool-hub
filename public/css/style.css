@@ -2776,6 +2776,26 @@ table .btn-outline:hover {
     align-items: center;
 }
 
+.chat-runtime-cwd-group {
+    border-radius: 0.6rem;
+    background: rgba(15, 23, 42, 0.32);
+    border: 1px solid rgba(148, 163, 184, 0.12);
+    padding: 0.5rem 0.5rem 0.6rem 0.5rem;
+}
+
+.chat-runtime-cwd-header {
+    background: transparent;
+    border: 0;
+    cursor: pointer;
+    color: inherit;
+    transition: background 120ms ease;
+}
+
+.chat-runtime-cwd-count {
+    min-width: 1.5rem;
+    text-align: center;
+}
+
 .chat-session-title,
 .chat-runtime-title {
     font-weight: 600;

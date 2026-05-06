@@ -2,6 +2,10 @@ import assistantObservationService from './observation-service.js';
 import agentOrchestratorMessageService from '../agent-orchestrator/message-service.js';
 import assistantConversationControlService from './conversation-control.js';
 import assistantTaskViewService from './task-view-service.js';
+import assistantClarificationStore from './clarification-store.js';
+import assistantWorkspaceStore from './workspace-store.js';
+import assistantEpisodeViewService, { AssistantEpisodeViewService } from './episode-view-service.js';
+import { resolveReferenceContext } from '../assistant-agent/reference-resolver.js';
 
 function normalizeText(value) {
   return String(value || '').trim();
@@ -37,8 +41,16 @@ export function createDefaultAssistantToolRegistry({
   observationService = assistantObservationService,
   messageService = agentOrchestratorMessageService,
   conversationControlService = assistantConversationControlService,
-  taskViewService = assistantTaskViewService
+  taskViewService = assistantTaskViewService,
+  clarificationStore = assistantClarificationStore,
+  workspaceStore = assistantWorkspaceStore,
+  episodeViewService = null
 } = {}) {
+  const resolvedEpisodeViewService = episodeViewService || new AssistantEpisodeViewService({
+    conversationStore: observationService?.conversationStore,
+    deliveryStore: observationService?.deliveryStore,
+    supervisorTaskStore: taskViewService?.supervisorTaskStore || observationService?.supervisorTaskStore || assistantEpisodeViewService.supervisorTaskStore
+  });
   const registry = new AssistantToolRegistry();
 
   function withAssistantConversationMetadata(input = {}, context = {}) {
@@ -61,6 +73,14 @@ export function createDefaultAssistantToolRegistry({
         conversationId: conversation.id
       }
     };
+  }
+
+  function requireConversation(context = {}) {
+    const conversation = context?.conversation || null;
+    if (!conversation?.id) {
+      throw new Error('conversation context is required');
+    }
+    return conversation;
   }
 
   registry.register({
@@ -237,11 +257,13 @@ export function createDefaultAssistantToolRegistry({
 
   registry.register({
     name: 'resolve_runtime_approval',
-    description: 'Resolve a runtime approval request.',
-    execute: async ({ input = {} } = {}) => messageService.resolveApproval({
+    description: 'Resolve a pending runtime approval request. Pass remember="session" if the user said something like "允许后续所有操作 / 本会话同意 / from now on" — this records a wildcard policy so future approvals of the same kind auto-pass within this runtime session. Pass remember="conversation" if the user explicitly bound the permission to the current conversation ("这次对话都同意"). Default remember="none" (one-shot approval). Only valid when decision="approve".',
+    execute: async ({ input = {}, context = {} } = {}) => messageService.resolveApproval({
       sessionId: input.sessionId,
       approvalId: input.approvalId,
-      decision: input.decision
+      decision: input.decision,
+      remember: input.remember,
+      conversationId: input.conversationId || context?.conversation?.id || ''
     })
   });
 
@@ -253,6 +275,94 @@ export function createDefaultAssistantToolRegistry({
       questionId: input.questionId,
       answer: input.answer
     })
+  });
+
+  registry.register({
+    name: 'cancel_pending_question',
+    description: 'Cancel a pending runtime question when the user is clearly switching intent and the old question should no longer block routing.',
+    execute: async ({ input = {} } = {}) => messageService.cancelPendingQuestion({
+      sessionId: input.sessionId,
+      questionId: input.questionId,
+      reason: input.reason
+    })
+  });
+
+  registry.register({
+    name: 'ask_user',
+    description: 'Ask a structured clarification question, persist a PendingClarification record, and mark the conversation as waiting for clarification.',
+    execute: async ({ input = {}, context = {} } = {}) => {
+      const conversation = requireConversation(context);
+      const clarification = clarificationStore.create({
+        conversationId: conversation.id,
+        question: input.question,
+        candidates: Array.isArray(input.candidates) ? input.candidates : [],
+        ttlSec: input.ttlSec
+      });
+      const patchedConversation = conversationControlService.conversationStore.patch(conversation.id, {
+        lastPendingClarificationId: clarification.id
+      }) || conversation;
+      return {
+        clarificationId: clarification.id,
+        question: clarification.question,
+        candidates: clarification.candidates,
+        ttlSec: clarification.ttlSec,
+        conversationId: conversation.id,
+        conversation: patchedConversation
+      };
+    }
+  });
+
+  registry.register({
+    name: 'resolve_clarification',
+    description: 'Resolve a pending clarification by selecting a candidate or recording a free-text answer.',
+    execute: async ({ input = {}, context = {} } = {}) => {
+      const conversation = requireConversation(context);
+      const clarification = clarificationStore.answer(input.clarificationId, {
+        selectedCandidateId: input.candidateId,
+        freeTextAnswer: input.freeText
+      });
+      if (!clarification) {
+        throw new Error('clarification not found');
+      }
+      if (clarification.conversationId !== conversation.id) {
+        throw new Error('clarification does not belong to this conversation');
+      }
+      const patchedConversation = conversationControlService.conversationStore.patch(conversation.id, {
+        lastPendingClarificationId: null
+      }) || conversation;
+      return {
+        clarificationId: clarification.id,
+        status: clarification.status,
+        resolution: clarification.resolution,
+        conversationId: clarification.conversationId,
+        conversation: patchedConversation
+      };
+    }
+  });
+
+  registry.register({
+    name: 'cancel_pending_clarification',
+    description: 'Cancel an assistant-level pending clarification when it is no longer relevant.',
+    execute: async ({ input = {}, context = {} } = {}) => {
+      const conversation = requireConversation(context);
+      const clarification = clarificationStore.cancel(input.clarificationId);
+      if (!clarification) {
+        throw new Error('clarification not found');
+      }
+      if (clarification.conversationId !== conversation.id) {
+        throw new Error('clarification does not belong to this conversation');
+      }
+      const patchedConversation = conversationControlService.conversationStore.patch(conversation.id, {
+        lastPendingClarificationId: null
+      }) || conversation;
+      return {
+        clarificationId: clarification.id,
+        status: clarification.status,
+        conversationId: clarification.conversationId,
+        reason: normalizeText(input.reason),
+        conversation: patchedConversation
+      };
+    }
   });
 
   registry.register({
@@ -325,6 +435,208 @@ export function createDefaultAssistantToolRegistry({
       query: input.query,
       limit: input.limit || 10
     })
+  });
+
+  registry.register({
+    name: 'recall',
+    description: 'Recall relevant past task, conversation, and delivery episodes. Use for "earlier", "last week", or historical follow-up requests before deciding whether to continue or ask for clarification.',
+    execute: async ({ input = {}, context = {} } = {}) => resolvedEpisodeViewService.recall({
+      query: input.query,
+      scope: input.scope || 'workspace',
+      conversationId: input.conversationId || context?.conversation?.id || '',
+      limit: input.limit || 10
+    })
+  });
+
+  registry.register({
+    name: 'find_task_by_keyword',
+    description: 'Find tasks by keyword across task title, summary, cwd, cwd basename, and remembered aliases. Prefer this before asking the user when you have a concrete project or task phrase.',
+    execute: async ({ input = {} } = {}) => {
+      const query = normalizeText(input.query);
+      if (!query) {
+        throw new Error('query is required');
+      }
+      const tasks = observationService.getRecentTasks({
+        conversationId: input.conversationId,
+        limit: Math.max(Number(input.limit || 10), 1)
+      });
+      const normalizedQuery = query.toLowerCase();
+      return tasks.filter((entry) => (
+        [
+          entry.title,
+          entry.summary,
+          entry.result,
+          entry.error,
+          entry.cwd,
+          entry.cwdBasename
+        ].some((value) => String(value || '').toLowerCase().includes(normalizedQuery))
+      )).slice(0, Math.max(Number(input.limit || 10), 1));
+    }
+  });
+
+  registry.register({
+    name: 'list_known_cwds',
+    description: 'List recently known cwd records, including aliases and linked task ids.',
+    execute: async ({ input = {} } = {}) => observationService.getKnownCwds({
+      recent: input.recent !== false,
+      limit: input.limit || 10
+    })
+  });
+
+  registry.register({
+    name: 'get_cwd_info',
+    description: 'Get detailed info for a known cwd, including aliases and linked tasks. Use after list_known_cwds or when the user names a specific project path.',
+    execute: async ({ input = {} } = {}) => observationService.getCwdInfo({
+      cwd: input.cwd,
+      workspaceId: input.workspaceId
+    })
+  });
+
+  registry.register({
+    name: 'add_cwd_alias',
+    description: 'Add a user-facing alias to a known cwd record. Use only when the user has actually referred to that cwd with this alias.',
+    execute: async ({ input = {} } = {}) => {
+      const target = input.workspaceId
+        ? workspaceStore.list({ limit: 500 }).find((entry) => String(entry?.id || '').trim() === normalizeText(input.workspaceId)) || null
+        : workspaceStore.getByRef(input.cwd);
+      if (!target) {
+        throw new Error('workspace not found');
+      }
+      return workspaceStore.upsert({
+        workspaceRef: target.workspaceRef,
+        patch: {
+          aliases: [input.alias]
+        }
+      });
+    }
+  });
+
+  registry.register({
+    name: 'link_task_to_conversation',
+    description: 'Adopt an existing task into the current conversation. Use only when the user explicitly wants to take over or continue a task here from another conversation.',
+    execute: async ({ input = {}, context = {} } = {}) => {
+      const conversation = requireConversation(context);
+      const taskRecord = taskViewService.getTask(input.taskId);
+      const persistedTask = taskRecord?.task?.id
+        ? taskRecord.task
+        : taskViewService.supervisorTaskStore.get(input.taskId);
+      if (!persistedTask?.id) {
+        throw new Error('task not found');
+      }
+      const runtimeSessionId = String(
+        input.runtimeSessionId
+        || taskRecord?.runtimeSession?.id
+        || persistedTask?.latestExecutionId
+        || persistedTask?.primaryExecutionId
+        || persistedTask?.runtimeSessionId
+        || persistedTask?.metadata?.latestExecutionId
+        || persistedTask?.metadata?.runtimeSessionId
+        || ''
+      ).trim();
+      const patchedConversation = conversationControlService.linkTaskToConversation({
+        conversationId: conversation.id,
+        taskId: persistedTask.id,
+        runtimeSessionId,
+        metadata: {
+          supervisor: {
+            ...((conversation?.metadata?.supervisor && typeof conversation.metadata.supervisor === 'object')
+              ? conversation.metadata.supervisor
+              : {})
+          }
+        }
+      });
+      if (!patchedConversation) {
+        throw new Error('failed to link task to conversation');
+      }
+      if (persistedTask?.id) {
+        taskViewService.supervisorTaskStore.save({
+          ...persistedTask,
+          lastConversationId: conversation.id
+        });
+      }
+      return {
+        conversationId: conversation.id,
+        taskId: persistedTask.id,
+        runtimeSessionId,
+        conversation: patchedConversation
+      };
+    }
+  });
+
+  registry.register({
+    name: 'link_session_to_task',
+    description: 'Adopt an existing runtime session into a supervisor task by appending it to executionIds. Use only as a data-repair operation when a session was misrouted (e.g., user reports a session belongs to a different task than the system thinks). Will not change primaryExecutionId; the new sessionId becomes latestExecutionId.',
+    execute: async ({ input = {} } = {}) => {
+      const taskId = String(input.taskId || '').trim();
+      const sessionId = String(input.sessionId || '').trim();
+      if (!taskId) {
+        throw new Error('taskId is required');
+      }
+      if (!sessionId) {
+        throw new Error('sessionId is required');
+      }
+      const persistedTask = taskViewService.supervisorTaskStore.get(taskId);
+      if (!persistedTask?.id) {
+        throw new Error('task not found');
+      }
+      const previousExecutionIds = Array.isArray(persistedTask.executionIds)
+        ? persistedTask.executionIds
+        : [];
+      if (previousExecutionIds.includes(sessionId)) {
+        return {
+          taskId: persistedTask.id,
+          sessionId,
+          alreadyLinked: true,
+          executionIds: previousExecutionIds
+        };
+      }
+      const next = taskViewService.supervisorTaskStore.save({
+        ...persistedTask,
+        executionIds: [...previousExecutionIds, sessionId],
+        lastUpdateAt: new Date().toISOString(),
+        metadata: {
+          ...(persistedTask.metadata || {}),
+          latestExecutionId: sessionId,
+          runtimeSessionId: sessionId
+        }
+      });
+      return {
+        taskId: next.id,
+        sessionId,
+        alreadyLinked: false,
+        executionIds: next.executionIds
+      };
+    }
+  });
+
+  registry.register({
+    name: 'resolve_reference',
+    description: 'Resolve a phrase into likely task or cwd candidates. Use when the built-in reference_resolution block is ambiguous and you want an explicit re-check before acting.',
+    execute: async ({ input = {}, context = {} } = {}) => {
+      const conversationId = input.conversationId || context?.conversation?.id || '';
+      const taskSpace = conversationId
+        ? taskViewService.getConversationTaskSpace(conversationId, {
+            activeLimit: 5,
+            waitingLimit: 5,
+            recentLimit: 8
+          })
+        : null;
+      const workspaceContext = observationService.getWorkspaceContext({
+        runtimeLimit: 6,
+        conversationLimit: 6
+      });
+      const conversationContext = conversationId
+        ? observationService.getConversationContext(conversationId, {
+            deliveryLimit: 8
+          })
+        : null;
+      return resolveReferenceContext({
+        text: input.phrase,
+        taskSpace,
+        workspaceContext,
+        conversationContext
+      });
+    }
   });
 
   registry.register({

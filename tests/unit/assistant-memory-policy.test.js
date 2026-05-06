@@ -122,6 +122,8 @@ test('AssistantMemoryService resolves layered preferences across global, workspa
   assert.equal(resolved.values.reply_language, 'zh-CN');
   assert.equal(resolved.values.preferred_runtime_provider, 'claude-code');
   assert.equal(resolved.layers.length, 3);
+  assert.equal(resolved.userProfile.replyLanguage, 'zh-CN');
+  assert.equal(resolved.userProfile.preferredRuntimeProvider, 'claude-code');
   assert.equal(workspaceStore.getByRef('D:\\repo')?.workspaceRef, 'D:\\repo');
 });
 

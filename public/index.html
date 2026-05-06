@@ -812,9 +812,15 @@
                                     <button class="chat-side-tab px-3 py-1.5 rounded-md text-[11px] font-mono transition-all"
                                         :class="chatSidebarTab === 'runtime' ? 'chat-side-tab-active text-white' : 'text-gray-500 hover:text-white'"
                                         @click="openChatSidebar('runtime')" x-text="t('agentRuntimeMonitor')"></button>
+                                    <button class="chat-side-tab px-3 py-1.5 rounded-md text-[11px] font-mono transition-all"
+                                        :class="chatSidebarTab === 'mind' ? 'chat-side-tab-active text-white' : 'text-gray-500 hover:text-white'"
+                                        @click="openChatSidebar('mind')" x-text="t('assistantMindPanel')"></button>
                                 </div>
                                 <div class="chat-side-summary flex items-center gap-2">
-                                    <div class="chat-side-count text-[11px] font-mono text-gray-500" x-text="chatSidebarTab === 'history' ? (chatSessions.length + ' ' + t('sessions')) : (agentRuntimeSessions.length + ' ' + t('sessions'))"></div>
+                                    <div class="chat-side-count text-[11px] font-mono text-gray-500"
+                                        x-text="chatSidebarTab === 'history' ? (chatSessions.length + ' ' + t('sessions'))
+                                            : (chatSidebarTab === 'runtime' ? (agentRuntimeSessions.length + ' ' + t('sessions'))
+                                            : (assistantMindSummary.knownCwdCount + ' cwd'))"></div>
                                     <button class="chat-side-close text-xs text-gray-500 hover:text-white" @click="chatHistoryOpen = false">&times;</button>
                                 </div>
                             </div>
@@ -854,39 +860,166 @@
                                         <span x-text="agentRuntimeSessionsLoading ? t('loading') : t('refresh')"></span>
                                     </button>
                                 </div>
-                                <div class="space-y-2">
+                                <div class="space-y-3">
                                     <template x-if="!agentRuntimeSessionsLoading && agentRuntimeSessions.length === 0">
                                         <div class="chat-runtime-card chat-runtime-empty rounded-xl border border-space-border/30 bg-space-900/30 px-3 py-4 text-sm text-gray-500"
                                             x-text="t('agentRuntimeMonitorEmpty')"></div>
                                     </template>
-                                    <template x-for="runtimeSession in agentRuntimeSessions" :key="runtimeSession.id">
-                                        <div class="chat-runtime-card rounded-xl border border-space-border/30 bg-space-900/30 px-3 py-3">
-                                            <div class="chat-runtime-head flex items-start justify-between gap-2">
-                                                <div class="chat-runtime-copy min-w-0">
-                                                    <div class="chat-runtime-title text-sm text-white truncate" x-text="runtimeSession.title || t('newChat')"></div>
-                                                    <div class="chat-runtime-meta mt-1 text-[11px] font-mono text-gray-500 flex items-center gap-2 flex-wrap">
-                                                        <span x-text="chatRuntimeProviderLabel(runtimeSession.provider)"></span>
-                                                        <span>&middot;</span>
-                                                        <span x-text="runtimeSession.model || '-'"></span>
-                                                    </div>
+                                    <template x-for="(group, groupIndex) in agentRuntimeGroups()" :key="group.key">
+                                        <div class="chat-runtime-cwd-group">
+                                            <button type="button"
+                                                class="chat-runtime-cwd-header w-full flex items-center justify-between gap-2 px-2 py-1.5 rounded-md text-left hover:bg-space-900/40"
+                                                @click="toggleAgentRuntimeCwdGroup(group, groupIndex)">
+                                                <div class="chat-runtime-cwd-label flex items-center gap-2 min-w-0">
+                                                    <span class="text-[11px] font-mono text-gray-400" x-text="isAgentRuntimeCwdCollapsed(group, groupIndex) ? '▶' : '▼'"></span>
+                                                    <span class="text-xs text-white truncate"
+                                                        x-text="group.basename || t('agentRuntimeCwdMissing')"
+                                                        :title="group.cwd || t('agentRuntimeCwdMissing')"></span>
                                                 </div>
-                                                <span class="chat-runtime-status px-2 py-1 rounded-full border text-[10px] font-mono"
-                                                    :class="agentRuntimeStatusPillClass(runtimeSession.status)"
-                                                    x-text="agentRuntimeStatusLabel(runtimeSession)"></span>
-                                            </div>
-                                            <div class="chat-runtime-summary mt-2 text-[11px] text-gray-500" x-text="runtimeSession.summary || '-'"></div>
-                                            <div class="chat-runtime-footer mt-3 flex items-center justify-between gap-2">
-                                                <div class="chat-runtime-time text-[10px] font-mono text-gray-500" x-text="formatRelativeTime(runtimeSession.updatedAt)"></div>
                                                 <div class="flex items-center gap-2">
-                                                    <button class="chat-side-action btn btn-xs btn-surface"
-                                                        @click="openAgentRuntimeMonitorSession(runtimeSession)" x-text="t('openInChat')"></button>
-                                                    <button class="btn btn-xs btn-danger"
-                                                        x-show="['running','waiting_user','waiting_approval'].includes(runtimeSession.status)"
-                                                        @click="cancelAgentRuntimeTask(runtimeSession.id)" x-text="t('cancelTask')"></button>
+                                                    <span class="text-[10px] font-mono text-gray-500 truncate max-w-[140px]"
+                                                        x-show="group.cwd && group.basename !== group.cwd"
+                                                        x-text="group.cwd"></span>
+                                                    <span class="chat-runtime-cwd-count px-1.5 py-0.5 rounded-full bg-space-800/80 border border-space-border/40 text-[10px] font-mono text-gray-300"
+                                                        x-text="group.sessions.length"></span>
                                                 </div>
+                                            </button>
+                                            <div class="space-y-2 mt-2"
+                                                x-show="!isAgentRuntimeCwdCollapsed(group, groupIndex)">
+                                                <template x-for="runtimeSession in group.sessions" :key="runtimeSession.id">
+                                                    <div class="chat-runtime-card rounded-xl border border-space-border/30 bg-space-900/30 px-3 py-3">
+                                                        <div class="chat-runtime-head flex items-start justify-between gap-2">
+                                                            <div class="chat-runtime-copy min-w-0">
+                                                                <div class="chat-runtime-title text-sm text-white truncate" x-text="runtimeSession.title || t('newChat')"></div>
+                                                                <div class="chat-runtime-meta mt-1 text-[11px] font-mono text-gray-500 flex items-center gap-2 flex-wrap">
+                                                                    <span x-text="chatRuntimeProviderLabel(runtimeSession.provider)"></span>
+                                                                    <span>&middot;</span>
+                                                                    <span x-text="runtimeSession.model || '-'"></span>
+                                                                </div>
+                                                            </div>
+                                                            <span class="chat-runtime-status px-2 py-1 rounded-full border text-[10px] font-mono"
+                                                                :class="agentRuntimeStatusPillClass(runtimeSession.status)"
+                                                                x-text="agentRuntimeStatusLabel(runtimeSession)"></span>
+                                                        </div>
+                                                        <div class="chat-runtime-summary mt-2 text-[11px] text-gray-500" x-text="runtimeSession.summary || '-'"></div>
+                                                        <div class="chat-runtime-footer mt-3 flex items-center justify-between gap-2">
+                                                            <div class="chat-runtime-time text-[10px] font-mono text-gray-500" x-text="formatRelativeTime(runtimeSession.updatedAt)"></div>
+                                                            <div class="flex items-center gap-2">
+                                                                <button class="chat-side-action btn btn-xs btn-surface"
+                                                                    @click="openAgentRuntimeMonitorSession(runtimeSession)" x-text="t('openInChat')"></button>
+                                                                <button class="btn btn-xs btn-danger"
+                                                                    x-show="['running','waiting_user','waiting_approval'].includes(runtimeSession.status)"
+                                                                    @click="cancelAgentRuntimeTask(runtimeSession.id)" x-text="t('cancelTask')"></button>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                </template>
                                             </div>
                                         </div>
                                     </template>
+                                </div>
+                            </div>
+
+                            <div x-show="chatSidebarTab === 'mind'" class="flex-1 min-h-0 overflow-y-auto custom-scrollbar pr-1">
+                                <div class="chat-runtime-toolbar flex items-center justify-between mb-3">
+                                    <div class="text-[11px] font-mono text-gray-500" x-text="t('assistantMindPanelDesc')"></div>
+                                    <button class="chat-side-action btn btn-xs btn-surface"
+                                        @click="loadAssistantMind()" :disabled="assistantMindLoading">
+                                        <span x-text="assistantMindLoading ? t('loading') : t('refresh')"></span>
+                                    </button>
+                                </div>
+                                <div class="space-y-3">
+                                    <!-- Pending Clarification -->
+                                    <div class="chat-mind-card rounded-xl border border-violet-500/30 bg-violet-500/10 px-3 py-3"
+                                        x-show="assistantMind.pendingClarification">
+                                        <div class="flex items-start justify-between gap-2 mb-2">
+                                            <div class="text-[10px] font-mono uppercase tracking-wider text-violet-300" x-text="t('assistantMindPendingClarification')"></div>
+                                            <button class="text-violet-300 hover:text-violet-100 text-xs"
+                                                :title="t('assistantMindCancelClarification')"
+                                                @click="cancelAssistantClarification(assistantMind.pendingClarification?.id)">&times;</button>
+                                        </div>
+                                        <div class="text-sm text-white" x-text="assistantMind.pendingClarification?.question"></div>
+                                        <div class="mt-2 space-y-1" x-show="(assistantMind.pendingClarification?.candidates || []).length > 0">
+                                            <template x-for="cand in assistantMind.pendingClarification?.candidates || []" :key="cand.id">
+                                                <div class="text-[11px] font-mono text-violet-100">
+                                                    <span class="text-violet-300" x-text="cand.kind + ':'"></span>
+                                                    <span x-text="cand.label"></span>
+                                                </div>
+                                            </template>
+                                        </div>
+                                    </div>
+
+                                    <!-- Pending Runtime Question -->
+                                    <div class="chat-mind-card rounded-xl border border-cyan-500/30 bg-cyan-500/10 px-3 py-3"
+                                        x-show="(assistantMind.pendingQuestions || []).length > 0">
+                                        <div class="text-[10px] font-mono uppercase tracking-wider text-cyan-300 mb-2" x-text="t('assistantMindPendingQuestion')"></div>
+                                        <template x-for="q in assistantMind.pendingQuestions || []" :key="q.questionId">
+                                            <div class="text-sm text-cyan-100/90 mb-1" x-text="q.text || q.questionId"></div>
+                                        </template>
+                                    </div>
+
+                                    <!-- Pending Runtime Approval -->
+                                    <div class="chat-mind-card rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-3"
+                                        x-show="(assistantMind.pendingApprovals || []).length > 0">
+                                        <div class="text-[10px] font-mono uppercase tracking-wider text-amber-300 mb-2" x-text="t('assistantMindPendingApproval')"></div>
+                                        <template x-for="a in assistantMind.pendingApprovals || []" :key="a.approvalId">
+                                            <div class="text-sm text-amber-100/90 mb-1">
+                                                <div x-text="a.title || a.approvalId"></div>
+                                                <div class="text-[11px] text-amber-100/60 mt-0.5" x-show="a.summary" x-text="a.summary"></div>
+                                            </div>
+                                        </template>
+                                    </div>
+
+                                    <!-- Known cwds -->
+                                    <div class="chat-mind-card rounded-xl border border-space-border/30 bg-space-900/30 px-3 py-3">
+                                        <div class="text-[10px] font-mono uppercase tracking-wider text-gray-400 mb-2" x-text="t('assistantMindKnownCwds')"></div>
+                                        <template x-if="(assistantMind.knownCwds || []).length === 0">
+                                            <div class="text-[11px] font-mono text-gray-500" x-text="t('assistantMindKnownCwdsEmpty')"></div>
+                                        </template>
+                                        <template x-for="cwd in (assistantMind.knownCwds || []).slice(0, 6)" :key="cwd.workspaceRef">
+                                            <div class="chat-mind-cwd-row text-[11px] font-mono text-gray-300 mb-2 pb-2 border-b border-space-border/15 last:border-b-0">
+                                                <div class="flex items-center justify-between gap-2">
+                                                    <span class="text-white truncate" x-text="agentRuntimeCwdBasename(cwd.workspaceRef) || cwd.workspaceRef"></span>
+                                                    <span class="text-[10px] text-gray-500" x-text="(cwd.openTaskIds?.length || 0) + '/' + (cwd.taskIds?.length || 0)"></span>
+                                                </div>
+                                                <div class="text-[10px] text-gray-500 truncate" x-text="cwd.workspaceRef"></div>
+                                                <div class="text-[10px] text-gray-400 mt-0.5" x-show="(cwd.aliases || []).length > 0"
+                                                    x-text="(cwd.aliases || []).slice(0, 3).join(' · ')"></div>
+                                                <div class="mt-1 flex items-center gap-1"
+                                                    x-show="assistantAliasEditingFor === cwd.workspaceRef">
+                                                    <input class="input input-xs flex-1 bg-space-800 border-space-border text-[10px]"
+                                                        :placeholder="t('assistantMindAliasPlaceholder')"
+                                                        x-model="assistantAliasInput"
+                                                        @keydown.enter.prevent="submitAssistantAlias(cwd.workspaceRef)" />
+                                                    <button class="btn btn-xs btn-surface" @click="submitAssistantAlias(cwd.workspaceRef)" x-text="t('confirmAction')"></button>
+                                                    <button class="btn btn-xs btn-surface" @click="assistantAliasEditingFor = ''; assistantAliasInput = ''" x-text="t('cancel')"></button>
+                                                </div>
+                                                <div class="mt-1" x-show="assistantAliasEditingFor !== cwd.workspaceRef">
+                                                    <button class="text-[10px] text-gray-500 hover:text-violet-300"
+                                                        @click="assistantAliasEditingFor = cwd.workspaceRef; assistantAliasInput = ''"
+                                                        x-text="t('assistantMindAliasAdd')"></button>
+                                                </div>
+                                            </div>
+                                        </template>
+                                    </div>
+
+                                    <!-- Recent tasks -->
+                                    <div class="chat-mind-card rounded-xl border border-space-border/30 bg-space-900/30 px-3 py-3">
+                                        <div class="text-[10px] font-mono uppercase tracking-wider text-gray-400 mb-2" x-text="t('assistantMindRecentTasks')"></div>
+                                        <template x-if="(assistantMind.recentTasks || []).length === 0">
+                                            <div class="text-[11px] font-mono text-gray-500" x-text="t('assistantMindRecentTasksEmpty')"></div>
+                                        </template>
+                                        <template x-for="task in (assistantMind.recentTasks || []).slice(0, 6)" :key="task.id">
+                                            <div class="text-[11px] mb-1">
+                                                <div class="text-white truncate" x-text="task.title || task.id"></div>
+                                                <div class="text-[10px] text-gray-500 flex items-center gap-2">
+                                                    <span x-text="task.status"></span>
+                                                    <span>&middot;</span>
+                                                    <span x-text="formatRelativeTime(task.updatedAt)"></span>
+                                                </div>
+                                            </div>
+                                        </template>
+                                    </div>
                                 </div>
                             </div>
                         </div>

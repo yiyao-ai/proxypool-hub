@@ -874,6 +874,80 @@ test('AgentOrchestratorMessageService resolves approvals and answers pending que
   assert.equal(questionResult.question.status, 'answered');
 });
 
+test('AgentOrchestratorMessageService keeps direct-runtime auto routing for pending approvals and questions', async () => {
+  const runtimeSessionManager = createInteractiveRuntimeManager();
+  const service = new AgentOrchestratorMessageService({ runtimeSessionManager });
+
+  const started = await service.startRuntimeTask({
+    provider: 'claude-code',
+    input: 'inspect repo'
+  });
+  const pendingApproval = runtimeSessionManager.approvalService.listPending(started.id)[0];
+  const pendingQuestion = runtimeSessionManager.listPendingQuestions(started.id)
+    .find((entry) => entry.status === 'pending');
+
+  const approvalResult = await service.routeUserMessage({
+    message: { text: '同意' },
+    conversation: {
+      activeRuntimeSessionId: started.id,
+      lastPendingApprovalId: pendingApproval.approvalId,
+      lastPendingQuestionId: pendingQuestion.questionId,
+      metadata: {
+        assistantCore: {
+          mode: 'direct-runtime'
+        }
+      }
+    },
+    metadata: {
+      assistantMode: 'direct-runtime'
+    }
+  });
+
+  assert.equal(approvalResult.type, 'approval_resolved');
+  assert.equal(approvalResult.approval.status, 'approved');
+
+  const questionResult = await service.routeUserMessage({
+    message: { text: '继续' },
+    conversation: {
+      activeRuntimeSessionId: started.id,
+      lastPendingApprovalId: null,
+      lastPendingQuestionId: pendingQuestion.questionId,
+      metadata: {
+        assistantCore: {
+          mode: 'direct-runtime'
+        }
+      }
+    },
+    metadata: {
+      assistantMode: 'direct-runtime'
+    }
+  });
+
+  assert.equal(questionResult.type, 'question_answered');
+  assert.equal(questionResult.question.status, 'answered');
+});
+
+test('AgentOrchestratorMessageService can cancel a pending runtime question explicitly', async () => {
+  const runtimeSessionManager = createInteractiveRuntimeManager();
+  const service = new AgentOrchestratorMessageService({ runtimeSessionManager });
+
+  const started = await service.startRuntimeTask({
+    provider: 'claude-code',
+    input: 'inspect repo'
+  });
+  const pendingQuestion = runtimeSessionManager.listPendingQuestions(started.id)
+    .find((entry) => entry.status === 'pending');
+
+  const cancelled = service.cancelPendingQuestion({
+    sessionId: started.id,
+    questionId: pendingQuestion.questionId,
+    reason: 'user switched intent'
+  });
+
+  assert.equal(cancelled.status, 'cancelled');
+  assert.equal(cancelled.cancelReason, 'user switched intent');
+});
+
 test('AgentOrchestratorMessageService resolves approvals against current task session before the conversation active session', async () => {
   const runtimeSessionManager = createInteractiveRuntimeManager();
   const service = new AgentOrchestratorMessageService({ runtimeSessionManager });
