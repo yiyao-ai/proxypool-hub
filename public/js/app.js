@@ -1,6 +1,6 @@
 document.addEventListener('alpine:init', () => {
     Alpine.data('app', () => ({
-        version: '1.2.0',
+        version: '1.2.1',
         connectionStatus: 'connecting',
         activeTab: 'dashboard',
         isSmallScreen: window.innerWidth < 1024,

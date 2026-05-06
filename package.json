@@ -1,6 +1,6 @@
 {
   "name": "cligate",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "description": "Multi-protocol AI API proxy server with account pooling, API key management, and visual dashboard. Supports Claude Code, Codex CLI, Gemini CLI, and OpenClaw.",
   "type": "module",
   "main": "electron-main.cjs",
