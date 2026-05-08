@@ -193,6 +193,7 @@ See [docs/API.md](./docs/API.md) for more detail.
 - [GitHub Discussions](https://github.com/codeking-ai/cligate/discussions)
 - [Issues](https://github.com/codeking-ai/cligate/issues)
 - [Discord](https://discord.gg/GgxZSehxqG)
+- [X](https://x.com/GengSteven58767)
 - [Community Guide](./docs/COMMUNITY.md)
 - [Releases](https://github.com/codeking-ai/cligate/releases)
 

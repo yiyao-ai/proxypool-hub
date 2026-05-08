@@ -193,6 +193,7 @@ CliGate 本地控制平面 (localhost:8081)
 - [GitHub Discussions](https://github.com/codeking-ai/cligate/discussions)
 - [Issues](https://github.com/codeking-ai/cligate/issues)
 - [Discord](https://discord.gg/GgxZSehxqG)
+- [X](https://x.com/GengSteven58767)
 - [社区与联系方式](./docs/COMMUNITY.md)
 - [Releases](https://github.com/codeking-ai/cligate/releases)
 

@@ -40,6 +40,18 @@ Link:
 
 - `https://discord.gg/GgxZSehxqG`
 
+### X
+
+Use X for:
+
+- release updates
+- product updates
+- international visibility
+
+Link:
+
+- `https://x.com/GengSteven58767`
+
 ### WeChat
 
 The QR code below is the maintainer's personal WeChat account, not a group QR code.
@@ -53,6 +65,7 @@ If you add via WeChat, please include a short note such as `CliGate` so the requ
 - Use `GitHub Issues` for bugs and release failures.
 - Use `GitHub Discussions` for usage questions and open-ended discussion.
 - Use `Discord` for community chat and quick follow-ups.
+- Use `X` for release updates and external project visibility.
 - Use `WeChat` for direct Chinese-language contact with the maintainer.
 
 ## Security Note
