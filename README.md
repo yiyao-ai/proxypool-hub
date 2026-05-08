@@ -196,7 +196,11 @@ See [docs/API.md](./docs/API.md) for more detail.
 - [Community Guide](./docs/COMMUNITY.md)
 - [Releases](https://github.com/codeking-ai/cligate/releases)
 
-For Chinese-speaking users, the community guide also includes the maintainer's personal WeChat QR code.
+For Chinese-speaking users, you can also add the maintainer directly on personal WeChat:
+
+<img src="./images/wechat.jpg" alt="CliGate WeChat" width="220">
+
+Please include a short note such as `CliGate` when sending the request.
 
 If you plan to contribute, read [CONTRIBUTING.md](./CONTRIBUTING.md) before opening a pull request.
 
