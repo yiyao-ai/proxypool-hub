@@ -4644,9 +4644,11 @@ document.addEventListener('alpine:init', () => {
 
             if (ok && data?.success) {
                 this.proxyStatus.codex = true;
-                this.showToast(this.t('codexSettingsUpdated'), 'success');
+                this.showToast(data?.message || this.t('codexSettingsUpdated'), data?.auth_ready ? 'success' : 'warning');
+                return { ok: true, data };
             } else {
                 this.showToast(data?.error || data?.warning || error || this.t('codexSettingsFailed'), 'error');
+                return { ok: false, data, error };
             }
         },
 
@@ -4725,7 +4727,10 @@ document.addEventListener('alpine:init', () => {
                     gemini: () => this.setGeminiCliProxyConfig(),
                     openclaw: () => this.setOpenClawProxyConfig(),
                 };
-                await configMethods[toolId]?.();
+                const configResult = await configMethods[toolId]?.();
+                if (toolId === 'codex' && (!configResult?.ok || !configResult?.data?.auth_ready)) {
+                    return;
+                }
             }
             await this.launchTool(toolId);
         },

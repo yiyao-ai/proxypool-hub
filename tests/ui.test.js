@@ -80,7 +80,8 @@ test('app.js defines expected Alpine state keys (smoke)', async () => {
     'sendAgentRuntimeMessage()',
     'respondAgentRuntimeApproval(message, decision)',
     'openAgentRuntimeMonitorSession(runtimeSession)',
-    'cancelAgentRuntimeTask(runtimeSessionId)'
+    'cancelAgentRuntimeTask(runtimeSessionId)',
+    'configResult?.data?.auth_ready'
   ]) {
     assert.ok(js.includes(needle), `Expected app.js to include ${needle}`);
   }

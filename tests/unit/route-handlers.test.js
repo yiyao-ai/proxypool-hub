@@ -32,6 +32,7 @@ function mockReq(body = {}, params = {}, query = {}) {
 import { handleGetHaikuModel, handleSetHaikuModel, handleGetAppRouting, handleSetAppRouting, handleGetStrictCodexCompatibility, handleSetStrictCodexCompatibility, handleGetStrictTranslatorCompatibility, handleSetStrictTranslatorCompatibility, handleGetAssistantAgentConfig, handleSetAssistantAgentConfig } from '../../src/routes/settings-route.js';
 import { handleGetPricing, handleUpdatePricing, handleResetPricing } from '../../src/routes/pricing-route.js';
 import { handleGetApiKey } from '../../src/routes/api-keys-route.js';
+import { _testExports as codexConfigTestExports } from '../../src/routes/codex-config-route.js';
 import {
   handleGetAssistantAgentStatus,
   handleTestAssistantBinding,
@@ -433,4 +434,41 @@ test('handleGetResourceById: returns item for openrouter', () => {
   assert.equal(res._status, 200);
   assert.equal(res._body.success, true);
   assert.equal(res._body.item?.id, 'openrouter');
+});
+
+test('codex config bootstrap auth uses local API-key mode when no account is available', () => {
+  const auth = codexConfigTestExports.buildApiKeyBootstrapAuthJson();
+  assert.equal(auth.auth_mode, 'apikey');
+  assert.equal(auth.OPENAI_API_KEY, codexConfigTestExports.CODEX_PROXY_BOOTSTRAP_API_KEY);
+  assert.equal(auth.tokens, null);
+  assert.equal(codexConfigTestExports.isCodexAuthReady(auth), true);
+});
+
+test('codex config chatgpt auth payload preserves token strings for Codex auth.json', () => {
+  const auth = codexConfigTestExports.buildChatgptAuthJson({
+    idToken: 'header.payload.signature',
+    accessToken: 'access-token',
+    refreshToken: 'refresh-token',
+    accountId: 'workspace-1'
+  });
+  assert.equal(auth.auth_mode, 'chatgpt');
+  assert.equal(auth.OPENAI_API_KEY, null);
+  assert.equal(auth.tokens.id_token, 'header.payload.signature');
+  assert.equal(auth.tokens.access_token, 'access-token');
+  assert.equal(auth.tokens.refresh_token, 'refresh-token');
+  assert.equal(auth.tokens.account_id, 'workspace-1');
+  assert.equal(codexConfigTestExports.isCodexAuthReady(auth), true);
+});
+
+test('codex managed auth payloads are marked for cleanup on direct restore', () => {
+  const bootstrap = codexConfigTestExports.buildApiKeyBootstrapAuthJson();
+  const account = codexConfigTestExports.buildChatgptAuthJson({
+    idToken: 'header.payload.signature',
+    accessToken: 'access-token',
+    refreshToken: 'refresh-token',
+    accountId: 'workspace-1'
+  });
+  assert.equal(codexConfigTestExports.isCligateManagedAuth(bootstrap), true);
+  assert.equal(codexConfigTestExports.isCligateManagedAuth(account), true);
+  assert.equal(codexConfigTestExports.isCligateManagedAuth({ auth_mode: 'apikey', OPENAI_API_KEY: 'user-key' }), false);
 });
