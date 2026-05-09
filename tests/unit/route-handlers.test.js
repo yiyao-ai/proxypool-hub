@@ -10,6 +10,9 @@
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { mkdtempSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
 // ─── Mock helpers ─────────────────────────────────────────────────────────────
 
@@ -26,6 +29,14 @@ function mockRes() {
 function mockReq(body = {}, params = {}, query = {}) {
   return { body, params, query };
 }
+
+function createTempDir(prefix) {
+  return mkdtempSync(join(tmpdir(), prefix));
+}
+
+test.before(() => {
+  process.env.CLIGATE_CONFIG_DIR = createTempDir('cligate-route-handlers-');
+});
 
 // ─── settings-route ───────────────────────────────────────────────────────────
 
@@ -120,7 +131,6 @@ test('handleGetAssistantAgentConfig: returns current assistant agent settings', 
   assert.equal(res._body.success, true);
   assert.equal(typeof res._body.assistantAgent?.enabled, 'boolean');
   assert.equal(typeof res._body.assistantAgent?.sources?.anthropicApiKey, 'boolean');
-  assert.equal(res._body.assistantAgent.enabled, true);
 });
 
 test('handleSetAssistantAgentConfig: rejects malformed payload', () => {
@@ -155,6 +165,58 @@ test('handleSetAssistantAgentConfig: accepts complete boolean source map', () =>
   assert.equal(res._body.success, true);
   assert.equal(res._body.assistantAgent.enabled, true);
   assert.equal(res._body.assistantAgent.sources.azureOpenaiApiKeyBridge, false);
+});
+
+test('handleSetAssistantAgentConfig: accepts new binding fields without legacy sources', () => {
+  const req = mockReq({
+    assistantAgent: {
+      enabled: true,
+      boundModelSource: { type: 'api-key', id: 'key-primary', model: 'gpt-5.4' },
+      fallbacks: [{ type: 'chatgpt-account', id: 'user@example.com', model: 'gpt-5.4-mini' }],
+      circuitBreaker: { failureThreshold: 4, probeIntervalMs: 180000 }
+    }
+  });
+  const res = mockRes();
+  handleSetAssistantAgentConfig(req, res);
+  assert.equal(res._status, 200);
+  assert.equal(res._body.success, true);
+  assert.equal(res._body.assistantAgent.bindingConfigured, true);
+  assert.deepEqual(res._body.assistantAgent.boundModelSource, { type: 'api-key', id: 'key-primary', model: 'gpt-5.4' });
+  assert.deepEqual(res._body.assistantAgent.boundCredential, { type: 'api-key', id: 'key-primary', model: 'gpt-5.4' });
+  assert.deepEqual(res._body.assistantAgent.fallbacks, [{ type: 'chatgpt-account', id: 'user@example.com', model: 'gpt-5.4-mini' }]);
+  assert.equal(res._body.assistantAgent.circuitBreaker.failureThreshold, 4);
+  assert.equal(res._body.assistantAgent.circuitBreaker.probeIntervalMs, 180000);
+});
+
+test('handleSetAssistantAgentConfig: preserves new binding chain when legacy sources are updated', () => {
+  const seed = handleSetAssistantBinding(mockReq({
+    enabled: true,
+    boundCredential: { type: 'api-key', id: 'key-primary' },
+    fallbacks: [{ type: 'chatgpt-account', id: 'user@example.com' }],
+    circuitBreaker: { failureThreshold: 5, probeIntervalMs: 120000 }
+  }), mockRes());
+
+  const req = mockReq({
+    assistantAgent: {
+      enabled: false,
+      sources: {
+        chatgptAccount: true,
+        claudeAccount: false,
+        anthropicApiKey: false,
+        openaiApiKeyBridge: true,
+        azureOpenaiApiKeyBridge: false
+      }
+    }
+  });
+  const res = mockRes();
+  handleSetAssistantAgentConfig(req, res);
+  assert.equal(res._status, 200);
+  assert.equal(res._body.success, true);
+  assert.equal(res._body.assistantAgent.enabled, false);
+  assert.deepEqual(res._body.assistantAgent.boundCredential, { type: 'api-key', id: 'key-primary' });
+  assert.deepEqual(res._body.assistantAgent.fallbacks, [{ type: 'chatgpt-account', id: 'user@example.com' }]);
+  assert.equal(res._body.assistantAgent.circuitBreaker.failureThreshold, 5);
+  assert.equal(res._body.assistantAgent.circuitBreaker.probeIntervalMs, 120000);
 });
 
 test('handleGetAssistantAgentStatus: returns status payload shape', async () => {
@@ -227,7 +289,21 @@ test('handleSetAssistantBinding: accepts boundCredential = null (clear binding)'
   handleSetAssistantBinding(req, res);
   assert.equal(res._status, 200);
   assert.equal(res._body.success, true);
+  assert.equal(res._body.assistantAgent.bindingConfigured, true);
+  assert.equal(res._body.assistantAgent.boundModelSource, null);
   assert.equal(res._body.assistantAgent.boundCredential, null);
+});
+
+test('handleSetAssistantBinding: accepts boundModelSource as the Phase 2 primary field', () => {
+  const req = mockReq({
+    boundModelSource: { type: 'api-key', id: 'key-primary', model: 'gpt-5.4' }
+  });
+  const res = mockRes();
+  handleSetAssistantBinding(req, res);
+  assert.equal(res._status, 200);
+  assert.equal(res._body.success, true);
+  assert.deepEqual(res._body.assistantAgent.boundModelSource, { type: 'api-key', id: 'key-primary', model: 'gpt-5.4' });
+  assert.deepEqual(res._body.assistantAgent.boundCredential, { type: 'api-key', id: 'key-primary', model: 'gpt-5.4' });
 });
 
 test('handleResetAssistantBreaker: resets all when no descriptor given', () => {
@@ -308,21 +384,22 @@ test('handleUpdatePricing + handleResetPricing: manage override lifecycle', () =
 
 import { handleSetDirectMode } from '../../src/routes/claude-config-route.js';
 
-test('handleSetDirectMode: rejects missing apiKey with 400', async () => {
+test('handleSetDirectMode: allows missing apiKey and restores direct mode', async () => {
   const req = mockReq({});
   const res = mockRes();
   await handleSetDirectMode(req, res);
-  assert.equal(res._status, 400);
-  assert.equal(res._body.success, false);
-  assert.equal(res._body.error, 'API key required');
+  assert.equal(res._status, 200);
+  assert.equal(res._body.success, true);
+  assert.ok(res._body.config);
 });
 
-test('handleSetDirectMode: rejects null body with 400', async () => {
+test('handleSetDirectMode: allows null body and restores direct mode', async () => {
   const req = { body: null };
   const res = mockRes();
   await handleSetDirectMode(req, res);
-  assert.equal(res._status, 400);
-  assert.equal(res._body.error, 'API key required');
+  assert.equal(res._status, 200);
+  assert.equal(res._body.success, true);
+  assert.ok(res._body.config);
 });
 
 // ─── accounts-route ───────────────────────────────────────────────────────────

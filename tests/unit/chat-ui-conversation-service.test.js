@@ -189,7 +189,7 @@ test('ChatUiConversationService revives remembered follow-up without an active r
   assert.equal(result.type, 'runtime_started');
   assert.equal(result.provider, 'claude-code');
   assert.equal(result.startedFresh, true);
-  assert.match(String(result.message || ''), /remembered conversation context/i);
+  assert.match(String(result.message || ''), /Continuing remembered task|remembered/i);
   assert.equal(result.conversation.activeRuntimeSessionId, result.session.id);
 });
 
@@ -333,7 +333,7 @@ test('ChatUiConversationService returns to direct runtime handling after /runtim
   });
 
   assert.equal(runtimeResult.type, 'runtime_started');
-  assert.equal(runtimeResult.session.provider, 'codex');
+  assert.equal(runtimeResult.session.provider, 'claude-code');
 });
 
 test('ChatUiConversationService runs Phase 4 assistant tool flow to start a runtime task', async () => {

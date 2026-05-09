@@ -22,8 +22,8 @@ test('normalizeBoundCredential rejects unknown types and missing ids', () => {
 
 test('normalizeBoundCredential trims whitespace and ignores extra fields', () => {
     assert.deepEqual(
-        normalizeBoundCredential({ type: '  api-key  ', id: '  key_x  ', extra: 'ignored' }),
-        { type: 'api-key', id: 'key_x' }
+        normalizeBoundCredential({ type: '  api-key  ', id: '  key_x  ', model: ' gpt-5.4 ', extra: 'ignored' }),
+        { type: 'api-key', id: 'key_x', model: 'gpt-5.4' }
     );
 });
 
@@ -70,6 +70,8 @@ test('normalizeCircuitBreaker clamps to default-bounded ranges', () => {
 test('normalizeAssistantAgentConfig fills defaults for fresh empty input', () => {
     const result = normalizeAssistantAgentConfig({});
     assert.equal(result.enabled, false);                   // default false unless explicit true
+    assert.equal(result.bindingConfigured, false);
+    assert.equal(result.boundModelSource, null);
     assert.equal(result.boundCredential, null);
     assert.deepEqual(result.fallbacks, []);
     assert.deepEqual(result.circuitBreaker, { failureThreshold: 3, probeIntervalMs: 300_000 });
@@ -80,7 +82,7 @@ test('normalizeAssistantAgentConfig fills defaults for fresh empty input', () =>
 test('normalizeAssistantAgentConfig preserves a valid new-shape config', () => {
     const result = normalizeAssistantAgentConfig({
         enabled: true,
-        boundCredential: { type: 'api-key', id: 'key_a' },
+        boundModelSource: { type: 'api-key', id: 'key_a', model: 'gpt-5.4' },
         fallbacks: [
             { type: 'claude-account', id: 'me@example' },
             { type: 'chatgpt-account', id: 'me@example' }
@@ -88,7 +90,9 @@ test('normalizeAssistantAgentConfig preserves a valid new-shape config', () => {
         circuitBreaker: { failureThreshold: 5, probeIntervalMs: 600_000 }
     });
     assert.equal(result.enabled, true);
-    assert.deepEqual(result.boundCredential, { type: 'api-key', id: 'key_a' });
+    assert.equal(result.bindingConfigured, true);
+    assert.deepEqual(result.boundModelSource, { type: 'api-key', id: 'key_a', model: 'gpt-5.4' });
+    assert.deepEqual(result.boundCredential, { type: 'api-key', id: 'key_a', model: 'gpt-5.4' });
     assert.equal(result.fallbacks.length, 2);
     assert.equal(result.circuitBreaker.failureThreshold, 5);
     assert.equal(result.circuitBreaker.probeIntervalMs, 600_000);
@@ -107,7 +111,30 @@ test('normalizeAssistantAgentConfig keeps legacy sources usable when new fields 
     });
     assert.equal(result.boundCredential, null);
     assert.deepEqual(result.fallbacks, []);
+    assert.equal(result.bindingConfigured, false);
     assert.equal(result.sources.anthropicApiKey, true);
     assert.equal(result.sources.openaiApiKeyBridge, false);
     assert.equal(result.sources.chatgptAccount, true);
+});
+
+test('normalizeAssistantAgentConfig preserves explicit cleared binding state', () => {
+    const result = normalizeAssistantAgentConfig({
+        enabled: true,
+        bindingConfigured: true,
+        boundModelSource: null,
+        fallbacks: []
+    });
+    assert.equal(result.bindingConfigured, true);
+    assert.equal(result.boundModelSource, null);
+    assert.equal(result.boundCredential, null);
+    assert.deepEqual(result.fallbacks, []);
+});
+
+test('normalizeAssistantAgentConfig upgrades legacy boundCredential into boundModelSource view', () => {
+    const result = normalizeAssistantAgentConfig({
+        enabled: true,
+        boundCredential: { type: 'api-key', id: 'legacy-key', model: 'gpt-5.4' }
+    });
+    assert.deepEqual(result.boundModelSource, { type: 'api-key', id: 'legacy-key', model: 'gpt-5.4' });
+    assert.deepEqual(result.boundCredential, { type: 'api-key', id: 'legacy-key', model: 'gpt-5.4' });
 });

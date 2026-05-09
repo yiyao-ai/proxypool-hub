@@ -71,6 +71,8 @@ document.addEventListener('alpine:init', () => {
         freeModelsSaving: false,
         assistantAgentConfig: {
             enabled: false,
+            bindingConfigured: false,
+            boundModelSource: null,
             boundCredential: null,
             fallbacks: [],
             circuitBreaker: { failureThreshold: 3, probeIntervalMs: 300000 },
@@ -84,6 +86,8 @@ document.addEventListener('alpine:init', () => {
         },
         assistantAgentStatus: {
             enabled: false,
+            bindingConfigured: false,
+            boundModelSource: null,
             boundCredential: null,
             fallbacks: [],
             circuitBreaker: { failureThreshold: 3, probeIntervalMs: 300000 },
@@ -622,6 +626,7 @@ document.addEventListener('alpine:init', () => {
                 this.refreshProxyStatus();
             }
             if (tab === 'assistantAgent') {
+                if (!this.modelMappingData) this.loadModelMappings();
                 this.loadAssistantAgentConfig();
                 this.loadAssistantAgentStatus();
             }
@@ -1999,21 +2004,29 @@ document.addEventListener('alpine:init', () => {
 
             if (run && terminal.includes(String(run.status || ''))) {
                 session.pendingAssistantRunId = '';
-                this.appendAgentRuntimeMessage(session.id, {
-                    kind: 'agent-status',
-                    content: run.result || run.summary || this.t('requestFailed'),
-                    isError: run.status === 'failed',
-                    assistantRunId: run.id,
-                    runStatus: run.status,
-                    observability: run.metadata?.stopPolicy || run.metadata?.agent || run.metadata?.assistantAgent
-                        ? {
-                            mode: run.metadata?.assistantAgent?.mode === 'fallback' ? 'fallback' : 'agent',
-                            resolvedSource: run.metadata?.agent?.llmSource || null,
-                            fallbackReason: run.metadata?.assistantAgent?.reason || '',
-                            stopPolicy: run.metadata?.stopPolicy || null
-                        }
-                        : null
-                });
+                await this.refreshChatSessionFromServer(session.id);
+                const mergedPersisted = Array.isArray(session.messages)
+                    && session.messages.some((message) => (
+                        String(message.assistantRunId || '') === String(run.id || '')
+                        && String(message.runStatus || '') === String(run.status || '')
+                    ));
+                if (!mergedPersisted) {
+                    this.appendAgentRuntimeMessage(session.id, {
+                        kind: 'agent-status',
+                        content: run.result || run.summary || this.t('requestFailed'),
+                        isError: run.status === 'failed',
+                        assistantRunId: run.id,
+                        runStatus: run.status,
+                        observability: run.metadata?.stopPolicy || run.metadata?.agent || run.metadata?.assistantAgent
+                            ? {
+                                mode: run.metadata?.assistantAgent?.mode === 'fallback' ? 'fallback' : 'agent',
+                                resolvedSource: run.metadata?.agent?.llmSource || null,
+                                fallbackReason: run.metadata?.assistantAgent?.reason || '',
+                                stopPolicy: run.metadata?.stopPolicy || null
+                            }
+                            : null
+                    });
+                }
                 this.syncActiveChatSession();
                 return;
             }
@@ -3470,6 +3483,9 @@ document.addEventListener('alpine:init', () => {
         },
 
         async loadAssistantAgentConfig() {
+            if (!this.modelMappingData) {
+                await this.loadModelMappings();
+            }
             // Fetch catalog first and let Alpine flush the <template x-for>
             // options into the DOM before assigning boundCredential. Otherwise
             // Alpine's `:value` binding on the <select> fires while x-for has
@@ -3492,7 +3508,9 @@ document.addEventListener('alpine:init', () => {
                 const cfg = configResult.data.assistantAgent;
                 this.assistantAgentConfig = {
                     enabled: cfg.enabled === true,
-                    boundCredential: cfg.boundCredential || null,
+                    bindingConfigured: cfg.bindingConfigured === true,
+                    boundModelSource: cfg.boundModelSource || cfg.boundCredential || null,
+                    boundCredential: cfg.boundModelSource || cfg.boundCredential || null,
                     fallbacks: Array.isArray(cfg.fallbacks) ? cfg.fallbacks : [],
                     circuitBreaker: cfg.circuitBreaker || { failureThreshold: 3, probeIntervalMs: 300000 },
                     sources: {
@@ -3516,10 +3534,21 @@ document.addEventListener('alpine:init', () => {
         get assistantAgentCredentialOptions() {
             const cat = this.assistantAgentStatus?.catalog || {};
             const out = [];
+            const providerLabels = {
+                anthropic: this.t('assistantAgentGroupAnthropicKey'),
+                openai: this.t('assistantAgentGroupOpenAiBridge'),
+                'azure-openai': this.t('assistantAgentGroupAzureBridge'),
+                gemini: 'Gemini API Keys',
+                'vertex-ai': 'Vertex AI API Keys',
+                deepseek: 'DeepSeek API Keys'
+            };
+            const apiKeyGroups = Object.entries(cat.apiKeys || {}).map(([providerType, entries]) => ({
+                key: `apiKeys-${providerType}`,
+                label: providerLabels[providerType] || `${providerType} API Keys`,
+                entries: Array.isArray(entries) ? entries : []
+            }));
             const groups = [
-                { key: 'anthropicKeys', label: this.t('assistantAgentGroupAnthropicKey'), entries: cat.apiKeys?.anthropic || [] },
-                { key: 'openaiKeys', label: this.t('assistantAgentGroupOpenAiBridge'), entries: cat.apiKeys?.openai || [] },
-                { key: 'azureKeys', label: this.t('assistantAgentGroupAzureBridge'), entries: cat.apiKeys?.['azure-openai'] || [] },
+                ...apiKeyGroups,
                 { key: 'claudeAccounts', label: this.t('assistantAgentGroupClaudeAccount'), entries: cat.claudeAccounts || [] },
                 { key: 'chatgptAccounts', label: this.t('assistantAgentGroupChatgptAccount'), entries: cat.chatgptAccounts || [] }
             ];
@@ -3530,6 +3559,7 @@ document.addEventListener('alpine:init', () => {
                     label: entry.label,
                     available: entry.available !== false,
                     detail: entry.detail || '',
+                    providerType: entry.providerType || '',
                     descriptor: { type: entry.type, id: entry.id }
                 })) });
             }
@@ -3552,7 +3582,40 @@ document.addEventListener('alpine:init', () => {
             const flat = this.assistantAgentCredentialOptions.flatMap((g) => g.entries.map((e) => ({ group: g.group, ...e })));
             const target = `${descriptor.type}::${descriptor.id}`;
             const match = flat.find((entry) => entry.value === target);
-            return match ? `${match.group} · ${match.label}` : `${descriptor.type} · ${descriptor.id}`;
+            const model = descriptor.model ? ` / ${descriptor.model}` : '';
+            return match ? `${match.group} · ${match.label}${model}` : `${descriptor.type} · ${descriptor.id}${model}`;
+        },
+
+        assistantProviderModelsForDescriptor(descriptor) {
+            if (!descriptor?.type || !descriptor?.id) return [];
+            if (descriptor.type === 'claude-account') {
+                return ['claude-opus-4-6', 'claude-sonnet-4-6', 'claude-haiku-4-5'];
+            }
+            if (descriptor.type === 'chatgpt-account') {
+                return ['gpt-5.4', 'gpt-5.4-mini', 'gpt-5.4-nano', 'gpt-5.3-codex', 'o4-mini'];
+            }
+            const flat = this.assistantAgentCredentialOptions.flatMap((g) => g.entries);
+            const match = flat.find((entry) => entry.value === `${descriptor.type}::${descriptor.id}`);
+            const providerType = String(match?.providerType || '').trim();
+            const providerModels = this.modelMappingData?.providerModels || {};
+            const discoveredModels = this.modelMappingData?.discovered?.providers?.[providerType]?.models || [];
+            const discoveredIds = Array.isArray(discoveredModels)
+                ? discoveredModels.map((entry) => entry?.id || entry).filter(Boolean)
+                : [];
+            const staticIds = Array.isArray(providerModels[providerType]) ? providerModels[providerType] : [];
+            const merged = [...new Set([...discoveredIds, ...staticIds])];
+            if (descriptor.model && !merged.includes(descriptor.model)) {
+                merged.unshift(descriptor.model);
+            }
+            return merged;
+        },
+
+        cloneDescriptorWithModel(descriptor, model) {
+            if (!descriptor) return null;
+            const normalizedModel = typeof model === 'string' ? model.trim() : '';
+            return normalizedModel
+                ? { ...descriptor, model: normalizedModel }
+                : { type: descriptor.type, id: descriptor.id };
         },
 
         async submitAssistantBinding(patch, { suppressToast = false } = {}) {
@@ -3568,7 +3631,9 @@ document.addEventListener('alpine:init', () => {
                 this.assistantAgentConfig = {
                     ...this.assistantAgentConfig,
                     enabled: cfg.enabled === true,
-                    boundCredential: cfg.boundCredential || null,
+                    bindingConfigured: cfg.bindingConfigured === true,
+                    boundModelSource: cfg.boundModelSource || cfg.boundCredential || null,
+                    boundCredential: cfg.boundModelSource || cfg.boundCredential || null,
                     fallbacks: Array.isArray(cfg.fallbacks) ? cfg.fallbacks : [],
                     circuitBreaker: cfg.circuitBreaker || this.assistantAgentConfig.circuitBreaker
                 };
@@ -3585,20 +3650,39 @@ document.addEventListener('alpine:init', () => {
         },
 
         async setAssistantPrimary(value) {
-            const descriptor = value === '' ? null : this.valueToDescriptor(value);
-            await this.submitAssistantBinding({ boundCredential: descriptor });
+            const currentModel = this.assistantAgentConfig.boundModelSource?.model || '';
+            const descriptor = value === ''
+                ? null
+                : this.cloneDescriptorWithModel(this.valueToDescriptor(value), currentModel);
+            await this.submitAssistantBinding({ boundModelSource: descriptor });
+        },
+
+        async setAssistantPrimaryModel(model) {
+            const descriptor = this.cloneDescriptorWithModel(this.assistantAgentConfig.boundModelSource, model);
+            await this.submitAssistantBinding({ boundModelSource: descriptor });
         },
 
         async setAssistantFallback(index, value) {
             const fallbacks = [...(this.assistantAgentConfig.fallbacks || [])];
-            const descriptor = this.valueToDescriptor(value);
+            const descriptor = this.cloneDescriptorWithModel(
+                this.valueToDescriptor(value),
+                fallbacks[index]?.model || ''
+            );
+            if (!descriptor) return;
+            fallbacks[index] = descriptor;
+            await this.submitAssistantBinding({ fallbacks });
+        },
+
+        async setAssistantFallbackModel(index, model) {
+            const fallbacks = [...(this.assistantAgentConfig.fallbacks || [])];
+            const descriptor = this.cloneDescriptorWithModel(fallbacks[index], model);
             if (!descriptor) return;
             fallbacks[index] = descriptor;
             await this.submitAssistantBinding({ fallbacks });
         },
 
         async addAssistantFallback(value) {
-            const descriptor = this.valueToDescriptor(value);
+            const descriptor = this.cloneDescriptorWithModel(this.valueToDescriptor(value), '');
             if (!descriptor) return;
             const fallbacks = [...(this.assistantAgentConfig.fallbacks || []), descriptor];
             await this.submitAssistantBinding({ fallbacks });

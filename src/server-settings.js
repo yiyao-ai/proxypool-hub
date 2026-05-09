@@ -21,6 +21,8 @@ const DEFAULT_SETTINGS = {
     requestLogRetentionDays: 7,          // Days to keep request logs
     assistantAgent: {
         enabled: true,
+        bindingConfigured: false,
+        boundModelSource: null,
         // New (preferred) shape. boundCredential = null means "supervisor not
         // configured"; the runtime falls back to the deterministic runner.
         boundCredential: null,
@@ -37,9 +39,9 @@ const DEFAULT_SETTINGS = {
         sources: {
             chatgptAccount: false,
             claudeAccount: false,
-            anthropicApiKey: true,
-            openaiApiKeyBridge: true,
-            azureOpenaiApiKeyBridge: true
+            anthropicApiKey: false,
+            openaiApiKeyBridge: false,
+            azureOpenaiApiKeyBridge: false
         }
     },
     channels: {
@@ -166,7 +168,10 @@ function normalizeBoundCredential(value) {
     const type = String(value.type || '').trim();
     const id = String(value.id || '').trim();
     if (!ASSISTANT_CREDENTIAL_TYPES.has(type) || !id) return null;
-    return { type, id };
+    const model = typeof value.model === 'string' && value.model.trim()
+        ? value.model.trim()
+        : '';
+    return model ? { type, id, model } : { type, id };
 }
 
 function normalizeFallbacks(value) {
@@ -214,11 +219,15 @@ function normalizeAssistantAgentConfig(config = {}) {
     const sources = current.sources && typeof current.sources === 'object'
         ? current.sources
         : {};
+    const boundModelSource = normalizeBoundCredential(current.boundModelSource || current.boundCredential);
+    const fallbacks = normalizeFallbacks(current.fallbacks);
 
     return {
         enabled: current.enabled === true,
-        boundCredential: normalizeBoundCredential(current.boundCredential),
-        fallbacks: normalizeFallbacks(current.fallbacks),
+        bindingConfigured: current.bindingConfigured === true || !!boundModelSource || fallbacks.length > 0,
+        boundModelSource,
+        boundCredential: boundModelSource,
+        fallbacks,
         circuitBreaker: normalizeCircuitBreaker(current.circuitBreaker),
         // Legacy field — kept for one-time runtime migration. Fresh installs
         // populate this from DEFAULT_SETTINGS; once `boundCredential` is set

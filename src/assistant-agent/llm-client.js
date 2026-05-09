@@ -20,7 +20,7 @@ let _migrationDone = false;
 
 /**
  * One-shot migration from legacy `assistantAgent.sources` toggles to
- * `assistantAgent.boundCredential`. Runs at most once per process — picks the
+ * `assistantAgent.boundModelSource`. Runs at most once per process — picks the
  * first resolvable concrete credential per the historical priority order
  * (anthropic key → openai bridge → azure bridge → claude account → chatgpt
  * account) and writes it back to settings.json. Subsequent runtime config
@@ -28,7 +28,7 @@ let _migrationDone = false;
  */
 function migrateLegacySourcesIfNeeded(config) {
   if (_migrationDone) return config;
-  if (config.boundCredential) {
+  if (config.boundModelSource || config.boundCredential || config.bindingConfigured === true) {
     _migrationDone = true;
     return config;
   }
@@ -98,13 +98,13 @@ function migrateLegacySourcesIfNeeded(config) {
 
   try {
     const persisted = setServerSettings({
-      assistantAgent: { ...config, boundCredential: resolved }
+      assistantAgent: { ...config, boundModelSource: resolved, boundCredential: resolved }
     });
     logger.info(`[Supervisor] migrated legacy supervisor config → ${resolved.type}::${resolved.id}`);
     return persisted.assistantAgent;
   } catch (error) {
     logger.warn(`[Supervisor] legacy migration failed to persist: ${error?.message || error}`);
-    return { ...config, boundCredential: resolved };
+    return { ...config, boundModelSource: resolved, boundCredential: resolved };
   }
 }
 
@@ -133,13 +133,17 @@ export class AssistantLlmClient {
     let config = stored
       ? {
           enabled: stored.enabled === true,
-          boundCredential: stored.boundCredential || null,
+          bindingConfigured: stored.bindingConfigured === true,
+          boundModelSource: stored.boundModelSource || stored.boundCredential || null,
+          boundCredential: stored.boundModelSource || stored.boundCredential || null,
           fallbacks: Array.isArray(stored.fallbacks) ? stored.fallbacks : [],
           circuitBreaker: stored.circuitBreaker || { failureThreshold: 3, probeIntervalMs: 300_000 },
           sources: stored.sources || {}
         }
       : {
           enabled: this.enabled,
+          bindingConfigured: false,
+          boundModelSource: null,
           boundCredential: null,
           fallbacks: [],
           circuitBreaker: { failureThreshold: 3, probeIntervalMs: 300_000 },
@@ -155,7 +159,9 @@ export class AssistantLlmClient {
 
   _chainDescriptors(config) {
     const chain = [];
-    if (config.boundCredential) chain.push(config.boundCredential);
+    if (config.boundModelSource || config.boundCredential) {
+      chain.push(config.boundModelSource || config.boundCredential);
+    }
     if (Array.isArray(config.fallbacks)) {
       for (const entry of config.fallbacks) {
         if (entry && typeof entry === 'object' && entry.type && entry.id) {
@@ -182,7 +188,7 @@ export class AssistantLlmClient {
     const config = this.getRuntimeConfig();
     if (!config.enabled) return 'assistant_agent_disabled';
     if (this._lastFallbackReason) return this._lastFallbackReason;
-    if (!config.boundCredential) return 'no_supervisor_binding';
+    if (!(config.boundModelSource || config.boundCredential)) return 'no_supervisor_binding';
     return 'no_available_llm_source';
   }
 
@@ -278,7 +284,9 @@ export class AssistantLlmClient {
 
     return {
       enabled: config.enabled,
-      boundCredential: config.boundCredential,
+      bindingConfigured: config.bindingConfigured === true,
+      boundModelSource: config.boundModelSource || config.boundCredential,
+      boundCredential: config.boundModelSource || config.boundCredential,
       fallbacks: config.fallbacks,
       circuitBreaker: config.circuitBreaker,
       tiers,
@@ -331,14 +339,14 @@ export class AssistantLlmClient {
           messages,
           tools,
           max_tokens: maxTokens,
-          model: model || source.model
+          model: source.model || model
         });
         this._breaker.recordSuccess(source.tierKey);
         this._lastUsed = {
           descriptor: source.descriptor,
           kind: source.kind,
           label: source.label,
-          model: model || source.model,
+          model: source.model || model,
           at: Date.now()
         };
         this._lastFallbackReason = '';
@@ -347,7 +355,7 @@ export class AssistantLlmClient {
           source: {
             kind: source.kind,
             label: source.label,
-            model: model || source.model,
+            model: source.model || model,
             descriptor: source.descriptor
           }
         };

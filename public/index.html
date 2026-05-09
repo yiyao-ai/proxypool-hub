@@ -1722,10 +1722,10 @@
                             <!-- Primary credential -->
                             <div class="space-y-2">
                                 <div class="text-xs font-mono text-gray-500 uppercase tracking-widest" x-text="t('assistantAgentPrimary')"></div>
-                                <div class="flex flex-col md:flex-row gap-2">
-                                    <select class="flex-1 rounded-lg bg-space-800/60 border border-space-border/50 text-white px-3 py-2 text-sm"
+                                <div class="grid grid-cols-1 md:grid-cols-[minmax(0,1.6fr)_minmax(13rem,1fr)_auto] gap-2">
+                                    <select class="w-full rounded-lg bg-space-800/60 border border-space-border/50 text-white px-3 py-2 text-sm"
                                         :disabled="assistantAgentSaving"
-                                        :value="descriptorToValue(assistantAgentConfig.boundCredential)"
+                                        :value="descriptorToValue(assistantAgentConfig.boundModelSource)"
                                         @change="setAssistantPrimary($event.target.value)">
                                         <option value="" x-text="t('assistantAgentNoBinding')"></option>
                                         <template x-for="group in assistantAgentCredentialOptions" :key="group.group">
@@ -1737,9 +1737,18 @@
                                             </optgroup>
                                         </template>
                                     </select>
-                                    <button class="btn btn-xs btn-outline text-gray-300"
-                                        :disabled="!assistantAgentConfig.boundCredential || assistantAgentSaving"
-                                        @click="testAssistantBinding(assistantAgentConfig.boundCredential)"
+                                    <select class="w-full rounded-lg bg-space-800/60 border border-space-border/50 text-white px-3 py-2 text-sm"
+                                        :disabled="assistantAgentSaving || !assistantAgentConfig.boundModelSource"
+                                        :value="assistantAgentConfig.boundModelSource?.model || ''"
+                                        @change="setAssistantPrimaryModel($event.target.value)">
+                                        <option value="">Default model</option>
+                                        <template x-for="modelId in assistantProviderModelsForDescriptor(assistantAgentConfig.boundModelSource)" :key="modelId">
+                                            <option :value="modelId" x-text="modelId"></option>
+                                        </template>
+                                    </select>
+                                    <button class="btn btn-xs btn-outline text-gray-300 whitespace-nowrap"
+                                        :disabled="!assistantAgentConfig.boundModelSource || assistantAgentSaving"
+                                        @click="testAssistantBinding(assistantAgentConfig.boundModelSource)"
                                         x-text="t('assistantAgentTest')"></button>
                                 </div>
                                 <template x-if="assistantAgentTestResult">
@@ -1757,29 +1766,50 @@
                                         x-text="(assistantAgentConfig.fallbacks?.length || 0) + ' / 3'"></div>
                                 </div>
                                 <template x-for="(fallback, index) in (assistantAgentConfig.fallbacks || [])" :key="index">
-                                    <div class="flex items-center gap-2">
-                                        <span class="text-[10px] font-mono text-gray-500 w-6 text-center" x-text="'#' + (index + 1)"></span>
-                                        <select class="flex-1 rounded-lg bg-space-800/60 border border-space-border/50 text-white px-3 py-2 text-xs"
-                                            :disabled="assistantAgentSaving"
-                                            :value="descriptorToValue(fallback)"
-                                            @change="setAssistantFallback(index, $event.target.value)">
-                                            <template x-for="group in assistantAgentCredentialOptions" :key="group.group">
-                                                <optgroup :label="group.group">
-                                                    <template x-for="entry in group.entries" :key="entry.value">
-                                                        <option :value="entry.value" x-text="entry.label"></option>
-                                                    </template>
-                                                </optgroup>
-                                            </template>
-                                        </select>
-                                        <button class="btn btn-xs btn-outline text-gray-400 px-2"
-                                            :disabled="index === 0 || assistantAgentSaving"
-                                            @click="moveAssistantFallback(index, -1)">↑</button>
-                                        <button class="btn btn-xs btn-outline text-gray-400 px-2"
-                                            :disabled="index === (assistantAgentConfig.fallbacks?.length - 1) || assistantAgentSaving"
-                                            @click="moveAssistantFallback(index, 1)">↓</button>
-                                        <button class="btn btn-xs btn-outline text-red-400 px-2"
-                                            :disabled="assistantAgentSaving"
-                                            @click="removeAssistantFallback(index)">✕</button>
+                                    <div class="rounded-lg border border-space-border/35 bg-space-900/25 px-3 py-3">
+                                        <div class="flex items-center justify-between gap-3 mb-2">
+                                            <span class="text-[10px] font-mono text-gray-500 uppercase tracking-widest" x-text="'#' + (index + 1)"></span>
+                                            <div class="inline-flex items-center gap-1 shrink-0">
+                                                <button
+                                                    class="inline-flex h-8 w-8 items-center justify-center rounded-md border border-space-border/50 bg-space-800/70 text-gray-300 transition-colors hover:bg-space-700/80 disabled:opacity-40 disabled:cursor-not-allowed"
+                                                    :disabled="index === 0 || assistantAgentSaving"
+                                                    @click="moveAssistantFallback(index, -1)"
+                                                    title="Move up">↑</button>
+                                                <button
+                                                    class="inline-flex h-8 w-8 items-center justify-center rounded-md border border-space-border/50 bg-space-800/70 text-gray-300 transition-colors hover:bg-space-700/80 disabled:opacity-40 disabled:cursor-not-allowed"
+                                                    :disabled="index === (assistantAgentConfig.fallbacks?.length - 1) || assistantAgentSaving"
+                                                    @click="moveAssistantFallback(index, 1)"
+                                                    title="Move down">↓</button>
+                                                <button
+                                                    class="inline-flex h-8 w-8 items-center justify-center rounded-md border border-red-500/30 bg-red-500/5 text-red-300 transition-colors hover:bg-red-500/10 disabled:opacity-40 disabled:cursor-not-allowed"
+                                                    :disabled="assistantAgentSaving"
+                                                    @click="removeAssistantFallback(index)"
+                                                    title="Remove fallback">✕</button>
+                                            </div>
+                                        </div>
+                                        <div class="grid grid-cols-1 md:grid-cols-[minmax(0,1.6fr)_minmax(13rem,1fr)] gap-2 min-w-0">
+                                            <select class="w-full rounded-lg bg-space-800/60 border border-space-border/50 text-white px-3 py-2 text-sm"
+                                                :disabled="assistantAgentSaving"
+                                                :value="descriptorToValue(fallback)"
+                                                @change="setAssistantFallback(index, $event.target.value)">
+                                                <template x-for="group in assistantAgentCredentialOptions" :key="group.group">
+                                                    <optgroup :label="group.group">
+                                                        <template x-for="entry in group.entries" :key="entry.value">
+                                                            <option :value="entry.value" x-text="entry.label"></option>
+                                                        </template>
+                                                    </optgroup>
+                                                </template>
+                                            </select>
+                                            <select class="w-full rounded-lg bg-space-800/60 border border-space-border/50 text-white px-3 py-2 text-sm"
+                                                :disabled="assistantAgentSaving || !fallback"
+                                                :value="fallback?.model || ''"
+                                                @change="setAssistantFallbackModel(index, $event.target.value)">
+                                                <option value="">Default model</option>
+                                                <template x-for="modelId in assistantProviderModelsForDescriptor(fallback)" :key="modelId">
+                                                    <option :value="modelId" x-text="modelId"></option>
+                                                </template>
+                                            </select>
+                                        </div>
                                     </div>
                                 </template>
                                 <div x-show="(assistantAgentConfig.fallbacks?.length || 0) < 3">

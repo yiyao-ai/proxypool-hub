@@ -45,13 +45,17 @@ export function handleGetAssistantBindingCatalog(_req, res) {
 function isValidDescriptorPayload(value) {
   if (value === null) return true;
   if (!value || typeof value !== 'object') return false;
-  return typeof value.type === 'string' && typeof value.id === 'string';
+  if (typeof value.type !== 'string' || typeof value.id !== 'string') {
+    return false;
+  }
+  return value.model === undefined || typeof value.model === 'string';
 }
 
 /**
  * POST /api/assistant/agent-binding
  * Body: {
  *   enabled?: boolean,
+ *   boundModelSource?: { type, id, model? } | null,
  *   boundCredential?: { type, id } | null,
  *   fallbacks?: Array<{ type, id }>,
  *   circuitBreaker?: { failureThreshold?, probeIntervalMs? }
@@ -67,7 +71,7 @@ export function handleSetAssistantBinding(req, res) {
   }
 
   const current = getServerSettings().assistantAgent || {};
-  const next = { ...current };
+  const next = { ...current, bindingConfigured: true };
 
   if (Object.prototype.hasOwnProperty.call(body, 'enabled')) {
     if (typeof body.enabled !== 'boolean') {
@@ -81,6 +85,15 @@ export function handleSetAssistantBinding(req, res) {
       return res.status(400).json({ success: false, error: '`boundCredential` must be {type,id} or null' });
     }
     next.boundCredential = body.boundCredential;
+    next.boundModelSource = body.boundCredential;
+  }
+
+  if (Object.prototype.hasOwnProperty.call(body, 'boundModelSource')) {
+    if (!isValidDescriptorPayload(body.boundModelSource)) {
+      return res.status(400).json({ success: false, error: '`boundModelSource` must be {type,id,model?} or null' });
+    }
+    next.boundModelSource = body.boundModelSource;
+    next.boundCredential = body.boundModelSource;
   }
 
   if (Object.prototype.hasOwnProperty.call(body, 'fallbacks')) {

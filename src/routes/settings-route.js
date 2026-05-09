@@ -271,6 +271,13 @@ function isBooleanRecord(value) {
   return value && typeof value === 'object' && !Array.isArray(value);
 }
 
+function isDescriptor(value) {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    && typeof value.type === 'string'
+    && typeof value.id === 'string'
+    && (value.model === undefined || typeof value.model === 'string');
+}
+
 export function handleSetAssistantAgentConfig(req, res) {
   const { assistantAgent } = req.body || {};
   if (!assistantAgent || typeof assistantAgent !== 'object' || Array.isArray(assistantAgent)) {
@@ -287,13 +294,6 @@ export function handleSetAssistantAgentConfig(req, res) {
     });
   }
 
-  if (!isBooleanRecord(assistantAgent.sources)) {
-    return res.status(400).json({
-      success: false,
-      error: 'assistantAgent.sources is required and must be an object'
-    });
-  }
-
   const sourceKeys = [
     'chatgptAccount',
     'claudeAccount',
@@ -301,16 +301,102 @@ export function handleSetAssistantAgentConfig(req, res) {
     'openaiApiKeyBridge',
     'azureOpenaiApiKeyBridge'
   ];
-  for (const key of sourceKeys) {
-    if (typeof assistantAgent.sources[key] !== 'boolean') {
+
+  if (Object.prototype.hasOwnProperty.call(assistantAgent, 'sources')) {
+    if (!isBooleanRecord(assistantAgent.sources)) {
       return res.status(400).json({
         success: false,
-        error: `assistantAgent.sources.${key} is required and must be a boolean`
+        error: 'assistantAgent.sources must be an object when provided'
+      });
+    }
+    for (const key of sourceKeys) {
+      if (typeof assistantAgent.sources[key] !== 'boolean') {
+        return res.status(400).json({
+          success: false,
+          error: `assistantAgent.sources.${key} is required and must be a boolean`
+        });
+      }
+    }
+  }
+
+  if (Object.prototype.hasOwnProperty.call(assistantAgent, 'boundCredential')) {
+    const { boundCredential } = assistantAgent;
+    if (boundCredential !== null && !isDescriptor(boundCredential)) {
+      return res.status(400).json({
+        success: false,
+        error: 'assistantAgent.boundCredential must be { type, id } or null'
       });
     }
   }
 
-  const settings = setServerSettings({ assistantAgent });
+  if (Object.prototype.hasOwnProperty.call(assistantAgent, 'boundModelSource')) {
+    const { boundModelSource } = assistantAgent;
+    if (boundModelSource !== null && !isDescriptor(boundModelSource)) {
+      return res.status(400).json({
+        success: false,
+        error: 'assistantAgent.boundModelSource must be { type, id, model? } or null'
+      });
+    }
+  }
+
+  if (Object.prototype.hasOwnProperty.call(assistantAgent, 'fallbacks')) {
+    if (!Array.isArray(assistantAgent.fallbacks)) {
+      return res.status(400).json({
+        success: false,
+        error: 'assistantAgent.fallbacks must be an array'
+      });
+    }
+    for (const entry of assistantAgent.fallbacks) {
+      if (!isDescriptor(entry)) {
+        return res.status(400).json({
+          success: false,
+          error: 'assistantAgent.fallbacks entries must be { type, id }'
+        });
+      }
+    }
+  }
+
+  if (Object.prototype.hasOwnProperty.call(assistantAgent, 'circuitBreaker')) {
+    const { circuitBreaker } = assistantAgent;
+    if (circuitBreaker !== null && (!circuitBreaker || typeof circuitBreaker !== 'object' || Array.isArray(circuitBreaker))) {
+      return res.status(400).json({
+        success: false,
+        error: 'assistantAgent.circuitBreaker must be an object or null'
+      });
+    }
+  }
+
+  const current = getServerSettings().assistantAgent || {};
+  const next = {
+    ...current,
+    enabled: assistantAgent.enabled
+  };
+
+  if (Object.prototype.hasOwnProperty.call(assistantAgent, 'sources')) {
+    next.sources = assistantAgent.sources;
+  }
+  if (Object.prototype.hasOwnProperty.call(assistantAgent, 'boundCredential')) {
+    next.boundCredential = assistantAgent.boundCredential;
+    next.boundModelSource = assistantAgent.boundCredential;
+    next.bindingConfigured = true;
+  }
+  if (Object.prototype.hasOwnProperty.call(assistantAgent, 'boundModelSource')) {
+    next.boundModelSource = assistantAgent.boundModelSource;
+    next.boundCredential = assistantAgent.boundModelSource;
+    next.bindingConfigured = true;
+  }
+  if (Object.prototype.hasOwnProperty.call(assistantAgent, 'fallbacks')) {
+    next.fallbacks = assistantAgent.fallbacks;
+    next.bindingConfigured = true;
+  }
+  if (Object.prototype.hasOwnProperty.call(assistantAgent, 'circuitBreaker')) {
+    next.circuitBreaker = assistantAgent.circuitBreaker;
+    next.bindingConfigured = true;
+  }
+
+  const settings = setServerSettings({
+    assistantAgent: next
+  });
   res.json({
     success: true,
     assistantAgent: settings.assistantAgent

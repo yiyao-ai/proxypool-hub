@@ -184,9 +184,12 @@ export class CircuitBreaker {
 /**
  * Build a stable tier key from a bound-credential descriptor.
  */
-export function tierKeyFor({ type, id } = {}) {
+export function tierKeyFor({ type, id, model } = {}) {
     if (!type || !id) return '';
-    return `${String(type)}::${String(id)}`;
+    const modelKey = typeof model === 'string' && model.trim()
+        ? `::${model.trim()}`
+        : '';
+    return `${String(type)}::${String(id)}${modelKey}`;
 }
 
 export default CircuitBreaker;

@@ -15,7 +15,7 @@
  *   }
  */
 
-import { getProviderById, getApiKeysByType } from '../api-key-manager.js';
+import { getProviderById, getAllProviders } from '../api-key-manager.js';
 import { getAccount as getChatGptAccount, listAccounts as listChatGptAccounts } from '../account-manager.js';
 import { getAccount as getClaudeAccount, listAccounts as listClaudeAccounts } from '../claude-account-manager.js';
 import { getCredentialsForAccount } from '../middleware/credentials.js';
@@ -113,16 +113,17 @@ function buildApiKeyCandidate(provider, defaults) {
         };
     }
 
-    if ((type === 'openai' || type === 'azure-openai') && typeof provider.sendAnthropicRequest === 'function') {
+    if (typeof provider.sendAnthropicRequest === 'function') {
+        const defaultModel = resolveModel(type, defaultChatGptModel) || defaultChatGptModel;
         return {
             kind: 'api-key',
             providerType: type,
             label: provider.name,
-            model: defaultChatGptModel,
+            model: defaultModel,
             send: async (request) => normalizeAnthropicResponse(
                 await parseJsonResponse(await provider.sendAnthropicRequest({
                     ...request,
-                    model: resolveModel(type, request.model || defaultChatGptModel) || request.model || defaultChatGptModel
+                    model: resolveModel(type, request.model || defaultModel) || request.model || defaultModel
                 }))
             )
         };
@@ -171,27 +172,42 @@ export async function resolveCredential(descriptor, defaults = {}) {
     if (!descriptor || typeof descriptor !== 'object') return null;
     const type = String(descriptor.type || '').trim();
     const id = String(descriptor.id || '').trim();
+    const model = typeof descriptor.model === 'string' && descriptor.model.trim()
+        ? descriptor.model.trim()
+        : '';
     if (!CREDENTIAL_KIND_BY_TYPE[type] || !id) return null;
 
     if (type === 'api-key') {
         const provider = getProviderById(id);
         if (!provider || provider.enabled === false) return null;
         const candidate = buildApiKeyCandidate(provider, defaults);
-        return candidate ? { ...candidate, descriptor: { type, id } } : null;
+        return candidate ? {
+            ...candidate,
+            model: model || candidate.model,
+            descriptor: model ? { type, id, model } : { type, id }
+        } : null;
     }
 
     if (type === 'claude-account') {
         const account = getClaudeAccount(id);
         if (!account || account.enabled === false) return null;
         const candidate = buildClaudeAccountCandidate(account, defaults);
-        return candidate ? { ...candidate, descriptor: { type, id } } : null;
+        return candidate ? {
+            ...candidate,
+            model: model || candidate.model,
+            descriptor: model ? { type, id, model } : { type, id }
+        } : null;
     }
 
     if (type === 'chatgpt-account') {
         const account = getChatGptAccount(id);
         if (!account || account.enabled === false) return null;
         const candidate = await buildChatGptAccountCandidate(account, defaults);
-        return candidate ? { ...candidate, descriptor: { type, id } } : null;
+        return candidate ? {
+            ...candidate,
+            model: model || candidate.model,
+            descriptor: model ? { type, id, model } : { type, id }
+        } : null;
     }
 
     return null;
@@ -203,30 +219,30 @@ export async function resolveCredential(descriptor, defaults = {}) {
  */
 export function listAvailableCredentials() {
     const result = {
-        apiKeys: { anthropic: [], openai: [], 'azure-openai': [] },
+        apiKeys: {},
         claudeAccounts: [],
         chatgptAccounts: []
     };
 
-    for (const supportedType of ['anthropic', 'openai', 'azure-openai']) {
-        const providers = getApiKeysByType(supportedType);
-        for (const provider of providers) {
-            if (!provider) continue;
-            // OpenAI/Azure must support the Anthropic-bridge to be useful here.
-            if (supportedType !== 'anthropic' && typeof provider.sendAnthropicRequest !== 'function') {
-                continue;
-            }
-            result.apiKeys[supportedType].push({
-                type: 'api-key',
-                id: provider.id,
-                providerType: supportedType,
-                label: provider.name,
-                available: provider.isAvailable !== false,
-                detail: provider.rateLimitedUntil && provider.rateLimitedUntil > Date.now()
-                    ? `rate-limited`
-                    : ''
-            });
+    const providers = getAllProviders()
+        .filter((provider) => provider && provider.enabled !== false)
+        .filter((provider) => provider.type === 'anthropic' || typeof provider.sendAnthropicRequest === 'function');
+    for (const provider of providers) {
+        const supportedType = String(provider.type || '').trim();
+        if (!supportedType) continue;
+        if (!Array.isArray(result.apiKeys[supportedType])) {
+            result.apiKeys[supportedType] = [];
         }
+        result.apiKeys[supportedType].push({
+            type: 'api-key',
+            id: provider.id,
+            providerType: supportedType,
+            label: provider.name,
+            available: provider.isAvailable !== false,
+            detail: provider.rateLimitedUntil && provider.rateLimitedUntil > Date.now()
+                ? 'rate-limited'
+                : ''
+        });
     }
 
     const claudeSnapshot = listClaudeAccounts();

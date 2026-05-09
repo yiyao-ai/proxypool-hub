@@ -528,6 +528,33 @@ test('AssistantLlmClient returns no candidates when no supervisor binding is con
   assert.match(String(resolveError.message || ''), /no assistant model source available/i);
 });
 
+test('AssistantLlmClient prefers bound source model over request-level model override', async () => {
+  const client = new AssistantLlmClient({ enabled: true });
+  const calls = [];
+  client.listCandidateSources = async () => [{
+    tierKey: 'api-key:key-primary',
+    descriptor: { type: 'api-key', id: 'key-primary', model: 'gpt-5.4' },
+    kind: 'api-key',
+    label: 'primary',
+    model: 'gpt-5.4',
+    send: async (request) => {
+      calls.push(request);
+      return { text: 'ok', toolCalls: [], stopReason: 'end_turn' };
+    }
+  }];
+
+  const result = await client.complete({
+    system: 'test',
+    messages: [],
+    tools: [],
+    model: 'gpt-5.4-mini'
+  });
+
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].model, 'gpt-5.4');
+  assert.equal(result.source?.model, 'gpt-5.4');
+});
+
 test('Assistant mode routes pending runtime approval through the LLM tool path', async () => {
   const fixture = createFixture();
   const llmClient = new FakeLlmClient([
