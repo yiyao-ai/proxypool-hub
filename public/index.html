@@ -1229,6 +1229,15 @@
                                     </td>
                                     <td class="py-4">
                                         <div class="flex justify-end items-center gap-2">
+                                            <template x-if="!acc.isActive">
+                                                <button class="btn btn-xs-inline btn-outline"
+                                                    @click="switchAccount(acc.email)"
+                                                    x-text="t('setActiveAccount')"></button>
+                                            </template>
+                                            <template x-if="acc.isActive">
+                                                <span class="text-[10px] font-bold uppercase px-2 py-1 rounded bg-neon-green/10 text-neon-green border border-neon-green/30"
+                                                    x-text="t('activeAccountLabel')"></span>
+                                            </template>
                                             <button class="btn btn-xs-inline"
                                                 :class="acc.enabled ? 'btn-warning' : 'btn-accent-green'"
                                                 @click="toggleAccountEnabled(acc.email, !acc.enabled)"
