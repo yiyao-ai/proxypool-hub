@@ -111,6 +111,7 @@ import {
   handleAddAccountManual,
   handleSwitchAccount,
   handleRefreshAccount,
+  handleForceRefreshAccountToken,
   handleRefreshAllAccounts,
   handleRefreshActiveAccount,
   handleRemoveAccount,
@@ -221,6 +222,7 @@ export function registerApiRoutes(app, { port }) {
   app.post('/accounts/refresh/all', handleRefreshAllAccounts);
   app.post('/accounts/oauth/cleanup', handleOAuthCleanup);
   app.post('/accounts/:email/refresh', handleRefreshAccount);
+  app.post('/accounts/:email/refresh-token', handleForceRefreshAccountToken);
 
   app.put('/accounts/:email/toggle', handleToggleAccount);
   app.delete('/accounts/:email', handleRemoveAccount);

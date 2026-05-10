@@ -1135,8 +1135,18 @@ document.addEventListener('alpine:init', () => {
             }
         },
 
+        async forceRefreshToken(email) {
+            const { ok, data } = await this.api(`/accounts/${encodeURIComponent(email)}/refresh-token`, { method: 'POST' });
+            if (ok && data.success) {
+                this.showToast(data.message, 'success');
+                this.refreshAccounts();
+            } else {
+                this.showToast(data?.message || this.t('refreshFailed'), 'error');
+            }
+        },
+
         async refreshAllTokens() {
-            this.showToast(this.t('refreshingAllTokens'), 'info');
+            this.showToast(this.t('refreshingStatuses'), 'info');
             const { ok, data } = await this.api('/accounts/refresh/all', { method: 'POST' });
             if (ok) {
                 this.showToast(data.message, 'success');

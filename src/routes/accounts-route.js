@@ -194,6 +194,15 @@ export async function handleRefreshAccount(req, res) {
   res.json(result);
 }
 
+export async function handleForceRefreshAccountToken(req, res) {
+  const email = decodeURIComponent(req.params.email);
+  const result = await refreshAccountToken(email);
+  if (result.success) {
+    logger.info(`Refreshed account token for: ${email}`);
+  }
+  res.json(result);
+}
+
 export async function handleRefreshAllAccounts(req, res) {
   const result = await refreshAllAccountStatus();
   res.json({
@@ -332,6 +341,7 @@ export default {
   handleAddAccountManual,
   handleSwitchAccount,
   handleRefreshAccount,
+  handleForceRefreshAccountToken,
   handleRefreshAllAccounts,
   handleRefreshActiveAccount,
   handleRemoveAccount,

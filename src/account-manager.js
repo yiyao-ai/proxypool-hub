@@ -16,7 +16,7 @@ const ACCOUNTS_FILE = join(CONFIG_DIR, 'accounts.json');
 const ACCOUNTS_DIR = join(CONFIG_DIR, 'accounts');
 
 const TOKEN_CHECK_INTERVAL_MS = 10 * 60 * 1000;  // Check every 10 minutes
-const AUTO_REFRESH_CHECK_INTERVAL_MS = 30 * 60 * 1000; // Check every 30 minutes
+const AUTO_REFRESH_CHECK_INTERVAL_MS = 6 * 60 * 60 * 1000; // Low-frequency fallback check every 6 hours
 const TOKEN_EXPIRY_BUFFER_MS = 5 * 60 * 1000;    // Refresh when < 5 min left
 const CODEX_AUTH_FILE = process.env.CLIGATE_CODEX_AUTH_FILE
     ? process.env.CLIGATE_CODEX_AUTH_FILE
@@ -542,10 +542,10 @@ function startAutoRefresh() {
     // Initial check on startup (delayed 3s) — only refresh if expired or expiring soon
     setTimeout(() => _checkAndRefreshExpiring('startup'), 3000);
 
-    // Periodic check every 30 minutes — only refresh tokens that are about to expire
+    // Periodic fallback check every 6 hours — request-time refresh remains the primary path
     autoRefreshIntervalId = setInterval(() => _checkAndRefreshExpiring('periodic'), AUTO_REFRESH_CHECK_INTERVAL_MS);
 
-    console.log('[AccountManager] Smart auto-refresh started (check every 30 min, refresh only when expiring)');
+    console.log('[AccountManager] Smart auto-refresh started (check every 6 hours, refresh only when expiring)');
 }
 
 async function _checkAndRefreshExpiring(trigger) {
