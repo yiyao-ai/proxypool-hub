@@ -362,11 +362,11 @@
                             <button class="nav-item"
                                 :class="{'active': activeTab === 'manual'}"
                                 @click="setActiveTab('manual'); window.location.href='/manual/'"
-                                :title="sidebarCollapsed ? 'Manual' : ''">
+                                :title="sidebarCollapsed ? t('manual') : ''">
                                 <svg class="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4.5c-3.314 0-6 1.12-6 2.5v10c0-1.38 2.686-2.5 6-2.5s6 1.12 6 2.5V7c0-1.38-2.686-2.5-6-2.5zm0 0v10" />
                                 </svg>
-                                <span class="sidebar-label">Manual</span>
+                                <span class="sidebar-label" x-text="t('manual')"></span>
                             </button>
                             <button class="nav-item"
                                 :class="{'active': activeTab === 'resources'}"

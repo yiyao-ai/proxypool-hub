@@ -29,6 +29,7 @@ const i18n = {
     localModelsOverviewKicker: 'Runtime bridge',
     localModelsOverviewTitle: 'Local inference routing',
     localModelsOverviewDesc: 'Point CliGate at your local runtime, verify connectivity, and define per-app fallback models for supported CLI clients.',
+    manual: 'Manual',
     resources: 'Resources',
 
     // Dashboard
@@ -929,6 +930,7 @@ const i18n = {
     localModelsOverviewKicker: '运行时桥接',
     localModelsOverviewTitle: '本地推理路由',
     localModelsOverviewDesc: '把 CliGate 指向本地运行时，校验连接状态，并为受支持的 CLI 客户端设置按应用生效的默认模型。',
+    manual: '手册',
     resources: '资源目录',
     chatgptProxySystem: 'CLIGATE 代理系统',
     live: '实时',

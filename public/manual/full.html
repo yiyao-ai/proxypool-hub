@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <script>if(localStorage.getItem('proxy-theme')==='light'){document.documentElement.classList.replace('dark','light')}</script>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CliGate Full Manual</title>
+    <link rel="stylesheet" href="/manual/style.css">
+</head>
+<body>
+    <div class="page-shell">
+        <header class="topbar">
+            <div class="brand-block">
+                <div class="brand-mark">CX</div>
+                <div>
+                    <p class="eyebrow" id="brand-eyebrow">CliGate</p>
+                    <h1 class="brand-title" id="brand-title">Full Manual</h1>
+                </div>
+            </div>
+            <div class="topbar-actions">
+                <div class="topbar-note" id="topbar-note">Language and theme follow the main dashboard.</div>
+                <div class="lang-switch" role="group" aria-label="Language switch">
+                    <button type="button" class="lang-switch-btn" id="lang-en">EN</button>
+                    <button type="button" class="lang-switch-btn" id="lang-zh">中文</button>
+                </div>
+            </div>
+        </header>
+
+        <nav class="section-nav">
+            <a href="/" class="section-link" id="nav-dashboard">Dashboard</a>
+            <a href="/manual/" class="section-link active" id="nav-manual">Manual</a>
+            <a href="/resources/" class="section-link" id="nav-resources">Resources</a>
+        </nav>
+
+        <header class="page-header">
+            <div>
+                <p class="eyebrow" id="page-eyebrow">Reference</p>
+                <h2 id="page-title">Complete product manual</h2>
+                <p class="subtle" id="page-subtle">This page renders the built-in product manual locally so it remains available without GitHub.</p>
+            </div>
+            <div class="header-actions">
+                <select id="doc-switcher" class="manual-doc-select">
+                    <option value="">Product Manual</option>
+                    <option value="README.md">Documentation Hub</option>
+                    <option value="API.md">API Reference</option>
+                    <option value="ARCHITECTURE.md">Architecture</option>
+                </select>
+                <a class="ghost-link" href="/manual/" id="back-link">Back to Quick Manual</a>
+            </div>
+        </header>
+
+        <section class="manual-layout">
+            <aside class="content-card manual-toc-card">
+                <div class="manual-doc-toolbar">
+                    <span class="card-label" id="toc-label">Contents</span>
+                </div>
+                <nav id="manual-toc" class="manual-toc"></nav>
+            </aside>
+
+            <article class="content-card manual-doc-card">
+                <div class="manual-doc-toolbar">
+                    <span class="card-label" id="doc-label">Document</span>
+                    <div class="manual-doc-toolbar-actions">
+                        <span class="manual-doc-meta" id="doc-meta">-</span>
+                        <button type="button" class="lang-switch-btn" id="copy-section-link">Copy section link</button>
+                        <a href="#top" class="lang-switch-btn manual-top-link" id="back-to-top">Top</a>
+                    </div>
+                </div>
+                <div id="manual-doc" class="manual-doc-body"></div>
+            </article>
+        </section>
+    </div>
+
+    <script src="/manual/full.js"></script>
+</body>
+</html>

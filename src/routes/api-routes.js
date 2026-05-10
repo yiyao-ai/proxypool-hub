@@ -30,6 +30,7 @@ import { handleGetGeminiCliConfig, handleSetGeminiCliProxy, handleSetGeminiCliDi
 import { handleGetOpenClawConfig, handleSetOpenClawProxy, handleSetOpenClawDirect } from './openclaw-config-route.js';
 import { handleGetConfigFile } from './config-files-route.js';
 import { handleListResources, handleGetResourceSummary, handleGetResourceById } from './resources-route.js';
+import { handleGetManualDocument, handleGetManualDocFile } from './manual-route.js';
 import { handleGetRequestLogs, handleGetLogDates, handleGetLogSettings, handleUpdateLogSettings } from './request-logs-route.js';
 import { handleGetToolsStatus, handleGetNodeInfo, handleInstallTool, handleInstallNode, handleLaunchTool, handleCheckUpdates, handleUpdateTool } from './tools-route.js';
 import {
@@ -289,6 +290,8 @@ export function registerApiRoutes(app, { port }) {
   app.get('/api/resources', handleListResources);
   app.get('/api/resources/summary', handleGetResourceSummary);
   app.get('/api/resources/:id', handleGetResourceById);
+  app.get('/api/manual/document', handleGetManualDocument);
+  app.get('/api/manual/doc-file', handleGetManualDocFile);
 
   // ─── Gemini Native API Proxy (for Gemini CLI) ───────────────────────────
   app.post('/v1beta/models/*', handleGeminiApiProxy);

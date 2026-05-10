@@ -68,6 +68,14 @@ pre {
     align-items: center;
 }
 
+.topbar-actions {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+}
+
 .brand-block {
     display: flex;
     align-items: center;
@@ -135,6 +143,33 @@ pre {
     color: var(--accent);
 }
 
+.section-link:hover,
+.ghost-link:hover,
+.link-list a:hover {
+    color: var(--accent);
+}
+
+.lang-switch {
+    display: inline-flex;
+    gap: 6px;
+}
+
+.lang-switch-btn {
+    border: 1px solid var(--line);
+    background: rgba(255, 255, 255, 0.03);
+    color: var(--muted);
+    border-radius: 10px;
+    padding: 8px 12px;
+    font: inherit;
+    cursor: pointer;
+}
+
+.lang-switch-btn.active,
+.lang-switch-btn:hover {
+    color: var(--accent);
+    background: var(--accent-soft);
+}
+
 .page-header {
     display: flex;
     justify-content: space-between;
@@ -151,6 +186,16 @@ pre {
     background: rgba(255, 255, 255, 0.03);
 }
 
+.manual-doc-select {
+    min-width: 190px;
+    border: 1px solid var(--line);
+    background: rgba(255, 255, 255, 0.03);
+    color: var(--text);
+    border-radius: 12px;
+    padding: 10px 12px;
+    font: inherit;
+}
+
 .hero-grid,
 .content-grid {
     display: grid;
@@ -164,6 +209,18 @@ pre {
 
 .content-grid {
     grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.content-grid-single {
+    grid-template-columns: 1fr;
+}
+
+.manual-layout {
+    display: grid;
+    grid-template-columns: minmax(220px, 280px) minmax(0, 1fr);
+    gap: 20px;
+    margin-top: 20px;
+    align-items: start;
 }
 
 .hero-card,
@@ -209,14 +266,179 @@ pre {
     color: var(--accent);
 }
 
+.manual-doc-card {
+    padding: 26px;
+}
+
+.manual-toc-card {
+    padding: 22px;
+    position: sticky;
+    top: 20px;
+}
+
+.manual-doc-toolbar {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    align-items: center;
+    margin-bottom: 16px;
+}
+
+.manual-doc-toolbar-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+}
+
+.manual-doc-meta {
+    color: var(--muted);
+    font-size: 13px;
+}
+
+.manual-top-link {
+    text-decoration: none;
+}
+
+.manual-doc-body {
+    color: var(--text);
+    line-height: 1.75;
+}
+
+.manual-doc-body h2,
+.manual-doc-body h3,
+.manual-doc-body h4 {
+    margin: 24px 0 10px;
+}
+
+.manual-doc-body p {
+    color: var(--muted);
+    margin: 0 0 12px;
+}
+
+.manual-doc-body blockquote {
+    margin: 16px 0;
+    padding: 12px 16px;
+    border-left: 3px solid var(--accent);
+    background: rgba(255, 255, 255, 0.03);
+    color: var(--muted);
+    border-radius: 0 12px 12px 0;
+}
+
+.manual-doc-body hr {
+    border: 0;
+    border-top: 1px solid var(--line);
+    margin: 20px 0;
+}
+
+.manual-doc-body ul {
+    margin: 0 0 14px;
+    padding-left: 20px;
+}
+
+.manual-doc-body li + li {
+    margin-top: 8px;
+}
+
+.manual-doc-body pre {
+    margin: 14px 0;
+    padding: 14px;
+    border-radius: 14px;
+    background: rgba(0, 0, 0, 0.28);
+    overflow: auto;
+}
+
+.manual-doc-body a {
+    color: var(--accent);
+    text-decoration: none;
+}
+
+.manual-doc-body a:hover {
+    text-decoration: underline;
+}
+
+.manual-doc-body table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 16px 0;
+    border-radius: 14px;
+    overflow: hidden;
+}
+
+.manual-doc-body th,
+.manual-doc-body td {
+    border: 1px solid var(--line);
+    padding: 10px 12px;
+    text-align: left;
+    vertical-align: top;
+}
+
+.manual-doc-body th {
+    color: var(--text);
+    background: rgba(255, 255, 255, 0.03);
+}
+
+.manual-doc-body td {
+    color: var(--muted);
+}
+
+.manual-toc {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.manual-toc-link {
+    display: block;
+    padding: 8px 10px;
+    border-radius: 10px;
+    color: var(--muted);
+    text-decoration: none;
+    font-size: 13px;
+    line-height: 1.45;
+}
+
+.manual-toc-link:hover,
+.manual-toc-link.active {
+    background: var(--accent-soft);
+    color: var(--accent);
+}
+
+.manual-toc-link.level-1 {
+    font-weight: 600;
+    color: var(--text);
+}
+
+.manual-toc-link.level-2 {
+    padding-left: 18px;
+}
+
+.manual-toc-link.level-3 {
+    padding-left: 28px;
+}
+
 @media (max-width: 900px) {
     .hero-grid,
     .content-grid {
         grid-template-columns: 1fr;
     }
 
+    .manual-layout {
+        grid-template-columns: 1fr;
+    }
+
     .topbar,
     .page-header {
         flex-direction: column;
+    }
+
+    .topbar-actions {
+        justify-content: flex-start;
+        width: 100%;
+    }
+
+    .manual-toc-card {
+        position: static;
     }
 }

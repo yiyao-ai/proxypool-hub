@@ -49,6 +49,10 @@ function loadManual(language) {
   return value;
 }
 
+export function getManualDocument(language = 'en') {
+  return loadManual(language);
+}
+
 function splitSections(content) {
   const lines = String(content || '').split(/\r?\n/);
   const sections = [];
@@ -186,5 +190,6 @@ export function getManualContext({ language = 'en', query = '' } = {}) {
 }
 
 export default {
-  getManualContext
+  getManualContext,
+  getManualDocument
 };

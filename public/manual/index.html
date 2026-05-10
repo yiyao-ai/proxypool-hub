@@ -13,102 +13,89 @@
             <div class="brand-block">
                 <div class="brand-mark">CX</div>
                 <div>
-                    <p class="eyebrow">CliGate</p>
-                    <h1 class="brand-title">Product Guide</h1>
+                    <p class="eyebrow" id="brand-eyebrow">CliGate</p>
+                    <h1 class="brand-title" id="brand-title">Quick Manual</h1>
                 </div>
             </div>
-            <div class="topbar-note">A lightweight guide for first-time users.</div>
+            <div class="topbar-note" id="topbar-note">Language and theme follow the main dashboard.</div>
         </header>
 
         <nav class="section-nav">
-            <a href="/" class="section-link">Dashboard</a>
-            <a href="/manual/" class="section-link active">Manual</a>
-            <a href="/resources/" class="section-link">Resources</a>
+            <a href="/" class="section-link" id="nav-dashboard">Dashboard</a>
+            <a href="/manual/" class="section-link active" id="nav-manual">Manual</a>
+            <a href="/resources/" class="section-link" id="nav-resources">Resources</a>
         </nav>
 
         <header class="page-header">
             <div>
-                <p class="eyebrow">Start Here</p>
-                <h2>Understand, configure, and verify CliGate quickly</h2>
-                <p class="subtle">This page is a lightweight guide. For deeper reference, use the repository docs and product manual files.</p>
+                <p class="eyebrow" id="page-eyebrow">Start Here</p>
+                <h2 id="page-title">Understand, configure, and verify CliGate quickly</h2>
+                <p class="subtle" id="page-subtle">This is the in-product quick manual. For full reference, use the complete product manuals.</p>
             </div>
             <div class="header-actions">
-                <a class="ghost-link" href="/">Back to Dashboard</a>
+                <a class="ghost-link" href="/" id="back-link">Back to Dashboard</a>
             </div>
         </header>
 
         <section class="hero-grid">
             <article class="hero-card accent">
-                <span class="card-label">What it is</span>
-                <h3>One local gateway for coding tools and runtime workflows</h3>
-                <p>CliGate unifies Claude Code, Codex CLI, Gemini CLI, OpenClaw, dashboard chat, local runtimes, and channel-based runtime sessions behind one local control plane.</p>
+                <span class="card-label" id="hero-what-label">What it is</span>
+                <h3 id="hero-what-title">One local gateway for coding tools and runtime workflows</h3>
+                <p id="hero-what-text">CliGate connects Claude Code, Codex CLI, Gemini CLI, OpenClaw, dashboard chat, local runtimes, and channel workflows through one local control plane.</p>
             </article>
             <article class="hero-card">
-                <span class="card-label">Default address</span>
+                <span class="card-label" id="hero-address-label">Default address</span>
                 <h3><code>http://localhost:8081</code></h3>
-                <p>Start the service, open the dashboard, add one usable credential, and then configure the client you want to proxy.</p>
+                <p id="hero-address-text">Start the service, open the dashboard, add one usable credential, and then configure the client you want to proxy.</p>
             </article>
         </section>
 
         <section class="content-grid">
             <article class="content-card">
-                <span class="card-label">Quick Start</span>
-                <h3>Three-step setup</h3>
-                <ol>
-                    <li>Run <code>npx cligate@latest start</code> or <code>cligate start</code>.</li>
-                    <li>Add a ChatGPT account, Claude account, Antigravity account, API key, or local runtime.</li>
-                    <li>Use the dashboard to configure Claude Code, Codex CLI, Gemini CLI, or OpenClaw.</li>
-                </ol>
+                <span class="card-label" id="card-quickstart-label">Quick Start</span>
+                <h3 id="card-quickstart-title">Three-step setup</h3>
+                <ol id="quickstart-list"></ol>
             </article>
 
             <article class="content-card">
-                <span class="card-label">Core Areas</span>
-                <h3>Where to go in the dashboard</h3>
-                <ul>
-                    <li><strong>Accounts / API Keys</strong>: add credentials and check availability.</li>
-                    <li><strong>Routing / Settings</strong>: set priority, app bindings, model mapping, and CLI config.</li>
-                    <li><strong>Chat / Assistant Tasks</strong>: test prompts and inspect runtime execution.</li>
-                    <li><strong>Channels / Conversation Records</strong>: operate Telegram or Feishu runtime workflows.</li>
-                    <li><strong>Usage / Logs / API Explorer</strong>: verify behavior and debug issues.</li>
-                </ul>
+                <span class="card-label" id="card-areas-label">Core Areas</span>
+                <h3 id="card-areas-title">Where to go in the dashboard</h3>
+                <ul id="areas-list"></ul>
             </article>
 
             <article class="content-card">
-                <span class="card-label">CLI Examples</span>
-                <h3>Common tool configuration</h3>
-                <pre><code>Claude Code
-ANTHROPIC_BASE_URL=http://localhost:8081
-ANTHROPIC_API_KEY=any-key
-
-Codex CLI
-chatgpt_base_url = "http://localhost:8081/backend-api/"
-openai_base_url = "http://localhost:8081"</code></pre>
+                <span class="card-label" id="card-config-label">CLI Examples</span>
+                <h3 id="card-config-title">Common tool configuration</h3>
+                <pre><code id="config-code"></code></pre>
             </article>
 
             <article class="content-card">
-                <span class="card-label">Routing Model</span>
-                <h3>How requests are resolved</h3>
-                <p>CliGate can route through account pools, API keys, or local runtimes. You can keep automatic routing or bind specific apps to specific credentials.</p>
+                <span class="card-label" id="card-routing-label">Routing Model</span>
+                <h3 id="card-routing-title">How requests are resolved</h3>
+                <p id="card-routing-text">CliGate can route through account pools, API keys, or local runtimes. You can keep automatic routing or bind specific apps to specific credentials.</p>
             </article>
 
             <article class="content-card">
-                <span class="card-label">Runtime Workflows</span>
-                <h3>Web and channel operations</h3>
-                <p>Codex and Claude Code runtime sessions can continue across follow-up messages in the dashboard or supported channels, with approvals and questions surfaced in the UI.</p>
+                <span class="card-label" id="card-verify-label">Verify</span>
+                <h3 id="card-verify-title">How to confirm it works</h3>
+                <ul id="verify-list"></ul>
             </article>
 
             <article class="content-card">
-                <span class="card-label">Need More Detail</span>
-                <h3>Repository documentation</h3>
+                <span class="card-label" id="card-next-label">Need More Detail</span>
+                <h3 id="card-next-title">Full documentation</h3>
+                <p id="card-next-text">Use the complete product manuals when you need setup details, route behavior, architecture, or operational notes.</p>
                 <ul class="link-list">
-                    <li><a href="https://github.com/codeking-ai/cligate/blob/master/docs/README.md" target="_blank" rel="noreferrer">Documentation Hub</a></li>
-                    <li><a href="https://github.com/codeking-ai/cligate/blob/master/docs/product-manual.en.md" target="_blank" rel="noreferrer">Product Manual (EN)</a></li>
-                    <li><a href="https://github.com/codeking-ai/cligate/blob/master/docs/product-manual.zh-CN.md" target="_blank" rel="noreferrer">Product Manual (ZH)</a></li>
-                    <li><a href="https://github.com/codeking-ai/cligate/blob/master/docs/API.md" target="_blank" rel="noreferrer">API Reference</a></li>
-                    <li><a href="https://github.com/codeking-ai/cligate/blob/master/docs/ARCHITECTURE.md" target="_blank" rel="noreferrer">Architecture</a></li>
+                    <li><a href="/manual/full.html?doc=README.md" id="link-docs">Documentation Hub</a></li>
+                    <li><a href="/manual/full.html?lang=en" id="link-manual-en">Product Manual (EN)</a></li>
+                    <li><a href="/manual/full.html?lang=zh-CN" id="link-manual-zh">Product Manual (ZH)</a></li>
+                    <li><a href="/manual/full.html?doc=API.md" id="link-api">API Reference</a></li>
+                    <li><a href="/manual/full.html?doc=ARCHITECTURE.md" id="link-arch">Architecture</a></li>
                 </ul>
             </article>
         </section>
     </div>
+
+    <script src="/manual/app.js"></script>
 </body>
 </html>
