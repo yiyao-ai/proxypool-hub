@@ -46,6 +46,9 @@ document.addEventListener('alpine:init', () => {
         // Claude accounts
         claudeAccounts: [],
         antigravityAccounts: [],
+        selectedChatgptAccounts: [],
+        selectedClaudeAccounts: [],
+        selectedAntigravityAccounts: [],
         showClaudeUsageModal: false,
         selectedClaudeAccount: null,
         claudeUsageRefreshing: false,
@@ -157,7 +160,11 @@ document.addEventListener('alpine:init', () => {
 
         showAddModal: false,
         showDeleteModal: false,
+        deleteMode: 'single',
+        deleteAccountType: 'chatgpt',
         deleteTarget: '',
+        deleteTargets: [],
+        deleteInProgress: false,
         showQuotaModalView: false,
         selectedAccount: null,
         configViewerOpen: false,
@@ -297,6 +304,125 @@ document.addEventListener('alpine:init', () => {
             if (!this.accountSearchQuery) return this.antigravityAccounts;
             const q = this.accountSearchQuery.toLowerCase();
             return this.antigravityAccounts.filter(a => a.email.toLowerCase().includes(q) || (a.displayName || '').toLowerCase().includes(q));
+        },
+
+        accountItemsByType(type) {
+            if (type === 'claude') return this.claudeAccounts;
+            if (type === 'antigravity') return this.antigravityAccounts;
+            return this.accounts;
+        },
+
+        filteredAccountItemsByType(type) {
+            if (type === 'claude') return this.filteredClaudeAccounts;
+            if (type === 'antigravity') return this.filteredAntigravityAccounts;
+            return this.filteredAccounts;
+        },
+
+        selectedAccountEmailsByType(type) {
+            if (type === 'claude') return this.selectedClaudeAccounts;
+            if (type === 'antigravity') return this.selectedAntigravityAccounts;
+            return this.selectedChatgptAccounts;
+        },
+
+        setSelectedAccountEmailsByType(type, emails) {
+            if (type === 'claude') {
+                this.selectedClaudeAccounts = emails;
+                return;
+            }
+            if (type === 'antigravity') {
+                this.selectedAntigravityAccounts = emails;
+                return;
+            }
+            this.selectedChatgptAccounts = emails;
+        },
+
+        syncSelectedAccounts(type) {
+            const validEmails = new Set(this.accountItemsByType(type).map((account) => account.email));
+            const nextSelection = this.selectedAccountEmailsByType(type).filter((email) => validEmails.has(email));
+            this.setSelectedAccountEmailsByType(type, nextSelection);
+        },
+
+        toggleAccountSelection(type, email, checked) {
+            const selected = new Set(this.selectedAccountEmailsByType(type));
+            if (checked) selected.add(email);
+            else selected.delete(email);
+            this.setSelectedAccountEmailsByType(type, Array.from(selected));
+        },
+
+        clearSelectedAccounts(type = this.accountSubTab) {
+            this.setSelectedAccountEmailsByType(type, []);
+        },
+
+        toggleSelectAllFilteredAccounts(type, checked) {
+            const visibleEmails = this.filteredAccountItemsByType(type).map((account) => account.email);
+            const selected = new Set(this.selectedAccountEmailsByType(type));
+            if (checked) {
+                visibleEmails.forEach((email) => selected.add(email));
+            } else {
+                visibleEmails.forEach((email) => selected.delete(email));
+            }
+            this.setSelectedAccountEmailsByType(type, Array.from(selected));
+        },
+
+        isAccountSelected(type, email) {
+            return this.selectedAccountEmailsByType(type).includes(email);
+        },
+
+        selectedAccountCount(type = this.accountSubTab) {
+            return this.selectedAccountEmailsByType(type).length;
+        },
+
+        isAllFilteredAccountsSelected(type) {
+            const visible = this.filteredAccountItemsByType(type);
+            if (!visible.length) return false;
+            const selected = new Set(this.selectedAccountEmailsByType(type));
+            return visible.every((account) => selected.has(account.email));
+        },
+
+        isSomeFilteredAccountsSelected(type) {
+            const visible = this.filteredAccountItemsByType(type);
+            if (!visible.length) return false;
+            const selected = new Set(this.selectedAccountEmailsByType(type));
+            return visible.some((account) => selected.has(account.email));
+        },
+
+        isPartiallyFilteredAccountsSelected(type) {
+            return this.isSomeFilteredAccountsSelected(type) && !this.isAllFilteredAccountsSelected(type);
+        },
+
+        deleteEndpointByType(type, email) {
+            const encodedEmail = encodeURIComponent(email);
+            if (type === 'claude') return `/claude-accounts/${encodedEmail}`;
+            if (type === 'antigravity') return `/antigravity-accounts/${encodedEmail}`;
+            return `/accounts/${encodedEmail}`;
+        },
+
+        async refreshAccountsByType(type) {
+            if (type === 'claude') {
+                await this.refreshClaudeAccounts({ refreshUsage: true });
+                return;
+            }
+            if (type === 'antigravity') {
+                await this.refreshAntigravityAccounts({ refreshQuota: true });
+                return;
+            }
+            await this.refreshAccounts();
+        },
+
+        openDeleteModal(type, emails) {
+            const targets = Array.from(new Set((emails || []).filter(Boolean)));
+            if (!targets.length) return;
+            this.deleteMode = targets.length > 1 ? 'batch' : 'single';
+            this.deleteAccountType = type;
+            this.deleteTargets = targets;
+            this.deleteTarget = targets[0] || '';
+            this.showDeleteModal = true;
+        },
+
+        confirmBatchDelete(type = this.accountSubTab) {
+            const selected = this.selectedAccountEmailsByType(type);
+            if (!selected.length) return;
+            this.openDeleteModal(type, selected);
         },
 
         accountStateValue(account) {
@@ -772,6 +898,7 @@ document.addEventListener('alpine:init', () => {
             
             if (ok && data.accounts) {
                 this.accounts = data.accounts;
+                this.syncSelectedAccounts('chatgpt');
                 const enabledAccounts = data.accounts.filter(a => a.enabled !== false);
                 this.stats = {
                     total: data.total || data.accounts.length,
@@ -1033,19 +1160,56 @@ document.addEventListener('alpine:init', () => {
         },
 
         confirmDelete(email) {
-            this.deleteTarget = email;
-            this.showDeleteModal = true;
+            this.openDeleteModal('chatgpt', [email]);
         },
 
         async executeDelete() {
-            const { ok, data } = await this.api(`/accounts/${encodeURIComponent(this.deleteTarget)}`, { method: 'DELETE' });
-            this.showDeleteModal = false;
-            if (ok && data.success) {
-                this.showToast(data.message, 'success');
-                this.refreshAccounts();
-            } else {
-                this.showToast(data?.message || this.t('deleteFailed'), 'error');
+            if (this.deleteInProgress || !this.deleteTargets.length) return;
+
+            this.deleteInProgress = true;
+            const targets = [...this.deleteTargets];
+            const type = this.deleteAccountType;
+            let successCount = 0;
+            let failureCount = 0;
+            let lastSuccessMessage = '';
+
+            for (const email of targets) {
+                const { ok, data } = await this.api(this.deleteEndpointByType(type, email), { method: 'DELETE' });
+                if (ok && data?.success) {
+                    successCount += 1;
+                    lastSuccessMessage = data.message || '';
+                } else {
+                    failureCount += 1;
+                }
             }
+
+            this.deleteInProgress = false;
+            this.showDeleteModal = false;
+
+            if (successCount > 0) {
+                const deletedEmails = new Set(targets);
+                const nextSelection = this.selectedAccountEmailsByType(type).filter((email) => !deletedEmails.has(email));
+                this.setSelectedAccountEmailsByType(type, nextSelection);
+                await this.refreshAccountsByType(type);
+            }
+
+            if (failureCount === 0) {
+                this.showToast(
+                    this.deleteMode === 'single'
+                        ? (lastSuccessMessage || this.t('deleteSuccessSingle'))
+                        : this.t('deleteSuccessBatch', successCount),
+                    'success'
+                );
+            } else if (successCount > 0) {
+                this.showToast(this.t('deletePartialSuccess', successCount, failureCount), 'warning');
+            } else {
+                this.showToast(this.t('deleteFailed'), 'error');
+            }
+
+            this.deleteMode = 'single';
+            this.deleteAccountType = 'chatgpt';
+            this.deleteTarget = '';
+            this.deleteTargets = [];
         },
 
         // ─── Claude Account Methods ────────────────────────────────────────
@@ -1053,6 +1217,7 @@ document.addEventListener('alpine:init', () => {
             const { ok, data } = await this.api('/claude-accounts');
             if (ok) {
                 this.claudeAccounts = data.accounts || [];
+                this.syncSelectedAccounts('claude');
                 await this.refreshClaudeQuotaData({ force: refreshUsage });
             }
         },
@@ -1061,6 +1226,7 @@ document.addEventListener('alpine:init', () => {
             const { ok, data } = await this.api('/antigravity-accounts');
             if (ok) {
                 this.antigravityAccounts = data.accounts || [];
+                this.syncSelectedAccounts('antigravity');
                 await this.refreshAntigravityQuotaData({ force: refreshQuota });
             }
         },
@@ -1370,14 +1536,7 @@ document.addEventListener('alpine:init', () => {
         },
 
         async removeClaudeAccount(email) {
-            if (!confirm(this.t('confirmDeleteAccount') + ': ' + email)) return;
-            const { ok, data } = await this.api(`/claude-accounts/${encodeURIComponent(email)}`, { method: 'DELETE' });
-            if (ok && data.success) {
-                this.showToast(data.message, 'success');
-                this.refreshClaudeAccounts({ refreshUsage: true });
-            } else {
-                this.showToast(data?.message || this.t('deleteFailed'), 'error');
-            }
+            this.openDeleteModal('claude', [email]);
         },
 
         async addAntigravityAccount() {
@@ -1474,14 +1633,7 @@ document.addEventListener('alpine:init', () => {
         },
 
         async removeAntigravityAccount(email) {
-            if (!confirm(this.t('confirmDeleteAccount') + ': ' + email)) return;
-            const { ok, data } = await this.api(`/antigravity-accounts/${encodeURIComponent(email)}`, { method: 'DELETE' });
-            if (ok && data.success) {
-                this.showToast(data.message, 'success');
-                this.refreshAntigravityAccounts({ refreshQuota: true });
-            } else {
-                this.showToast(data?.message || data?.error || this.t('deleteFailed'), 'error');
-            }
+            this.openDeleteModal('antigravity', [email]);
         },
 
         showQuotaModal(acc) {

@@ -1109,6 +1109,28 @@
                     </div>
                 </div>
 
+                <div class="account-batch-toolbar flex flex-wrap items-center gap-2 mb-4"
+                    x-show="filteredAccountItemsByType(accountSubTab).length > 0">
+                    <label class="flex items-center gap-2 text-xs text-gray-400 cursor-pointer">
+                        <input type="checkbox"
+                            class="checkbox checkbox-xs rounded-[2px]"
+                            :checked="isAllFilteredAccountsSelected(accountSubTab)"
+                            :indeterminate="isPartiallyFilteredAccountsSelected(accountSubTab)"
+                            @change="toggleSelectAllFilteredAccounts(accountSubTab, $event.target.checked)">
+                        <span x-text="t('selectAllVisible')"></span>
+                    </label>
+                    <span class="text-[11px] font-mono text-gray-500"
+                        x-text="t('selectedCount', selectedAccountCount(accountSubTab))"></span>
+                    <button class="btn btn-xs btn-outline h-8"
+                        @click="clearSelectedAccounts(accountSubTab)"
+                        :disabled="selectedAccountCount(accountSubTab) === 0"
+                        x-text="t('clearSelection')"></button>
+                    <button class="btn btn-xs btn-danger h-8"
+                        @click="confirmBatchDelete(accountSubTab)"
+                        :disabled="selectedAccountCount(accountSubTab) === 0"
+                        x-text="t('batchDelete')"></button>
+                </div>
+
                 <!-- Sub-tab switcher -->
                 <div class="account-subtabs flex items-center gap-1 mb-5 p-1 bg-space-900/60 rounded-lg border border-space-border/30 w-fit">
                     <button class="account-subtab-btn flex items-center gap-2 px-4 py-2 rounded-md text-xs font-semibold transition-all"
@@ -1145,6 +1167,7 @@
                     <table class="account-table w-full min-w-[860px]">
                         <thead x-show="filteredAccounts.length > 0">
                             <tr class="bg-space-900/50 border-b border-space-border/50">
+                                <th class="py-3 text-left text-[10px] font-bold text-gray-500 uppercase tracking-wider w-10"></th>
                                 <th class="py-3 text-left text-[10px] font-bold text-gray-500 uppercase tracking-wider w-20" x-text="t('status')"></th>
                                 <th class="py-3 text-left text-[10px] font-bold text-gray-500 uppercase tracking-wider flex-1 min-w-[200px]" x-text="t('accountEmail')"></th>
                                 <th class="py-3 text-left text-[10px] font-bold text-gray-500 uppercase tracking-wider w-20" x-text="t('plan')"></th>
@@ -1156,7 +1179,7 @@
                         <tbody>
                             <template x-if="filteredAccounts.length === 0 && accounts.length === 0">
                                 <tr>
-                                    <td colspan="6" class="py-16 text-center">
+                                    <td colspan="7" class="py-16 text-center">
                                         <div class="account-empty-state flex flex-col items-center justify-center gap-4 max-w-lg mx-auto">
                                             <svg class="w-20 h-20 text-gray-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
@@ -1178,6 +1201,12 @@
                             </template>
                             <template x-for="acc in filteredAccounts" :key="acc.email">
                                 <tr class="border-b border-space-border/30 last:border-0 hover:bg-white/5 transition-colors group">
+                                    <td class="py-4">
+                                        <input type="checkbox"
+                                            class="checkbox checkbox-xs rounded-[2px]"
+                                            :checked="isAccountSelected('chatgpt', acc.email)"
+                                            @change="toggleAccountSelection('chatgpt', acc.email, $event.target.checked)">
+                                    </td>
                                     <td class="py-4">
                                         <div class="account-status-cell">
                                             <div class="account-status-dot"
@@ -1247,7 +1276,7 @@
                                                 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
                                             </button>
                                             <button class="btn btn-xs btn-ghost btn-row-icon text-gray-500 hover:text-red-400"
-                                                @click="confirmDelete(acc.email)" :title="t('delete')">
+                                                @click="openDeleteModal('chatgpt', [acc.email])" :title="t('delete')">
                                                 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
                                             </button>
                                         </div>
@@ -1256,7 +1285,7 @@
                             </template>
                             <template x-if="accounts.length > 0 && filteredAccounts.length === 0">
                                 <tr>
-                                    <td colspan="6" class="py-12 text-center">
+                                    <td colspan="7" class="py-12 text-center">
                                         <div class="account-search-empty-state flex flex-col items-center justify-center gap-3">
                                             <svg class="w-12 h-12 text-gray-700" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
                                             <p class="text-sm text-gray-600" x-text="t('noAccountsMatch')"></p>
@@ -1274,6 +1303,7 @@
                     <table class="account-table w-full min-w-[860px]">
                         <thead x-show="filteredClaudeAccounts.length > 0">
                             <tr class="bg-space-900/50 border-b border-space-border/50">
+                                <th class="py-3 text-left text-[10px] font-bold text-gray-500 uppercase tracking-wider w-10"></th>
                                 <th class="py-3 text-left text-[10px] font-bold text-gray-500 uppercase tracking-wider w-20" x-text="t('status')"></th>
                                 <th class="py-3 text-left text-[10px] font-bold text-gray-500 uppercase tracking-wider flex-1 min-w-[200px]" x-text="t('accountEmail')"></th>
                                 <th class="py-3 text-left text-[10px] font-bold text-gray-500 uppercase tracking-wider w-24" x-text="t('subscription')"></th>
@@ -1286,7 +1316,7 @@
                         <tbody>
                             <template x-if="filteredClaudeAccounts.length === 0 && claudeAccounts.length === 0">
                                 <tr>
-                                    <td colspan="7" class="py-16 text-center">
+                                    <td colspan="8" class="py-16 text-center">
                                         <div class="account-empty-state flex flex-col items-center justify-center gap-4 max-w-lg mx-auto">
                                             <svg class="w-20 h-20 text-gray-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
@@ -1308,6 +1338,12 @@
                             </template>
                             <template x-for="acc in filteredClaudeAccounts" :key="acc.email">
                                 <tr class="border-b border-space-border/30 last:border-0 hover:bg-white/5 transition-colors group">
+                                    <td class="py-4">
+                                        <input type="checkbox"
+                                            class="checkbox checkbox-xs rounded-[2px]"
+                                            :checked="isAccountSelected('claude', acc.email)"
+                                            @change="toggleAccountSelection('claude', acc.email, $event.target.checked)">
+                                    </td>
                                     <td class="py-4">
                                         <div class="account-status-cell">
                                             <div class="account-status-dot"
@@ -1399,7 +1435,7 @@
                             </template>
                             <template x-if="claudeAccounts.length > 0 && filteredClaudeAccounts.length === 0">
                                 <tr>
-                                    <td colspan="7" class="py-12 text-center">
+                                    <td colspan="8" class="py-12 text-center">
                                         <div class="account-search-empty-state flex flex-col items-center justify-center gap-3">
                                             <svg class="w-12 h-12 text-gray-700" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
                                             <p class="text-sm text-gray-600" x-text="t('noAccountsMatch')"></p>
@@ -1416,6 +1452,7 @@
                     <table class="account-table w-full min-w-[860px]">
                         <thead x-show="filteredAntigravityAccounts.length > 0">
                             <tr class="bg-space-900/50 border-b border-space-border/50">
+                                <th class="py-3 text-left text-[10px] font-bold text-gray-500 uppercase tracking-wider w-10"></th>
                                 <th class="py-3 text-left text-[10px] font-bold text-gray-500 uppercase tracking-wider w-20" x-text="t('status')"></th>
                                 <th class="py-3 text-left text-[10px] font-bold text-gray-500 uppercase tracking-wider min-w-[220px]" x-text="t('accountLabel')"></th>
                                 <th class="py-3 text-left text-[10px] font-bold text-gray-500 uppercase tracking-wider w-28" x-text="t('projectLabel')"></th>
@@ -1428,7 +1465,7 @@
                         <tbody>
                             <template x-if="filteredAntigravityAccounts.length === 0 && antigravityAccounts.length === 0">
                                 <tr>
-                                    <td colspan="7" class="py-16 text-center">
+                                    <td colspan="8" class="py-16 text-center">
                                         <div class="account-empty-state flex flex-col items-center justify-center gap-4 max-w-lg mx-auto">
                                             <svg class="w-20 h-20 text-gray-700" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M12 3l2.7 5.46 6.03.88-4.36 4.25 1.03 6.01L12 16.77 6.6 19.6l1.03-6.01L3.27 9.34l6.03-.88z" /></svg>
                                             <h3 class="text-xl font-semibold text-gray-400" x-text="t('noAntigravityAccountsYet')"></h3>
@@ -1446,6 +1483,12 @@
                             </template>
                             <template x-for="acc in filteredAntigravityAccounts" :key="acc.email">
                                 <tr class="border-b border-space-border/30 last:border-0 hover:bg-white/5 transition-colors group">
+                                    <td class="py-4">
+                                        <input type="checkbox"
+                                            class="checkbox checkbox-xs rounded-[2px]"
+                                            :checked="isAccountSelected('antigravity', acc.email)"
+                                            @change="toggleAccountSelection('antigravity', acc.email, $event.target.checked)">
+                                    </td>
                                     <td class="py-4">
                                         <div class="account-status-cell">
                                             <div class="account-status-dot"
@@ -1516,7 +1559,7 @@
                             </template>
                             <template x-if="antigravityAccounts.length > 0 && filteredAntigravityAccounts.length === 0">
                                 <tr>
-                                    <td colspan="7" class="py-12 text-center">
+                                    <td colspan="8" class="py-12 text-center">
                                         <div class="account-search-empty-state flex flex-col items-center justify-center gap-3">
                                             <svg class="w-12 h-12 text-gray-700" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
                                             <p class="text-sm text-gray-600" x-text="t('noAccountsMatch')"></p>
@@ -4460,7 +4503,7 @@
     </div>
 
     <div x-show="showDeleteModal" x-transition class="fixed inset-0 z-50 flex items-center justify-center p-4" style="display: none;">
-        <div class="absolute inset-0 bg-black/70 backdrop-blur-sm" @click="showDeleteModal = false"></div>
+        <div class="absolute inset-0 bg-black/70 backdrop-blur-sm" @click="if (!deleteInProgress) showDeleteModal = false"></div>
         <div class="relative bg-space-900 border-2 border-red-500/50 rounded-xl shadow-2xl max-w-md w-full p-6">
             <h3 class="font-bold text-lg text-red-400 flex items-center gap-2 mb-4">
                 <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -4468,13 +4511,26 @@
                 </svg>
                 <span x-text="t('deleteAccount')"></span>
             </h3>
-            <p class="text-gray-300 mb-4"><span x-text="t('confirmDeletePrefix')"></span> <strong class="text-white font-mono" x-text="deleteTarget"></strong><span x-text="t('confirmDeleteSuffix')"></span></p>
+            <template x-if="deleteMode === 'single'">
+                <p class="text-gray-300 mb-4"><span x-text="t('confirmDeletePrefix')"></span> <strong class="text-white font-mono" x-text="deleteTarget"></strong><span x-text="t('confirmDeleteSuffix')"></span></p>
+            </template>
+            <template x-if="deleteMode === 'batch'">
+                <div class="mb-4 space-y-3">
+                    <p class="text-gray-300" x-text="t('confirmBatchDeleteAccounts', deleteTargets.length)"></p>
+                    <div class="max-h-36 overflow-y-auto rounded border border-red-500/20 bg-space-950/60 p-3">
+                        <template x-for="email in deleteTargets" :key="email">
+                            <div class="text-xs text-gray-300 font-mono break-all" x-text="email"></div>
+                        </template>
+                    </div>
+                </div>
+            </template>
             <div class="bg-red-500/10 border border-red-500/30 rounded p-3 mb-4">
                 <p class="text-sm text-red-300" x-text="t('deleteWarning')"></p>
             </div>
             <div class="modal-actions">
-                <button class="btn btn-outline btn-sm" @click="showDeleteModal = false" x-text="t('cancel')"></button>
-                <button class="btn btn-danger btn-sm" @click="executeDelete()" x-text="t('delete')">
+                <button class="btn btn-outline btn-sm" @click="showDeleteModal = false" :disabled="deleteInProgress" x-text="t('cancel')"></button>
+                <button class="btn btn-danger btn-sm" @click="executeDelete()" :disabled="deleteInProgress"
+                    x-text="deleteInProgress ? t('deleting') : t('delete')">
                 </button>
             </div>
         </div>
