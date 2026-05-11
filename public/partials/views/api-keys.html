@@ -1,0 +1,132 @@
+<div class="workspace-header flex items-center justify-between gap-4 mb-6">
+                    <div>
+                        <div class="workspace-eyebrow text-[11px] font-mono uppercase tracking-[0.18em] text-gray-500" x-text="t('configuration')"></div>
+                        <div class="flex flex-wrap items-center gap-4 mt-2">
+                            <h1 class="text-2xl font-bold text-white tracking-tight" x-text="t('apiKeys')"></h1>
+                            <div class="meta-chip flex items-center h-6 px-3 rounded-full bg-space-800/80 border border-space-border/50 shadow-sm backdrop-blur-sm">
+                                <span class="text-[10px] font-mono text-gray-400 uppercase tracking-wider" x-text="t('manageApiKeys')"></span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <div class="meta-chip flex items-center h-6 px-2 rounded bg-space-800/80 border border-space-border/50">
+                            <span class="text-[11px] font-mono text-gray-400" x-text="apiKeysList.length + ' ' + t('nKeys')"></span>
+                        </div>
+                        <button class="btn btn-xs btn-accent-purple gap-2 h-8"
+                            @click="showAddKeyModal = true">
+                            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+                            </svg>
+                            <span x-text="t('addApiKey')"></span>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Stats cards -->
+                <div class="grid grid-cols-2 sm:grid-cols-4 gap-2 lg:gap-3 mb-6" x-show="apiKeyStats.totalKeys > 0">
+                    <div class="stat bg-space-900/40 border border-space-border/30 rounded-xl p-3 lg:p-4 min-w-0">
+                        <div class="stat-value text-white font-mono text-2xl font-bold mb-1" x-text="apiKeyStats.totalKeys"></div>
+                        <div class="stat-title text-gray-500 font-mono text-[10px] uppercase tracking-wider" x-text="t('totalKeysLabel')"></div>
+                    </div>
+                    <div class="stat bg-space-900/40 border border-space-border/30 rounded-xl p-3 lg:p-4 min-w-0">
+                        <div class="stat-value text-white font-mono text-2xl font-bold mb-1" x-text="apiKeyStats.activeKeys"></div>
+                        <div class="stat-title text-gray-500 font-mono text-[10px] uppercase tracking-wider" x-text="t('active')"></div>
+                    </div>
+                    <div class="stat bg-space-900/40 border border-space-border/30 rounded-xl p-3 lg:p-4 min-w-0">
+                        <div class="stat-value text-white font-mono text-2xl font-bold mb-1" x-text="apiKeyStats.totalRequests"></div>
+                        <div class="stat-title text-gray-500 font-mono text-[10px] uppercase tracking-wider" x-text="t('requests')"></div>
+                    </div>
+                    <div class="stat bg-space-900/40 border border-space-border/30 rounded-xl p-3 lg:p-4 min-w-0">
+                        <div class="stat-value text-neon-green font-mono text-2xl font-bold mb-1" x-text="'$' + apiKeyStats.totalCost.toFixed(2)"></div>
+                        <div class="stat-title text-gray-500 font-mono text-[10px] uppercase tracking-wider" x-text="t('totalCostLabel')"></div>
+                    </div>
+                </div>
+
+                <!-- Keys table -->
+                <div class="view-card account-table-shell !p-0 overflow-x-auto">
+                    <table class="account-table w-full min-w-[700px]">
+                        <thead x-show="apiKeysList.length > 0">
+                            <tr class="bg-space-900/50 border-b border-space-border/50">
+                                <th class="py-3 text-left text-[10px] font-bold text-gray-500 uppercase tracking-wider" x-text="t('status')"></th>
+                                <th class="py-3 text-left text-[10px] font-bold text-gray-500 uppercase tracking-wider" x-text="t('keyName')"></th>
+                                <th class="py-3 text-left text-[10px] font-bold text-gray-500 uppercase tracking-wider" x-text="t('provider')"></th>
+                                <th class="py-3 text-left text-[10px] font-bold text-gray-500 uppercase tracking-wider" x-text="t('apiKeyLabel')"></th>
+                                <th class="py-3 text-left text-[10px] font-bold text-gray-500 uppercase tracking-wider" x-text="t('totalReqs')"></th>
+                                <th class="py-3 text-left text-[10px] font-bold text-gray-500 uppercase tracking-wider" x-text="t('totalCostLabel')"></th>
+                                <th class="py-3 text-right text-[10px] font-bold text-gray-500 uppercase tracking-wider" x-text="t('operations')"></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <template x-if="apiKeysList.length === 0">
+                                <tr>
+                                    <td colspan="7" class="py-16 text-center">
+                                        <div class="account-empty-state flex flex-col items-center justify-center gap-4 max-w-lg mx-auto">
+                                            <svg class="w-16 h-16 text-gray-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z" />
+                                            </svg>
+                                            <h3 class="text-xl font-semibold text-gray-400" x-text="t('noKeysYet')"></h3>
+                                            <p class="text-sm text-gray-600 max-w-md" x-text="t('noKeysDesc')"></p>
+                                            <button class="btn btn-sm btn-accent-purple gap-2" @click="showAddKeyModal = true">
+                                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" /></svg>
+                                                <span x-text="t('addFirstKey')"></span>
+                                            </button>
+                                        </div>
+                                    </td>
+                                </tr>
+                            </template>
+                            <template x-for="key in apiKeysList" :key="key.id">
+                                <tr class="border-b border-space-border/30 last:border-0 hover:bg-white/5 transition-colors">
+                                    <td class="py-4">
+                                        <div class="account-status-cell">
+                                            <div class="account-status-dot" :class="apiKeyStateDotClass(key)"></div>
+                                            <span class="account-status-label" :class="apiKeyStateTextClass(key)"
+                                                x-text="apiKeyStateLabel(key)"></span>
+                                        </div>
+                                    </td>
+                                    <td class="py-4"><span class="font-mono text-sm text-gray-300" x-text="key.name"></span></td>
+                                    <td class="py-4">
+                                        <span class="text-[10px] font-bold uppercase px-2 py-1 rounded"
+                                            :class="{
+                                                'bg-green-500/10 text-green-400 border border-green-500/30': key.type === 'openai',
+                                                'bg-orange-500/10 text-orange-400 border border-orange-500/30': key.type === 'anthropic',
+                                                'bg-blue-500/10 text-blue-400 border border-blue-500/30': key.type === 'gemini',
+                                                'bg-cyan-500/10 text-cyan-400 border border-cyan-500/30': key.type === 'azure-openai',
+                                                'bg-sky-500/10 text-sky-400 border border-sky-500/30': key.type === 'deepseek',
+                                                'bg-purple-500/10 text-purple-400 border border-purple-500/30': key.type === 'vertex-ai',
+                                                'bg-yellow-500/10 text-yellow-400 border border-yellow-500/30': key.type === 'minimax',
+                                                'bg-pink-500/10 text-pink-400 border border-pink-500/30': key.type === 'moonshot',
+                                                'bg-red-500/10 text-red-300 border border-red-500/30': key.type === 'zhipu'
+                                            }"
+                                            x-text="key.type === 'azure-openai' ? 'AZURE' : key.type === 'deepseek' ? 'DEEPSEEK' : key.type === 'vertex-ai' ? 'VERTEX' : key.type === 'moonshot' ? 'KIMI' : key.type === 'zhipu' ? 'GLM' : key.type.toUpperCase()"></span>
+                                    </td>
+                                    <td class="py-4"><span class="font-mono text-xs text-gray-500" x-text="key.apiKey"></span></td>
+                                    <td class="py-4"><span class="font-mono text-sm text-gray-300" x-text="key.totalRequests"></span></td>
+                                    <td class="py-4"><span class="font-mono text-sm text-neon-green" x-text="'$' + key.totalCost.toFixed(4)"></span></td>
+                                    <td class="py-4">
+                                        <div class="flex justify-end gap-2">
+                                            <button class="btn btn-xs-inline btn-accent-blue"
+                                                @click="testApiKey(key.id)" :disabled="!!key._testing"
+                                                x-text="key._testing === true ? '...' : t('testKey')"></button>
+                                            <button class="btn btn-xs btn-accent-purple btn-row-icon"
+                                                @click="openEditKeyModal(key)">
+                                                <svg class="w-3.5 h-3.5 inline-block" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                                                </svg>
+                                            </button>
+                                            <button class="btn btn-xs-inline"
+                                                :class="key.enabled ? 'btn-warning' : 'btn-accent-green'"
+                                                @click="toggleApiKey(key.id, !key.enabled)"
+                                                x-text="key.enabled ? t('actionDisable') : t('actionEnable')"></button>
+                                            <button class="btn btn-xs btn-ghost btn-row-icon text-gray-500 hover:text-red-400"
+                                                @click="deleteApiKey(key.id)">
+                                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                                </svg>
+                                            </button>
+                                        </div>
+                                    </td>
+                                </tr>
+                            </template>
+                        </tbody>
+                    </table>
+                </div>

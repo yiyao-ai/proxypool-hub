@@ -1,0 +1,176 @@
+<div class="dashboard-hero mb-6">
+    <div class="dashboard-hero-copy">
+        <div class="dashboard-hero-eyebrow-row">
+            <span class="dashboard-hero-eyebrow" x-text="t('chatgptProxySystem')"></span>
+            <span class="dashboard-hero-version" x-text="'v' + version"></span>
+        </div>
+        <h1 class="dashboard-hero-title" x-text="t('dashboard')"></h1>
+    </div>
+    <div class="dashboard-hero-side">
+        <div class="dashboard-hero-status">
+            <div class="relative flex items-center justify-center">
+                <span class="absolute w-1.5 h-1.5 bg-neon-green rounded-full animate-ping opacity-75"></span>
+                <span class="relative w-1.5 h-1.5 bg-neon-green rounded-full"></span>
+            </div>
+            <span class="dashboard-hero-status-label" x-text="t('live')"></span>
+            <span class="dashboard-hero-status-dot">•</span>
+            <span class="dashboard-hero-status-time" x-text="currentTime"></span>
+        </div>
+        <div class="dashboard-hero-actions">
+            <button class="btn btn-sm btn-surface"
+                @click="refreshAccounts()" :disabled="loading">
+                <span x-text="t('refreshData')"></span>
+            </button>
+            <button class="btn btn-sm btn-accent-cyan"
+                @click="setActiveTab('chat')">
+                <span x-text="t('quickTest')"></span>
+            </button>
+        </div>
+    </div>
+</div>
+
+<div class="grid grid-cols-2 sm:grid-cols-4 gap-2 lg:gap-3 mb-6">
+    <div class="dashboard-stat-card dashboard-stat-card-cyan stat bg-space-900/40 border border-space-border/30 rounded-xl p-3 lg:p-4 hover:border-cyan-500/30 hover:bg-cyan-500/5 transition-all duration-300 group relative cursor-pointer min-w-0">
+        <div class="absolute top-3 right-3 text-gray-700/40 group-hover:text-cyan-400/70 transition-colors">
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" class="w-4 h-4 sm:w-5 sm:h-5 stroke-current">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0z"></path>
+            </svg>
+        </div>
+        <div class="stat-value text-white font-mono text-2xl lg:text-3xl font-bold mb-1 truncate" x-text="dashboardTotalAccounts"></div>
+        <div class="stat-title text-gray-500 font-mono text-[10px] uppercase tracking-wider truncate" x-text="t('totalAccounts')"></div>
+        <div class="stat-desc text-cyan-400/60 text-[10px] truncate" x-text="t('linkedAccounts')"></div>
+    </div>
+
+    <div class="dashboard-stat-card dashboard-stat-card-green stat bg-space-900/40 border border-space-border/30 rounded-xl p-3 lg:p-4 hover:border-green-500/30 hover:bg-green-500/5 transition-all duration-300 group relative cursor-pointer min-w-0">
+        <div class="absolute top-3 right-3 text-gray-700/40 group-hover:text-green-400/70 transition-colors">
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" class="w-4 h-4 sm:w-5 sm:h-5 stroke-current">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+            </svg>
+        </div>
+        <div class="stat-value text-white font-mono text-2xl lg:text-3xl font-bold mb-1 truncate" x-text="stats.available"></div>
+        <div class="stat-title text-gray-500 font-mono text-[10px] uppercase tracking-wider truncate" x-text="t('availableAccounts')"></div>
+        <div class="stat-desc text-green-400/60 text-[10px] truncate" x-text="t('enabledForRouting')"></div>
+    </div>
+
+    <div class="dashboard-stat-card dashboard-stat-card-yellow stat bg-space-900/40 border border-space-border/30 rounded-xl p-3 lg:p-4 hover:border-yellow-500/30 hover:bg-yellow-500/5 transition-all duration-300 group relative cursor-pointer min-w-0">
+        <div class="absolute top-3 right-3 text-gray-700/40 group-hover:text-yellow-400/70 transition-colors">
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" class="w-4 h-4 sm:w-5 sm:h-5 stroke-current">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+            </svg>
+        </div>
+        <div class="stat-value text-white font-mono text-2xl lg:text-3xl font-bold mb-1 truncate" x-text="stats.expired"></div>
+        <div class="stat-title text-gray-500 font-mono text-[10px] uppercase tracking-wider truncate" x-text="t('tokenExpired')"></div>
+        <div class="stat-desc text-yellow-400/60 text-[10px] truncate" x-text="t('needsRefresh')"></div>
+    </div>
+
+    <div class="dashboard-stat-card dashboard-stat-card-purple stat bg-space-900/40 border border-space-border/30 rounded-xl p-3 lg:p-4 hover:border-purple-500/30 hover:bg-purple-500/5 transition-all duration-300 group relative cursor-pointer min-w-0">
+        <div class="absolute top-3 right-3 text-gray-700/40 group-hover:text-purple-400/70 transition-colors">
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" class="w-4 h-4 sm:w-5 sm:h-5 stroke-current">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z"></path>
+            </svg>
+        </div>
+        <div class="stat-value text-white font-mono text-2xl lg:text-3xl font-bold mb-1 truncate" x-text="dashboardProxyReadyCount + ' / 4'"></div>
+        <div class="stat-title text-gray-500 font-mono text-[10px] uppercase tracking-wider truncate">CLI</div>
+        <div class="stat-desc text-purple-400/60 text-[10px] truncate">Proxy ready</div>
+    </div>
+</div>
+
+<div class="dashboard-focus-grid mb-6">
+    <div class="view-card dashboard-section-card dashboard-focus-card">
+        <div class="dashboard-focus-head">
+            <div>
+                <div class="dashboard-focus-kicker" x-text="t('dashboardFocusTitle')"></div>
+                <h2 class="dashboard-focus-title" x-text="t('dashboardOverviewName')"></h2>
+            </div>
+        </div>
+        <div class="dashboard-focus-items mt-4">
+            <div class="dashboard-focus-item" :class="stats.expired > 0 ? 'dashboard-focus-item-warn' : 'dashboard-focus-item-ok'">
+                <span class="dashboard-focus-item-title" x-text="stats.expired > 0 ? (stats.expired + ' ' + t('needsRefresh')) : (stats.available + ' ' + t('availableAccounts'))"></span>
+                <span class="dashboard-focus-item-meta" x-text="stats.expired > 0 ? t('tokenExpired') : t('enabledForRouting')"></span>
+            </div>
+            <div class="dashboard-focus-item" :class="dashboardProxyReadyCount < 4 ? 'dashboard-focus-item-warn' : 'dashboard-focus-item-ok'">
+                <span class="dashboard-focus-item-title" x-text="dashboardProxyReadyCount + ' / 4 ' + t('dashboardProxyReadyTitle')"></span>
+                <span class="dashboard-focus-item-meta">Claude / Codex / Gemini / OpenClaw</span>
+            </div>
+            <div class="dashboard-focus-item" :class="connectionStatus === 'connected' ? 'dashboard-focus-item-ok' : 'dashboard-focus-item-warn'">
+                <span class="dashboard-focus-item-title" x-text="connectionStatus === 'connected' ? t('online') : t('offline')"></span>
+                <span class="dashboard-focus-item-meta" x-text="t('dashboardProxyServiceMeta')"></span>
+            </div>
+        </div>
+    </div>
+
+    <div class="view-card dashboard-section-card dashboard-actions-card">
+        <div class="dashboard-focus-kicker" x-text="t('dashboardActionTitle')"></div>
+        <div class="dashboard-action-list">
+            <button class="dashboard-action-tile" @click="setActiveTab('accounts')">
+                <span class="dashboard-action-name" x-text="t('dashboardActionAccounts')"></span>
+                <span class="dashboard-action-meta" x-text="t('totalAccounts')"></span>
+            </button>
+            <button class="dashboard-action-tile" @click="setActiveTab('chat')">
+                <span class="dashboard-action-name" x-text="t('dashboardActionChat')"></span>
+                <span class="dashboard-action-meta" x-text="t('quickTest')"></span>
+            </button>
+            <button class="dashboard-action-tile" @click="setActiveTab('tools'); loadToolsStatus()">
+                <span class="dashboard-action-name" x-text="t('dashboardActionTools')"></span>
+                <span class="dashboard-action-meta">Claude / Codex / Gemini / OpenClaw</span>
+            </button>
+            <button class="dashboard-action-tile" @click="setActiveTab('logs')">
+                <span class="dashboard-action-name" x-text="t('dashboardActionLogs')"></span>
+                <span class="dashboard-action-meta" x-text="t('dashboardLogsMeta')"></span>
+            </button>
+        </div>
+    </div>
+</div>
+
+<div class="grid gap-6 lg:grid-cols-2 mt-6">
+    <div class="view-card dashboard-section-card">
+        <div class="flex items-center gap-2.5 mb-4">
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" class="w-4 h-4 text-neon-purple">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path>
+            </svg>
+            <h3 class="text-xs font-mono text-gray-400 uppercase tracking-widest" x-text="t('quickTest')"></h3>
+        </div>
+        <div class="flex gap-3">
+            <input type="text" x-model="testPrompt" :placeholder="t('enterTestPrompt')"
+                class="input flex-1 bg-space-800 border-space-border text-white font-mono text-sm">
+            <button class="btn btn-sm btn-accent-purple gap-2"
+                @click="testChat()" :disabled="testing">
+                <svg class="w-4 h-4" :class="{'animate-spin': testing}" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"></path>
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                </svg>
+                <span x-text="t('test')"></span>
+            </button>
+        </div>
+        <div x-show="testResponse" class="mt-4 p-3 rounded-lg bg-space-800/50 border border-space-border/30">
+            <pre class="text-xs font-mono text-gray-300 whitespace-pre-wrap" x-text="testResponse"></pre>
+        </div>
+    </div>
+
+    <div class="view-card dashboard-section-card">
+        <div class="flex items-center gap-2.5 mb-4">
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" class="w-4 h-4 text-neon-cyan">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path>
+            </svg>
+            <div class="flex items-center gap-2">
+                <h3 class="text-xs font-mono text-gray-400 uppercase tracking-widest" x-text="t('haikuKiloTest')"></h3>
+                <span class="text-[10px] font-mono text-gray-500" x-text="haikuModelLabel()"></span>
+            </div>
+        </div>
+        <div class="flex gap-3">
+            <input type="text" x-model="haikuTestPrompt" :placeholder="t('enterHaikuPrompt')"
+                class="input flex-1 bg-space-800 border-space-border text-white font-mono text-sm">
+            <button class="btn btn-sm btn-accent-cyan gap-2"
+                @click="testHaikuChat()" :disabled="haikuTesting">
+                <svg class="w-4 h-4" :class="{'animate-spin': haikuTesting}" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"></path>
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                </svg>
+                <span x-text="t('testHaiku')"></span>
+            </button>
+        </div>
+        <div x-show="haikuTestResponse" class="mt-4 p-3 rounded-lg bg-space-800/50 border border-space-border/30">
+            <pre class="text-xs font-mono text-gray-300 whitespace-pre-wrap" x-text="haikuTestResponse"></pre>
+        </div>
+    </div>
+</div>

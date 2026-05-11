@@ -23,6 +23,25 @@ function createShellModule() {
     version: '1.2.1',
     connectionStatus: 'connecting',
     activeTab: 'dashboard',
+    viewPartialPaths: {
+      dashboard: '/partials/views/dashboard.html',
+      accounts: '/partials/views/accounts.html',
+      chat: '/partials/views/chat.html',
+      logs: '/partials/views/logs.html',
+      workspaceConfig: '/partials/views/workspace-config.html',
+      channels: '/partials/views/channels.html',
+      conversationRecords: '/partials/views/conversation-records.html',
+      assistantTasks: '/partials/views/assistant-tasks.html',
+      localModels: '/partials/views/local-models.html',
+      apikeys: '/partials/views/api-keys.html',
+      usage: '/partials/views/usage.html',
+      pricing: '/partials/views/pricing.html',
+      apiExplorer: '/partials/views/api-explorer.html',
+      requestLogs: '/partials/views/request-logs.html',
+      tools: '/partials/views/tools.html'
+    },
+    loadedViewPartials: {},
+    _viewPartialPromises: {},
     isSmallScreen: window.innerWidth < 1024,
     sidebarOpen: false,
     sidebarCollapsed: localStorage.getItem('proxy-sidebar-collapsed') === 'true' && window.innerWidth >= 1024,
@@ -87,6 +106,9 @@ function createShellModule() {
     init() {
       document.documentElement.classList.toggle('light', !this.darkMode);
       document.documentElement.classList.toggle('dark', this.darkMode);
+      queueMicrotask(() => {
+        this.ensureViewPartialLoadedForTab(this.activeTab);
+      });
       this.loadNavSections();
       this.syncResponsiveLayout();
       this.ensureActiveNavSection();
@@ -235,6 +257,7 @@ function createShellModule() {
 
     setActiveTab(tab) {
       this.activeTab = tab;
+      this.ensureViewPartialLoadedForTab(tab);
       this.ensureActiveNavSection();
       if (this.isSmallScreen) {
         this.sidebarOpen = false;
@@ -417,6 +440,74 @@ function createShellModule() {
     async checkHealth() {
       const { ok } = await this.api('/health');
       this.connectionStatus = ok ? 'connected' : 'disconnected';
+    },
+
+    viewPartialKeyForTab(tab) {
+      if (['settings', 'assistantAgent', 'routing'].includes(tab)) return 'workspaceConfig';
+      return tab;
+    },
+
+    ensureViewPartialLoadedForTab(tab) {
+      return this.ensureViewPartialLoaded(this.viewPartialKeyForTab(tab));
+    },
+
+    getViewPartialHost(viewKey) {
+      return document.querySelector(`[data-partial-view="${viewKey}"]`);
+    },
+
+    escapeHtml(value) {
+      return String(value).replace(/[&<>"']/g, (char) => ({
+        '&': '&amp;',
+        '<': '&lt;',
+        '>': '&gt;',
+        '"': '&quot;',
+        '\'': '&#39;'
+      }[char]));
+    },
+
+    async ensureViewPartialLoaded(viewKey) {
+      const partialPath = this.viewPartialPaths[viewKey];
+      if (!partialPath || this.loadedViewPartials[viewKey]) return;
+
+      const host = this.getViewPartialHost(viewKey);
+      if (!host) return;
+
+      if (this._viewPartialPromises[viewKey]) {
+        return this._viewPartialPromises[viewKey];
+      }
+
+      this._viewPartialPromises[viewKey] = (async () => {
+        try {
+          const response = await fetch(`${partialPath}?v=20260511-dashboard-partial-1`, {
+            cache: 'no-cache'
+          });
+
+          if (!response.ok) {
+            throw new Error(`Failed to load ${viewKey} view (${response.status})`);
+          }
+
+          host.innerHTML = await response.text();
+          this.loadedViewPartials = {
+            ...this.loadedViewPartials,
+            [viewKey]: true
+          };
+
+          if (window.Alpine?.initTree) {
+            window.Alpine.initTree(host);
+          }
+        } catch (error) {
+          host.innerHTML = `
+            <div class="view-card border border-red-500/30">
+              <div class="text-sm text-red-400 font-mono">${this.escapeHtml(error.message || `Failed to load ${viewKey} view`)}</div>
+            </div>
+          `;
+          this.showToast(error.message || `Failed to load ${viewKey} view`, 'error');
+        } finally {
+          delete this._viewPartialPromises[viewKey];
+        }
+      })();
+
+      return this._viewPartialPromises[viewKey];
     },
 
     showToast(message, type = 'success') {

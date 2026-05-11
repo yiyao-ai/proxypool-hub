@@ -1,0 +1,99 @@
+<div class="requestlogs-workspace-header flex items-center justify-between gap-4 mb-6">
+                    <div class="flex flex-wrap items-center gap-4">
+                        <div>
+                            <div class="requestlogs-workspace-eyebrow text-[11px] font-mono uppercase tracking-[0.18em] text-gray-500" x-text="t('observabilityWorkspaceEyebrow')"></div>
+                            <h1 class="text-2xl font-bold text-white tracking-tight mt-2" x-text="t('requestLogs')"></h1>
+                        </div>
+                        <div class="requestlogs-meta-chip flex items-center h-6 px-3 rounded-full bg-space-800/80 border border-space-border/50 shadow-sm backdrop-blur-sm">
+                            <span class="text-[10px] font-mono text-gray-400 uppercase tracking-wider" x-text="t('requestLogsDesc')"></span>
+                        </div>
+                    </div>
+                    <div class="requestlogs-toolbar flex items-center gap-2">
+                        <label class="flex items-center gap-2 text-xs text-gray-400 cursor-pointer">
+                            <input type="checkbox" class="toggle toggle-xs toggle-primary" :checked="reqLogSettings.enabled" @change="toggleRequestLogging($event.target.checked)">
+                            <span x-text="reqLogSettings.enabled ? t('enabled') : t('disabled')"></span>
+                        </label>
+                        <button class="btn btn-xs btn-outline h-8" @click="loadRequestLogs()">
+                            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                            </svg>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Filters -->
+                <div class="view-card requestlogs-filter-card mb-4">
+                    <div class="flex flex-wrap items-center gap-3">
+                    <select x-model="reqLogFilter.date" @change="loadRequestLogs()" class="h-8 bg-space-800 border border-space-border rounded text-xs font-mono px-2 text-white focus:border-neon-purple focus:outline-none">
+                        <template x-for="d in reqLogDates" :key="d">
+                            <option :value="d" x-text="d"></option>
+                        </template>
+                    </select>
+                    <select x-model="reqLogFilter.provider" @change="loadRequestLogs()" class="h-8 bg-space-800 border border-space-border rounded text-xs font-mono px-2 text-white focus:border-neon-purple focus:outline-none">
+                        <option value="" x-text="t('allProviders')"></option>
+                        <option value="openai">OpenAI</option>
+                        <option value="anthropic">Anthropic</option>
+                        <option value="gemini">Gemini</option>
+                        <option value="vertex-ai">Vertex AI</option>
+                        <option value="azure-openai">Azure OpenAI</option>
+                        <option value="deepseek">DeepSeek</option>
+                        <option value="minimax">MiniMax</option>
+                        <option value="moonshot">Moonshot</option>
+                        <option value="zhipu">ZhipuAI</option>
+                    </select>
+                    <label class="flex items-center gap-1.5 text-xs text-gray-400 cursor-pointer">
+                        <input type="checkbox" class="checkbox checkbox-xs border-space-border" x-model="reqLogFilter.errorsOnly" @change="loadRequestLogs()">
+                        <span x-text="t('errorsOnly')"></span>
+                    </label>
+                    <span class="text-[10px] text-gray-600 font-mono ml-auto" x-text="reqLogTotal + ' ' + t('records')"></span>
+                    </div>
+                </div>
+
+                <!-- Log entries -->
+                <div class="space-y-2">
+                    <template x-for="entry in reqLogEntries" :key="entry.id">
+                        <div class="requestlogs-entry-card bg-space-900/40 border border-space-border/30 rounded-lg overflow-hidden">
+                            <div class="flex items-center gap-3 px-4 py-2.5 cursor-pointer hover:bg-space-800/30 transition-colors" @click="entry._expanded = !entry._expanded">
+                                <span class="text-[10px] font-bold uppercase px-1.5 py-0.5 rounded"
+                                    :class="entry.success ? 'bg-green-500/10 text-green-400 border border-green-500/30' : 'bg-red-500/10 text-red-400 border border-red-500/30'"
+                                    x-text="entry.success ? 'OK' : 'ERR'"></span>
+                                <span class="text-xs font-mono text-gray-500 w-[155px] shrink-0" x-text="entry.timestamp ? new Date(entry.timestamp).toLocaleString([], {hour12:false, year:'numeric', month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit', second:'2-digit'}) : ''"></span>
+                                <span class="text-xs font-mono text-neon-cyan truncate max-w-[200px]" x-text="entry.route"></span>
+                                <span class="text-[10px] font-mono text-gray-400 px-1.5 py-0.5 bg-space-800 rounded" x-text="entry.provider"></span>
+                                <span class="text-xs font-mono text-white truncate" x-text="entry.mappedModel || entry.model"></span>
+                                <span class="text-xs font-mono text-gray-500 ml-auto" x-text="entry.durationMs + 'ms'"></span>
+                                <span class="text-xs font-mono text-neon-green" x-text="'$' + (entry.cost || 0).toFixed(4)"></span>
+                                <svg class="w-4 h-4 text-gray-500 transition-transform" :class="{'rotate-180': entry._expanded}" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+                                </svg>
+                            </div>
+                            <div x-show="entry._expanded" x-transition class="border-t border-space-border/20 px-4 py-3 space-y-3">
+                                <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
+                                    <div><span class="text-gray-500">Model: </span><span class="text-white font-mono" x-text="entry.model"></span></div>
+                                    <div><span class="text-gray-500">Mapped: </span><span class="text-white font-mono" x-text="entry.mappedModel"></span></div>
+                                    <div><span class="text-gray-500">Input: </span><span class="text-white font-mono" x-text="(entry.inputTokens || 0).toLocaleString()"></span></div>
+                                    <div><span class="text-gray-500">Output: </span><span class="text-white font-mono" x-text="(entry.outputTokens || 0).toLocaleString()"></span></div>
+                                </div>
+                                <template x-if="entry.error">
+                                    <div class="text-xs text-red-400 font-mono bg-red-500/5 border border-red-500/20 rounded p-2 break-all" x-text="entry.error"></div>
+                                </template>
+                                <div x-show="entry.requestBody">
+                                    <div class="text-[10px] text-gray-500 uppercase tracking-wider mb-1" x-text="t('requestBody')"></div>
+                                    <pre class="text-xs font-mono text-gray-300 bg-space-950 border border-space-border/20 rounded p-2 max-h-40 overflow-auto custom-scrollbar whitespace-pre-wrap break-all" x-text="formatLogBody(entry.requestBody)"></pre>
+                                </div>
+                                <div x-show="entry.responseBody">
+                                    <div class="text-[10px] text-gray-500 uppercase tracking-wider mb-1" x-text="t('responseBody')"></div>
+                                    <pre class="text-xs font-mono text-gray-300 bg-space-950 border border-space-border/20 rounded p-2 max-h-40 overflow-auto custom-scrollbar whitespace-pre-wrap break-all" x-text="formatLogBody(entry.responseBody)"></pre>
+                                </div>
+                            </div>
+                        </div>
+                    </template>
+                    <div x-show="reqLogEntries.length === 0" class="usage-empty-state flex items-center justify-center py-12 text-center text-gray-600 text-sm" x-text="t('noRequestLogs')"></div>
+                </div>
+
+                <!-- Pagination -->
+                <div x-show="reqLogTotal > 50" class="flex justify-center gap-2 mt-4">
+                    <button class="btn btn-xs btn-outline" :disabled="reqLogOffset === 0" @click="reqLogOffset = Math.max(0, reqLogOffset - 50); loadRequestLogs()" x-text="t('prev')"></button>
+                    <span class="text-xs text-gray-500 font-mono self-center" x-text="(reqLogOffset + 1) + '-' + Math.min(reqLogOffset + 50, reqLogTotal) + ' / ' + reqLogTotal"></span>
+                    <button class="btn btn-xs btn-outline" :disabled="reqLogOffset + 50 >= reqLogTotal" @click="reqLogOffset += 50; loadRequestLogs()" x-text="t('next')"></button>
+                </div>

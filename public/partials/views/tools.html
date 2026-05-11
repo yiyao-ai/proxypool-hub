@@ -1,0 +1,386 @@
+<div class="workspace-header flex items-center justify-between gap-4 mb-6">
+                    <div class="tools-workspace-title flex flex-wrap items-center gap-4">
+                        <div>
+                            <h1 class="text-2xl font-bold text-white tracking-tight" x-text="t('toolInstaller')"></h1>
+                        </div>
+                    </div>
+                    <div class="tools-workspace-actions flex items-center gap-2">
+                        <button class="btn btn-sm bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 text-amber-300 gap-1.5"
+                            @click="checkToolUpdates()" :disabled="toolsCheckingUpdates">
+                            <svg class="w-3.5 h-3.5" :class="{'animate-spin': toolsCheckingUpdates}" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                            </svg>
+                            <span x-text="toolsCheckingUpdates ? t('checkingUpdates') : t('checkUpdates')"></span>
+                        </button>
+                        <button class="btn btn-sm btn-surface gap-1.5" @click="loadToolsStatus()">
+                            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                            </svg>
+                            <span x-text="t('refresh')"></span>
+                        </button>
+                    </div>
+                </div>
+
+                <div class="mb-5 inline-flex rounded-2xl border border-space-border/40 bg-space-900/50 p-1.5 backdrop-blur-sm">
+                    <button class="btn btn-sm border-none rounded-xl"
+                        :class="toolsSubTab === 'install'
+                            ? 'btn-accent-green'
+                            : 'btn-ghost text-gray-500'"
+                        @click="toolsSubTab = 'install'"
+                        x-text="t('toolsTabInstall')"></button>
+                    <button class="btn btn-sm border-none rounded-xl"
+                        :class="toolsSubTab === 'configure'
+                            ? 'btn-accent-orange'
+                            : 'btn-ghost text-gray-500'"
+                        @click="toolsSubTab = 'configure'; refreshProxyStatus()"
+                        x-text="t('toolsTabConfigure')"></button>
+                </div>
+
+                <div x-show="toolsSubTab === 'install'">
+                <div class="tools-overview-grid grid gap-4 lg:grid-cols-[minmax(0,1.2fr)_minmax(0,0.8fr)] mb-4">
+                    <div class="view-card overview-card">
+                        <div class="tools-section-kicker text-xs font-mono text-gray-400 uppercase tracking-widest" x-text="t('toolsOverviewKicker')"></div>
+                        <h2 class="overview-title text-xl font-semibold text-white mt-3" x-text="t('toolsOverviewTitle')"></h2>
+                        <div class="overview-meta flex flex-wrap items-center gap-2 mt-4 text-[11px] font-mono text-gray-500">
+                            <span class="meta-chip" x-text="t('detectedOS') + ': ' + toolsOS"></span>
+                            <span class="meta-chip" x-text="t('toolsBatchUpdatesLabel') + ' ' + toolsWithUpdates()"></span>
+                            <span class="meta-chip" x-text="t('toolsBatchNodeLabel') + ' ' + (toolsList.node?.installed ? t('toolsStateReady') : t('toolsStateMissing'))"></span>
+                        </div>
+                    </div>
+                    <div class="view-card overview-card overview-card-accent-purple">
+                        <div class="tools-section-kicker text-xs font-mono text-gray-400 uppercase tracking-widest" x-text="t('toolsBatchKicker')"></div>
+                        <div class="space-y-3 mt-3">
+                            <div class="tools-batch-item flex items-start justify-between gap-3">
+                                <div>
+                                    <div class="text-sm font-semibold text-white" x-text="t('installAll')"></div>
+                                    <div class="text-xs text-gray-500" x-text="t('installAllDesc')"></div>
+                                </div>
+                                <button class="btn btn-sm btn-accent-purple"
+                                    @click="installAllTools()"
+                                    :disabled="!toolsList.node?.installed || toolsInstallingAll">
+                                    <span x-text="toolsInstallingAll ? t('installing') : t('installAllBtn')"></span>
+                                </button>
+                            </div>
+                            <div class="tools-batch-item flex items-start justify-between gap-3" x-show="toolsWithUpdates() > 0">
+                                <div>
+                                    <div class="text-sm font-semibold text-white" x-text="t('updateAll')"></div>
+                                    <div class="text-xs text-gray-500" x-text="t('updateAllDesc')"></div>
+                                </div>
+                                <button class="btn btn-sm btn-confirm"
+                                    @click="updateAllTools()"
+                                    :disabled="toolsUpdatingAll">
+                                    <span x-text="toolsUpdatingAll ? t('updating') : t('updateAllBtn')"></span>
+                                </button>
+                            </div>
+                            <div class="tools-inline-alert text-xs text-yellow-400" x-show="!toolsList.node?.installed" x-text="t('nodeRequiredFirst')"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Node.js Card (always first) -->
+                <template x-if="toolsList.node">
+                    <div class="view-card tools-node-card mb-4">
+                        <div class="tools-card-head flex items-center justify-between gap-4">
+                            <div class="flex items-center gap-3 min-w-0">
+                                <div class="tools-icon-box w-10 h-10 rounded-lg flex items-center justify-center text-lg font-bold"
+                                    :class="toolsList.node.installed ? 'bg-green-500/10 text-green-400 border border-green-500/30' : 'bg-red-500/10 text-red-400 border border-red-500/30'">
+                                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 12h14M12 5l7 7-7 7"></path>
+                                    </svg>
+                                </div>
+                                <div class="min-w-0">
+                                    <div class="tools-section-kicker text-xs font-mono text-gray-400 uppercase tracking-widest" x-text="t('toolsBaselineDependency')"></div>
+                                    <div class="text-sm font-bold text-white mt-1">Node.js</div>
+                                    <div class="text-[10px] text-gray-500 mt-1" x-text="toolsList.node.description"></div>
+                                </div>
+                            </div>
+                            <div class="tools-node-status flex items-center gap-3">
+                                <template x-if="toolsList.node.installed">
+                                    <div class="flex items-center gap-2">
+                                        <span class="text-xs font-mono text-green-400" x-text="'v' + toolsList.node.version"></span>
+                                        <span class="inline-flex items-center h-5 px-2 rounded-full text-[10px] font-bold bg-green-500/10 text-green-400 border border-green-500/30" x-text="t('installed')"></span>
+                                    </div>
+                                </template>
+                                <template x-if="!toolsList.node.installed">
+                                    <div class="flex items-center gap-2">
+                                        <span class="inline-flex items-center h-5 px-2 rounded-full text-[10px] font-bold bg-red-500/10 text-red-400 border border-red-500/30" x-text="t('notInstalled')"></span>
+                                        <button class="btn btn-xs btn-accent-green"
+                                            @click="installNodeJs()" :disabled="toolsInstalling.node">
+                                            <span x-text="toolsInstalling.node ? t('installing') : t('install')"></span>
+                                        </button>
+                                    </div>
+                                </template>
+                            </div>
+                        </div>
+                        <!-- Node.js install instructions when not installed -->
+                        <template x-if="!toolsList.node.installed && nodeInstallInfo">
+                            <div class="tools-inline-panel mt-4 p-3 bg-space-800/50 border border-space-border/30 rounded-lg">
+                                <div class="text-xs font-mono text-gray-400 mb-2" x-text="t('installInstructions')"></div>
+                                <template x-for="(step, i) in nodeInstallInfo.instructions" :key="i">
+                                    <div class="text-xs text-gray-300 font-mono py-1 border-b border-space-border/20 last:border-0">
+                                        <span class="text-gray-600 mr-2" x-text="(i+1) + '.'"></span>
+                                        <span x-text="step"></span>
+                                    </div>
+                                </template>
+                                <a :href="nodeInstallInfo.downloadUrl" target="_blank"
+                                    class="inline-flex items-center gap-1 mt-3 text-xs text-neon-cyan hover:text-cyan-300 transition-colors">
+                                    <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"></path>
+                                    </svg>
+                                    <span x-text="t('downloadNodejs')"></span>
+                                </a>
+                            </div>
+                        </template>
+                    </div>
+                </template>
+
+                <!-- CLI Tools -->
+                <div class="tools-section-head flex items-center justify-between gap-3 mb-3">
+                    <div>
+                        <div class="tools-section-kicker text-xs font-mono text-gray-400 uppercase tracking-widest" x-text="t('cliTools')"></div>
+                    </div>
+                    <div class="session-panel-count text-[11px] font-mono text-gray-500" x-text="['claude', 'codex', 'gemini', 'openclaw'].filter(id => toolsList[id]).length + ' ' + t('toolsCountLabel')"></div>
+                </div>
+                <div class="tools-cli-grid grid gap-3 lg:grid-cols-2">
+                    <template x-for="toolId in ['claude', 'codex', 'gemini', 'openclaw']" :key="toolId">
+                        <div class="view-card tools-cli-card" x-show="toolsList[toolId]">
+                            <div class="tools-card-head flex items-center justify-between gap-4">
+                                <div class="flex items-center gap-3 min-w-0">
+                                    <div class="tools-icon-box w-10 h-10 rounded-lg flex items-center justify-center text-xs font-bold uppercase"
+                                        :class="{
+                                            'bg-purple-500/10 text-purple-400 border border-purple-500/30': toolId === 'claude',
+                                            'bg-green-500/10 text-green-400 border border-green-500/30': toolId === 'codex',
+                                            'bg-blue-500/10 text-blue-400 border border-blue-500/30': toolId === 'gemini',
+                                            'bg-orange-500/10 text-orange-400 border border-orange-500/30': toolId === 'openclaw'
+                                        }">
+                                        <span x-text="toolId.slice(0,2).toUpperCase()"></span>
+                                    </div>
+                                    <div class="min-w-0">
+                                        <div class="text-sm font-bold text-white" x-text="toolsList[toolId]?.name"></div>
+                                        <div class="text-[10px] text-gray-500 mt-1" x-text="toolsList[toolId]?.description"></div>
+                                        <div class="text-[10px] text-gray-600 font-mono mt-1" x-text="'npm: ' + (toolsList[toolId]?.npmPackage || '')"></div>
+                                    </div>
+                                </div>
+                                <div class="tools-cli-status flex items-center gap-3">
+                                    <!-- Installed: update available -->
+                                    <template x-if="toolsList[toolId]?.installed && isUpdateAvailable(toolId)">
+                                        <div class="flex items-center gap-2">
+                                            <span class="text-xs font-mono" :class="{
+                                                'text-purple-400': toolId === 'claude',
+                                                'text-green-400': toolId === 'codex',
+                                                'text-blue-400': toolId === 'gemini',
+                                                'text-orange-400': toolId === 'openclaw'
+                                            }" x-text="'v' + toolsList[toolId].version"></span>
+                                            <span class="text-xs text-gray-500">→</span>
+                                            <span class="text-xs font-mono text-amber-400" x-text="'v' + toolsLatestVersions[toolId]"></span>
+                                            <span class="inline-flex items-center h-5 px-2 rounded-full text-[10px] font-bold bg-amber-500/10 text-amber-400 border border-amber-500/30" x-text="t('updateAvailable')"></span>
+                                            <button class="btn btn-xs btn-confirm"
+                                                @click="updateCliTool(toolId)"
+                                                :disabled="toolsUpdating[toolId]">
+                                                <span x-text="toolsUpdating[toolId] ? t('updating') : t('update')"></span>
+                                            </button>
+                                        </div>
+                                    </template>
+                                    <!-- Installed: up to date -->
+                                    <template x-if="toolsList[toolId]?.installed && !isUpdateAvailable(toolId)">
+                                        <div class="flex items-center gap-2">
+                                            <span class="text-xs font-mono" :class="{
+                                                'text-purple-400': toolId === 'claude',
+                                                'text-green-400': toolId === 'codex',
+                                                'text-blue-400': toolId === 'gemini',
+                                                'text-orange-400': toolId === 'openclaw'
+                                            }" x-text="'v' + toolsList[toolId].version"></span>
+                                            <span class="inline-flex items-center h-5 px-2 rounded-full text-[10px] font-bold bg-green-500/10 text-green-400 border border-green-500/30" x-text="t('installed')"></span>
+                                        </div>
+                                    </template>
+                                    <template x-if="!toolsList[toolId]?.installed">
+                                        <div class="flex items-center gap-2">
+                                            <span class="inline-flex items-center h-5 px-2 rounded-full text-[10px] font-bold bg-gray-500/10 text-gray-400 border border-gray-500/30" x-text="t('notInstalled')"></span>
+                                            <button class="btn btn-xs"
+                                                :class="{
+                                                    'btn-accent-purple': toolId === 'claude',
+                                                    'btn-accent-green': toolId === 'codex',
+                                                    'btn-accent-blue': toolId === 'gemini',
+                                                    'btn-accent-orange': toolId === 'openclaw'
+                                                }"
+                                                @click="installCliTool(toolId)"
+                                                :disabled="!toolsList.node?.installed || toolsInstalling[toolId]">
+                                                <span x-text="toolsInstalling[toolId] ? t('installing') : t('install')"></span>
+                                            </button>
+                                        </div>
+                                    </template>
+                                </div>
+                            </div>
+                            <!-- Install error message -->
+                            <template x-if="toolsErrors[toolId]">
+                                <div class="tools-inline-alert mt-3 p-2 bg-red-500/5 border border-red-500/20 rounded text-xs text-red-400 font-mono" x-text="toolsErrors[toolId]"></div>
+                            </template>
+                        </div>
+                    </template>
+                </div>
+                </div>
+
+                <div x-show="toolsSubTab === 'configure'">
+                    <div class="view-card overview-card overview-card-accent-cyan mb-4">
+                        <div class="tools-section-kicker text-xs font-mono text-gray-400 uppercase tracking-widest" x-text="t('toolsConfigureKicker')"></div>
+                        <h2 class="overview-title text-xl font-semibold text-white mt-3" x-text="t('toolsConfigureTitle')"></h2>
+                        <p class="overview-copy text-sm text-gray-400 mt-3" x-text="t('toolsConfigureDesc')"></p>
+                        <div class="overview-meta flex flex-wrap items-center gap-2 mt-4 text-[11px] font-mono text-gray-500">
+                            <span class="meta-chip" x-text="dashboardProxyReadyCount + ' / 4 ' + t('dashboardProxyReadyTitle')"></span>
+                            <span class="meta-chip">Claude / Codex / Gemini / OpenClaw</span>
+                        </div>
+                    </div>
+
+                    <div class="mb-4 flex items-center justify-between gap-4">
+                        <div>
+                            <div class="text-xs font-mono text-gray-400 uppercase tracking-widest" x-text="t('dashboardCliConsole')"></div>
+                            <p class="text-sm text-gray-500 mt-1" x-text="t('dashboardCliConsoleDesc')"></p>
+                        </div>
+                        <button class="btn btn-sm btn-surface"
+                            @click="refreshProxyStatus()" x-text="t('refresh')"></button>
+                    </div>
+
+                    <div class="grid gap-6 lg:grid-cols-2">
+                        <div class="view-card dashboard-section-card">
+                            <div class="flex items-center gap-2.5 mb-4">
+                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" class="w-4 h-4 text-neon-cyan">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path>
+                            </svg>
+                            <h3 class="text-xs font-mono text-gray-400 uppercase tracking-widest" x-text="t('usageWithClaude')"></h3>
+                            <span x-show="proxyStatus.claude" class="ml-2 px-2 py-0.5 text-xs rounded-full bg-green-500/20 text-green-400 border border-green-500/30" x-text="t('proxied')"></span>
+                        </div>
+                            <div class="bg-space-800/50 border border-space-border/30 rounded-lg p-4 font-mono text-sm text-gray-300">
+                            <div class="text-gray-500 mb-2" x-text="t('setEnvVars')"></div>
+                            <div class="text-neon-cyan">export ANTHROPIC_BASE_URL=http://localhost:8081</div>
+                            <div class="text-neon-cyan">export ANTHROPIC_API_KEY=any-key</div>
+                            <div class="text-gray-500 mt-2 mb-2" x-text="t('runClaude')"></div>
+                            <div class="text-neon-green">claude</div>
+                        </div>
+
+                            <div class="dashboard-tool-actions mt-4">
+                            <button class="btn btn-sm btn-surface font-sans rounded-xl"
+                                @click="openConfigViewer('claude')" x-text="t('viewConfig')">
+                            </button>
+                            <button class="btn btn-sm bg-neon-cyan/90 hover:bg-neon-cyan text-space-950 border-none font-sans gap-1 rounded-xl"
+                                @click="configAndLaunch('claude')" :title="t('configAndLaunch')">
+                                <svg class="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 20 20"><path d="M6.3 2.841A1.5 1.5 0 004 4.12V15.88a1.5 1.5 0 002.3 1.279l9.344-5.88a1.5 1.5 0 000-2.557L6.3 2.84z"/></svg>
+                                <span x-text="t('launchTool')"></span>
+                            </button>
+                            <button x-show="proxyStatus.claude" class="btn btn-sm bg-red-500/15 hover:bg-red-500/25 border border-red-500/25 text-red-300 font-sans rounded-xl"
+                                @click="removeClaudeProxy()" x-text="t('removeProxy')">
+                            </button>
+                            <button class="btn btn-sm btn-accent-purple font-sans rounded-xl"
+                                @click="setClaudeCodeProxyTestConfig()" x-text="t('updateClaudeSettings')">
+                            </button>
+                        </div>
+                    </div>
+
+                        <div class="view-card dashboard-section-card">
+                            <div class="flex items-center gap-2.5 mb-4">
+                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" class="w-4 h-4 text-neon-green">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path>
+                            </svg>
+                            <h3 class="text-xs font-mono text-gray-400 uppercase tracking-widest" x-text="t('usageWithCodex')"></h3>
+                            <span x-show="proxyStatus.codex" class="ml-2 px-2 py-0.5 text-xs rounded-full bg-green-500/20 text-green-400 border border-green-500/30" x-text="t('proxied')"></span>
+                        </div>
+                            <div class="bg-space-800/50 border border-space-border/30 rounded-lg p-4 font-mono text-sm text-gray-300">
+                            <div class="text-gray-500 mb-2" x-text="t('codexSetConfig')"></div>
+                            <div class="text-neon-cyan text-xs mb-1">~/.codex/config.toml</div>
+                            <div class="text-neon-green">chatgpt_base_url = "http://localhost:8081/backend-api/"</div>
+                            <div class="text-neon-green">openai_base_url = "http://localhost:8081"</div>
+                            <div class="text-gray-500 mt-3 mb-2" x-text="t('runCodex')"></div>
+                            <div class="text-neon-green">codex</div>
+                        </div>
+                            <div class="dashboard-tool-actions mt-4">
+                            <button class="btn btn-sm btn-surface font-sans rounded-xl"
+                                @click="openConfigViewer('codex')" x-text="t('viewConfig')">
+                            </button>
+                            <button class="btn btn-sm bg-neon-cyan/90 hover:bg-neon-cyan text-space-950 border-none font-sans gap-1 rounded-xl"
+                                @click="configAndLaunch('codex')" :title="t('configAndLaunch')">
+                                <svg class="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 20 20"><path d="M6.3 2.841A1.5 1.5 0 004 4.12V15.88a1.5 1.5 0 002.3 1.279l9.344-5.88a1.5 1.5 0 000-2.557L6.3 2.84z"/></svg>
+                                <span x-text="t('launchTool')"></span>
+                            </button>
+                            <button x-show="proxyStatus.codex" class="btn btn-sm bg-red-500/15 hover:bg-red-500/25 border border-red-500/25 text-red-300 font-sans rounded-xl"
+                                @click="removeCodexProxy()" x-text="t('removeProxy')">
+                            </button>
+                            <button class="btn btn-sm btn-accent-green font-sans rounded-xl"
+                                @click="setCodexProxyConfig()" x-text="t('updateCodexSettings')">
+                            </button>
+                        </div>
+                    </div>
+
+                        <div class="view-card dashboard-section-card">
+                            <div class="flex items-center gap-2.5 mb-4">
+                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" class="w-4 h-4 text-blue-400">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path>
+                            </svg>
+                            <h3 class="text-xs font-mono text-gray-400 uppercase tracking-widest" x-text="t('usageWithGemini')"></h3>
+                            <span x-show="proxyStatus.gemini" class="ml-2 px-2 py-0.5 text-xs rounded-full bg-green-500/20 text-green-400 border border-green-500/30" x-text="t('proxied')"></span>
+                        </div>
+                            <div class="bg-space-800/50 border border-space-border/30 rounded-lg p-4 font-mono text-sm text-gray-300">
+                            <div class="text-gray-500 mb-2" x-text="t('geminiSetEnv')"></div>
+                            <div class="text-neon-cyan">set GEMINI_API_KEY=proxy</div>
+                            <div class="text-gray-500 mt-2 mb-2" x-text="t('runGemini')"></div>
+                            <div class="text-neon-green">gemini</div>
+                            <div class="text-gray-500 text-xs mt-2">Select "Gemini API key" when prompted for auth</div>
+                        </div>
+                            <div class="dashboard-tool-actions mt-4">
+                            <button class="btn btn-sm btn-surface font-sans rounded-xl"
+                                @click="openConfigViewer('gemini')" x-text="t('viewConfig')">
+                            </button>
+                            <button class="btn btn-sm bg-neon-cyan/90 hover:bg-neon-cyan text-space-950 border-none font-sans gap-1 rounded-xl"
+                                @click="configAndLaunch('gemini')" :title="t('configAndLaunch')">
+                                <svg class="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 20 20"><path d="M6.3 2.841A1.5 1.5 0 004 4.12V15.88a1.5 1.5 0 002.3 1.279l9.344-5.88a1.5 1.5 0 000-2.557L6.3 2.84z"/></svg>
+                                <span x-text="t('launchTool')"></span>
+                            </button>
+                            <button x-show="proxyStatus.gemini" class="btn btn-sm bg-red-500/15 hover:bg-red-500/25 border border-red-500/25 text-red-300 font-sans rounded-xl"
+                                @click="removeGeminiProxy()" x-text="t('removeProxy')">
+                            </button>
+                            <button class="btn btn-sm btn-accent-blue font-sans rounded-xl"
+                                @click="setGeminiCliProxyConfig()" x-text="t('updateGeminiSettings')">
+                            </button>
+                        </div>
+                    </div>
+
+                        <div class="view-card dashboard-section-card">
+                            <div class="flex items-center gap-2.5 mb-4">
+                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" class="w-4 h-4 text-orange-400">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path>
+                            </svg>
+                            <h3 class="text-xs font-mono text-gray-400 uppercase tracking-widest" x-text="t('usageWithOpenClaw')"></h3>
+                            <span x-show="proxyStatus.openclaw" class="ml-2 px-2 py-0.5 text-xs rounded-full bg-green-500/20 text-green-400 border border-green-500/30" x-text="t('proxied')"></span>
+                        </div>
+                            <div class="bg-space-800/50 border border-space-border/30 rounded-lg p-4 font-mono text-sm text-gray-300">
+                            <div class="text-gray-500 mb-2" x-text="t('openclawSetConfig')"></div>
+                            <div class="text-neon-cyan text-xs mb-1">~/.openclaw/openclaw.json</div>
+                            <div class="text-orange-300">"models": { "mode": "merge", "providers": {</div>
+                            <div class="text-orange-300 pl-4">"cligate": {</div>
+                            <div class="text-orange-300 pl-6">"baseUrl": "http://localhost:8081",</div>
+                            <div class="text-orange-300 pl-6">"apiKey": "sk-ant-proxy",</div>
+                            <div class="text-orange-300 pl-6">"api": "anthropic-messages",</div>
+                            <div class="text-orange-300 pl-6">"models": [{ "id": "...", "contextWindow": ... }]</div>
+                            <div class="text-orange-300 pl-4">}</div>
+                            <div class="text-orange-300">} }</div>
+                            <div class="text-gray-500 mt-3 mb-2" x-text="t('runOpenClaw')"></div>
+                            <div class="text-neon-green">openclaw</div>
+                        </div>
+                            <div class="dashboard-tool-actions mt-4">
+                            <button class="btn btn-sm btn-surface font-sans rounded-xl"
+                                @click="openConfigViewer('openclaw')" x-text="t('viewConfig')">
+                            </button>
+                            <button class="btn btn-sm bg-neon-cyan/90 hover:bg-neon-cyan text-space-950 border-none font-sans gap-1 rounded-xl"
+                                @click="configAndLaunch('openclaw')" :title="t('configAndLaunch')">
+                                <svg class="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 20 20"><path d="M6.3 2.841A1.5 1.5 0 004 4.12V15.88a1.5 1.5 0 002.3 1.279l9.344-5.88a1.5 1.5 0 000-2.557L6.3 2.84z"/></svg>
+                                <span x-text="t('launchTool')"></span>
+                            </button>
+                            <button x-show="proxyStatus.openclaw" class="btn btn-sm bg-red-500/15 hover:bg-red-500/25 border border-red-500/25 text-red-300 font-sans rounded-xl"
+                                @click="removeOpenClawProxy()" x-text="t('removeProxy')">
+                            </button>
+                            <button class="btn btn-sm btn-accent-orange font-sans rounded-xl"
+                                @click="setOpenClawProxyConfig()" x-text="t('updateOpenClawSettings')">
+                            </button>
+                        </div>
+                    </div>
+                    </div>
+                </div>
+            </div>

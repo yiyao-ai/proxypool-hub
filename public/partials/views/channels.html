@@ -1,0 +1,151 @@
+<div class="flex items-center justify-between gap-4 mb-6">
+                    <div class="flex flex-wrap items-center gap-4">
+                        <h1 class="text-2xl font-bold text-white tracking-tight" x-text="t('channels')"></h1>
+                        <div class="flex items-center h-6 px-3 rounded-full bg-space-800/80 border border-space-border/50 shadow-sm backdrop-blur-sm">
+                            <span class="text-[10px] font-mono text-gray-400 uppercase tracking-wider" x-text="t('channelGatewayBadge')"></span>
+                        </div>
+                    </div>
+                    <button class="btn btn-sm bg-space-800 hover:bg-space-700 border border-space-border text-gray-200"
+                        @click="refreshChannels()" :disabled="channelProvidersLoading">
+                        <span x-text="channelProvidersLoading ? t('loading') : t('refreshChannels')"></span>
+                    </button>
+                </div>
+
+                <div class="view-card mb-6">
+                    <div class="flex items-center gap-2.5 mb-4">
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" class="w-4 h-4 text-neon-cyan">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"></path>
+                        </svg>
+                        <h3 class="text-xs font-mono text-gray-400 uppercase tracking-widest" x-text="t('channelProviderStatusTitle')"></h3>
+                    </div>
+                    <div class="grid grid-cols-1 xl:grid-cols-2 gap-3">
+                        <template x-for="provider in channelProviders" :key="(provider.providerId || provider.id) + ':' + (provider.instanceId || 'default')">
+                            <div class="rounded-2xl border border-space-border/30 bg-space-900/40 p-4">
+                                <div class="flex items-start justify-between gap-3">
+                                    <div>
+                                        <div class="text-sm font-semibold text-white">
+                                            <span x-text="provider.label || provider.providerId || provider.id"></span>
+                                            <span class="text-gray-500 font-mono text-xs ml-2" x-text="provider.instanceLabel || provider.instanceId || 'default'"></span>
+                                        </div>
+                                        <div class="text-xs text-gray-500 font-mono mt-1">
+                                            <span x-text="provider.status?.mode || provider.capabilities?.mode || '-'"></span>
+                                        </div>
+                                    </div>
+                                    <span class="inline-flex items-center rounded-full border px-2.5 py-1 text-[11px] font-mono"
+                                        :class="channelProviderStatusClass(provider)"
+                                        x-text="channelProviderStatusLabel(provider)"></span>
+                                </div>
+                                <div class="mt-3 text-xs text-gray-400" x-show="provider.status?.lastError" x-text="provider.status?.lastError"></div>
+                            </div>
+                        </template>
+                        <div class="text-xs text-gray-500 font-mono" x-show="channelProviders.length === 0" x-text="t('channelProvidersEmpty')"></div>
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-1 xl:grid-cols-3 gap-6">
+                    <template x-for="provider in channelCatalog" :key="provider.id">
+                        <div class="view-card">
+                            <div class="flex items-center justify-between gap-3 mb-4">
+                                <div class="flex items-center gap-2.5">
+                                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" class="w-4 h-4 text-neon-cyan">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 7h16M4 12h12M4 17h8"></path>
+                                    </svg>
+                                    <h3 class="text-xs font-mono text-gray-400 uppercase tracking-widest" x-text="provider.label || provider.id"></h3>
+                                </div>
+                                <button class="btn btn-xs bg-space-800 hover:bg-space-700 border border-space-border text-gray-200"
+                                    @click="addChannelInstance(provider)">
+                                    + Instance
+                                </button>
+                            </div>
+                            <div class="space-y-5">
+                                <template x-for="instance in channelProviderInstances(provider)" :key="provider.id + ':' + instance.id">
+                                    <div class="rounded-2xl border border-space-border/30 bg-space-900/35 overflow-hidden">
+                                        <div
+                                            class="w-full px-4 py-3 flex items-center justify-between gap-4 text-left hover:bg-space-800/45 transition-colors cursor-pointer"
+                                            @click="toggleChannelInstanceExpanded(provider.id, instance.id)">
+                                            <div class="min-w-0 flex-1">
+                                                <div class="flex items-center gap-3 min-w-0">
+                                                    <div class="text-sm font-semibold text-white truncate" x-text="instance.label || instance.id"></div>
+                                                    <div class="text-[11px] text-gray-500 font-mono truncate">
+                                                        <span>ID: </span><span x-text="instance.id || 'default'"></span>
+                                                    </div>
+                                                </div>
+                                                <div class="text-xs text-gray-500 font-mono mt-1 truncate" x-text="channelInstanceSummary(provider, instance)"></div>
+                                            </div>
+                                            <div class="flex items-center gap-2 shrink-0">
+                                                <template x-if="channelInstanceStatus(provider.id, instance.id)">
+                                                    <span class="inline-flex items-center rounded-full border px-2.5 py-1 text-[11px] font-mono"
+                                                        :class="channelProviderStatusClass(channelInstanceStatus(provider.id, instance.id))"
+                                                        x-text="channelProviderStatusLabel(channelInstanceStatus(provider.id, instance.id))"></span>
+                                                </template>
+                                                <button class="btn btn-xs btn-ghost text-red-300 hover:bg-red-500/10"
+                                                    x-show="channelProviderInstances(provider).length > 1"
+                                                    @click.stop="removeChannelInstance(provider, instance)">Delete</button>
+                                                <svg class="w-4 h-4 text-gray-500 transition-transform"
+                                                    :class="isChannelInstanceExpanded(provider.id, instance.id) ? 'rotate-180' : ''"
+                                                    fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
+                                                </svg>
+                                            </div>
+                                        </div>
+                                        <div x-show="isChannelInstanceExpanded(provider.id, instance.id)" x-transition class="px-4 pb-4 space-y-4 border-t border-space-border/20">
+                                            <div class="pt-4"></div>
+                                            <template x-for="group in channelProviderFormSections(provider)" :key="provider.id + '-' + instance.id + '-' + group.section">
+                                                <div class="space-y-3">
+                                                    <div class="text-[11px] font-mono uppercase tracking-widest text-gray-500" x-text="channelSectionLabel(group.section)"></div>
+                                                    <template x-for="field in group.fields" :key="provider.id + '-' + instance.id + '-' + field.key">
+                                                        <div>
+                                                            <template x-if="field.type === 'boolean'">
+                                                                <label class="flex items-center justify-between gap-3">
+                                                                    <span class="text-sm text-gray-300" x-text="channelFieldLabel(field)"></span>
+                                                                    <input type="checkbox" class="checkbox checkbox-sm" x-model="instance[field.key]">
+                                                                </label>
+                                                            </template>
+                                                            <template x-if="field.type !== 'boolean'">
+                                                                <label class="block">
+                                                                    <span class="text-xs text-gray-500 mb-1 block" x-text="channelFieldLabel(field)"></span>
+                                                                    <template x-if="field.type === 'select'">
+                                                                        <select class="select select-sm w-full bg-space-800 border-space-border text-white" x-model="instance[field.key]">
+                                                                            <template x-for="option in field.options || []" :key="provider.id + '-' + instance.id + '-' + field.key + '-' + option.value">
+                                                                                <option :value="option.value" x-text="t(option.labelKey)"></option>
+                                                                            </template>
+                                                                        </select>
+                                                                    </template>
+                                                                    <template x-if="field.type === 'runtime-provider'">
+                                                                        <select class="select select-sm w-full bg-space-800 border-space-border text-white" x-model="instance[field.key]">
+                                                                            <template x-for="runtimeProvider in agentRuntimeProviders" :key="provider.id + '-' + instance.id + '-' + field.key + '-' + runtimeProvider.id">
+                                                                                <option :value="runtimeProvider.id" x-text="chatRuntimeProviderLabel(runtimeProvider.id)"></option>
+                                                                            </template>
+                                                                        </select>
+                                                                    </template>
+                                                                    <template x-if="field.type !== 'select' && field.type !== 'runtime-provider'">
+                                                                        <input class="input input-sm w-full bg-space-800 border-space-border text-white"
+                                                                            :type="channelFieldInputType(field)"
+                                                                            x-model="instance[field.key]"
+                                                                            :placeholder="channelFieldPlaceholder(field)">
+                                                                    </template>
+                                                                </label>
+                                                            </template>
+                                                            <div class="text-xs text-gray-500 font-mono mt-2" x-show="channelFieldDescription(field)" x-text="channelFieldDescription(field)"></div>
+                                                            <div class="text-xs text-gray-500 font-mono mt-2"
+                                                                x-show="field.key === 'mode' && channelWebhookHint(provider.id, instance)"
+                                                                x-text="'Webhook: ' + channelWebhookHint(provider.id, instance)"></div>
+                                                        </div>
+                                                    </template>
+                                                </div>
+                                            </template>
+                                            <div class="flex items-center justify-between gap-3">
+                                                <div class="text-xs text-gray-500 font-mono" x-text="channelInstanceStatus(provider.id, instance.id)?.status?.lastError || ''"></div>
+                                                <button class="btn btn-sm bg-neon-cyan/90 hover:bg-neon-cyan text-space-950 border-none"
+                                                    @click="saveChannelSettings(provider.id, instance.id)"
+                                                    :disabled="!!channelSettingsSaving[provider.id + ':' + instance.id]">
+                                                    <span x-text="channelSettingsSaving[provider.id + ':' + instance.id] ? t('sending') : t('saveChannelSettings')"></span>
+                                                </button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </template>
+                            </div>
+                        </div>
+                    </template>
+                </div>
