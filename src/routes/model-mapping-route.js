@@ -2,13 +2,15 @@
  * Model Mapping API Routes
  */
 
+import { getDiscoveredModels } from '../model-discovery.js';
 import { getMappings, getMappingsMeta, setProviderMappings, resetMappings, resolveModel, recognizeTier } from '../model-mapping.js';
 
 /** GET /api/model-mappings */
 export function handleGetModelMappings(req, res) {
     const mappings = getMappings();
     const meta = getMappingsMeta();
-    res.json({ ...mappings, ...meta });
+    const discovered = getDiscoveredModels();
+    res.json({ ...mappings, ...meta, discovered });
 }
 
 /** PUT /api/model-mappings/provider/:provider */

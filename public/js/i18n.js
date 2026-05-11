@@ -615,6 +615,7 @@ export const i18n = {
     resetDefaults: 'Reset',
     testMapping: 'Test mapping:',
     testMappingPlaceholder: 'e.g. gpt-5.4-mini',
+    modelMappingCustomPlaceholder: 'Model or deployment',
     modelMappingReset: 'Model mappings reset to defaults',
     updateFailed: 'Update failed',
     noProvidersConfigured: 'No mappable providers detected yet. Add an API key or account source first, then configure model mappings.',
@@ -796,7 +797,6 @@ export const i18n = {
     subscription: 'Subscription',
     confirmDeleteAccount: 'Are you sure you want to delete this account?',
     allTokensRefreshed: 'All tokens refreshed',
-    expired: 'Expired',
     inactive: 'Inactive',
 
     // Feedback
@@ -844,7 +844,6 @@ export const i18n = {
     allToolsInstalled: 'All tools installation complete',
     nodeRequiredFirst: 'Node.js must be installed first before installing CLI tools',
     tryManually: 'Try manually',
-    refresh: 'Refresh',
     // Tool Updates
     checkUpdates: 'Check Updates',
     checkingUpdates: 'Checking...',
@@ -862,8 +861,6 @@ export const i18n = {
   },
 
   zh: {
-    chat: '对话',
-    channels: '渠道',
     chatDesc: '使用已配置的账户或 API Key 进行指定源对话。',
     newChat: '新建对话',
     chatMode: '模式',
@@ -1451,6 +1448,7 @@ export const i18n = {
     resetDefaults: '重置',
     testMapping: '测试映射：',
     testMappingPlaceholder: '例如 gpt-5.4-mini',
+    modelMappingCustomPlaceholder: '模型或部署名',
     modelMappingReset: '模型映射已重置为默认值',
     updateFailed: '更新失败',
     noProvidersConfigured: '当前还没有检测到可映射的供应商来源。请先添加 API 密钥或账户来源，再配置模型映射。',
@@ -1659,7 +1657,6 @@ export const i18n = {
     allToolsInstalled: '所有工具安装完成',
     nodeRequiredFirst: '需要先安装 Node.js 才能安装 CLI 工具',
     tryManually: '请手动尝试',
-    refresh: '刷新',
     checkUpdates: '检查更新',
     checkingUpdates: '检查中...',
     updateAvailable: '有新版本',

@@ -697,13 +697,17 @@
                                                 </td>
                                                 <template x-for="provider in modelMappingProviders" :key="provider + '-' + tier">
                                                     <td class="py-2 px-2">
-                                                        <select class="select select-xs bg-space-800 border-space-border/30 text-white w-full max-w-[180px] font-mono text-xs"
+                                                        <input class="input input-xs bg-space-800 border-space-border/30 text-white w-full max-w-[180px] font-mono text-xs"
                                                             :value="modelMappingData.providers[provider]?.[tier] || ''"
-                                                            @change="updateModelMapping(provider, tier, $event.target.value)">
-                                                            <template x-for="m in (modelMappingData.providerModels[provider] || [])" :key="m">
-                                                                <option :value="m" x-text="m" :selected="m === modelMappingData.providers[provider]?.[tier]"></option>
+                                                            :list="'model-mapping-options-' + provider + '-' + tier"
+                                                            @change="updateModelMapping(provider, tier, $event.target.value)"
+                                                            @keydown.enter.prevent="updateModelMapping(provider, tier, $event.target.value)"
+                                                            :placeholder="t('modelMappingCustomPlaceholder')">
+                                                        <datalist :id="'model-mapping-options-' + provider + '-' + tier">
+                                                            <template x-for="m in providerModelsForType(provider, modelMappingData.providers[provider]?.[tier] || '')" :key="m">
+                                                                <option :value="m"></option>
                                                             </template>
-                                                        </select>
+                                                        </datalist>
                                                     </td>
                                                 </template>
                                             </tr>
