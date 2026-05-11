@@ -7,6 +7,7 @@ import { AGENT_SESSION_STATUS } from '../agent-runtime/models.js';
 import { buildSupervisorBrief } from './supervisor-brief.js';
 import { AssistantMemoryService } from '../assistant-core/memory-service.js';
 import { AssistantPolicyService } from '../assistant-core/policy-service.js';
+import { getAssistantControlMode } from '../assistant-core/assistant-state.js';
 import supervisorTaskStore from './supervisor-task-store.js';
 import taskExecutionService, { TaskExecutionService } from './task-execution-service.js';
 import { listSupervisorTaskRecords } from './supervisor-task-memory.js';
@@ -760,7 +761,7 @@ export class AgentOrchestratorMessageService {
     const parsed = parseLeadingCommand(text);
     const assistantMode = String(
       metadata?.assistantMode
-      || conversation?.metadata?.assistantCore?.mode
+      || getAssistantControlMode(conversation)
       || ''
     ).trim().toLowerCase() === 'assistant';
     const taskRoute = selectTaskRoute(conversation, {

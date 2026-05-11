@@ -10,10 +10,22 @@ export const CONVERSATION_ASSISTANT_CONTROL_MODE = Object.freeze({
   ASSISTANT: 'assistant'
 });
 
+export const CONVERSATION_DELIVERY_OWNERSHIP = Object.freeze({
+  ASSISTANT: 'assistant-owned',
+  RUNTIME: 'runtime-owned'
+});
+
 export const CHANNEL_DELIVERY_STATUS = Object.freeze({
   SENT: 'sent',
-  FAILED: 'failed'
+  FAILED: 'failed',
+  SUPPRESSED: 'suppressed'
 });
+
+export function resolveDeliveryOwnership(controlMode) {
+  return String(controlMode || '').trim() === CONVERSATION_ASSISTANT_CONTROL_MODE.ASSISTANT
+    ? CONVERSATION_DELIVERY_OWNERSHIP.ASSISTANT
+    : CONVERSATION_DELIVERY_OWNERSHIP.RUNTIME;
+}
 
 export const CHANNEL_PAIRING_STATUS = Object.freeze({
   PENDING: 'pending',
@@ -55,6 +67,8 @@ export function createChannelConversation({
     metadata: {
       assistantCore: {
         mode: CONVERSATION_ASSISTANT_CONTROL_MODE.DIRECT_RUNTIME,
+        controlMode: CONVERSATION_ASSISTANT_CONTROL_MODE.DIRECT_RUNTIME,
+        deliveryOwnership: resolveDeliveryOwnership(CONVERSATION_ASSISTANT_CONTROL_MODE.DIRECT_RUNTIME),
         assistantSessionId: null,
         lastRunId: null,
         updatedAt: now

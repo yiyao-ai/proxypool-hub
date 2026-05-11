@@ -2038,6 +2038,145 @@ test('AgentChannelRouter keeps aggregated assistant background results when mult
   assert.ok(deliveries.some((entry) => String(entry.payload?.text || '').includes('Claude Code')));
 });
 
+test('assistant mode suppresses direct runtime completion delivery while preserving conversation state', async () => {
+  const runtimeSessionManager = createRuntimeManager();
+  const conversationStore = new AgentChannelConversationStore({
+    configDir: createTempDir('cligate-agent-channels-assistant-suppress-conv-')
+  });
+  const deliveryStore = new AgentChannelDeliveryStore({
+    configDir: createTempDir('cligate-agent-channels-assistant-suppress-delivery-')
+  });
+  const pairingStore = new AgentChannelPairingStore({
+    configDir: createTempDir('cligate-agent-channels-assistant-suppress-pairing-')
+  });
+  const router = new AgentChannelRouter({
+    conversationStore,
+    deliveryStore,
+    pairingStore,
+    messageService: new AgentOrchestratorMessageService({ runtimeSessionManager })
+  });
+  const sent = [];
+  const dispatcher = new AgentChannelOutboundDispatcher({
+    runtimeSessionManager,
+    conversationStore,
+    deliveryStore,
+    registry: {
+      get() {
+        return {
+          async sendMessage({ text }) {
+            sent.push(text);
+            return { messageId: `assistant_mode_${sent.length}` };
+          }
+        };
+      }
+    }
+  });
+
+  await router.routeInboundMessage({
+    channel: 'telegram',
+    accountId: 'default',
+    externalConversationId: 'assistant-suppress-chat-1',
+    externalUserId: 'user-1',
+    externalUserName: 'tester',
+    externalMessageId: 'msg-enter-suppress',
+    text: '/cligate',
+    messageType: 'text'
+  });
+
+  const started = await router.routeInboundMessage({
+    channel: 'telegram',
+    accountId: 'default',
+    externalConversationId: 'assistant-suppress-chat-1',
+    externalUserId: 'user-1',
+    externalUserName: 'tester',
+    externalMessageId: 'msg-start-suppress',
+    text: '/cx inspect repo',
+    messageType: 'text'
+  });
+
+  await dispatcher.handleRuntimeEvent({
+    sessionId: started.session.id,
+    seq: 1001,
+    type: AGENT_EVENT_TYPE.COMPLETED,
+    ts: new Date().toISOString(),
+    payload: {
+      result: 'assistant-owned completion should stay internal',
+      summary: 'finished'
+    }
+  });
+
+  assert.equal(sent.length, 0);
+  const deliveries = deliveryStore.listBySession(started.session.id, { limit: 20 });
+  assert.ok(deliveries.some((entry) => entry.status === 'suppressed'));
+  const updatedConversation = conversationStore.get(started.conversation.id);
+  assert.equal(updatedConversation.metadata?.assistantCore?.deliveryOwnership, 'assistant-owned');
+  assert.equal(updatedConversation.metadata?.supervisor?.brief?.status, 'completed');
+});
+
+test('direct-runtime mode continues sending runtime completions directly', async () => {
+  const runtimeSessionManager = createRuntimeManager();
+  const conversationStore = new AgentChannelConversationStore({
+    configDir: createTempDir('cligate-agent-channels-direct-runtime-conv-')
+  });
+  const deliveryStore = new AgentChannelDeliveryStore({
+    configDir: createTempDir('cligate-agent-channels-direct-runtime-delivery-')
+  });
+  const pairingStore = new AgentChannelPairingStore({
+    configDir: createTempDir('cligate-agent-channels-direct-runtime-pairing-')
+  });
+  const router = new AgentChannelRouter({
+    conversationStore,
+    deliveryStore,
+    pairingStore,
+    messageService: new AgentOrchestratorMessageService({ runtimeSessionManager })
+  });
+  const sent = [];
+  const dispatcher = new AgentChannelOutboundDispatcher({
+    runtimeSessionManager,
+    conversationStore,
+    deliveryStore,
+    registry: {
+      get() {
+        return {
+          async sendMessage({ text }) {
+            sent.push(text);
+            return { messageId: `direct_mode_${sent.length}` };
+          }
+        };
+      }
+    }
+  });
+
+  const started = await router.routeInboundMessage({
+    channel: 'telegram',
+    accountId: 'default',
+    externalConversationId: 'direct-runtime-chat-1',
+    externalUserId: 'user-1',
+    externalUserName: 'tester',
+    externalMessageId: 'msg-start-direct-runtime',
+    text: '/cx inspect repo',
+    messageType: 'text'
+  });
+
+  await dispatcher.handleRuntimeEvent({
+    sessionId: started.session.id,
+    seq: 1002,
+    type: AGENT_EVENT_TYPE.COMPLETED,
+    ts: new Date().toISOString(),
+    payload: {
+      result: 'runtime-owned completion should be delivered',
+      summary: 'finished'
+    }
+  });
+
+  assert.equal(sent.length, 1);
+  assert.equal(sent[0], 'runtime-owned completion should be delivered');
+  const deliveries = deliveryStore.listBySession(started.session.id, { limit: 20 });
+  assert.ok(deliveries.some((entry) => entry.status === 'sent'));
+  const updatedConversation = conversationStore.get(started.conversation.id);
+  assert.equal(updatedConversation.metadata?.assistantCore?.deliveryOwnership, 'runtime-owned');
+});
+
 test('AgentOrchestratorMessageService starts the default remembered provider for return phrasing without special interception', async () => {
   const runtimeSessionManager = createHybridRuntimeManager();
   const service = new AgentOrchestratorMessageService({ runtimeSessionManager });

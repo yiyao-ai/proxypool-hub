@@ -8,6 +8,14 @@ function formatJson(value) {
   return JSON.stringify(value || {}, null, 2);
 }
 
+function getAssistantControlMode(conversation = null) {
+  return String(
+    conversation?.metadata?.assistantCore?.controlMode
+    || conversation?.metadata?.assistantCore?.mode
+    || 'direct-runtime'
+  ).trim() || 'direct-runtime';
+}
+
 function summarizePendingApprovals(conversationContext = null) {
   const activeRuntime = conversationContext?.activeRuntime || null;
   const pendingApprovals = Array.isArray(conversationContext?.pendingApprovals)
@@ -379,7 +387,7 @@ function buildContextBlock({
   return [
     '<assistant_context>',
     `<conversation_id>${conversation?.id || ''}</conversation_id>`,
-    `<assistant_mode>${conversation?.metadata?.assistantCore?.mode || 'direct-runtime'}</assistant_mode>`,
+    `<assistant_mode>${getAssistantControlMode(conversation)}</assistant_mode>`,
     `<default_runtime_provider>${defaultRuntimeProvider || 'codex'}</default_runtime_provider>`,
     `<workspace>${truncate(cwd || conversation?.metadata?.workspaceId || '', 200)}</workspace>`,
     `<runtime_model>${truncate(model || '', 120)}</runtime_model>`,

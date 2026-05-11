@@ -8,6 +8,8 @@ import agentOrchestratorMessageService from '../agent-orchestrator/message-servi
 import assistantTaskViewService from './task-view-service.js';
 import AssistantDialogueService from '../assistant-agent/dialogue-service.js';
 import { CHANNEL_CONVERSATION_MODE } from '../agent-channels/models.js';
+import { buildAssistantCoreDeliveryState } from '../agent-channels/conversation-delivery-arbiter.js';
+import { getAssistantControlMode } from './assistant-state.js';
 import { buildSupervisorBrief } from '../agent-orchestrator/supervisor-brief.js';
 import { syncTaskFromRuntimeResult } from '../agent-core/task-service.js';
 import agentTaskStore from '../agent-core/task-store.js';
@@ -49,11 +51,10 @@ function parseModeCommand(text) {
 }
 
 function buildAssistantMetadata(current = {}, patch = {}) {
-  return {
-    ...current,
+  return buildAssistantCoreDeliveryState(current, {
     ...patch,
     updatedAt: nowIso()
-  };
+  });
 }
 
 function buildFallbackMessage(reason, text) {
@@ -304,7 +305,7 @@ export class AssistantModeService {
   }
 
   isAssistantModeActive(conversation) {
-    return this.getConversationAssistantState(conversation).mode === ASSISTANT_CONTROL_MODE.ASSISTANT;
+    return getAssistantControlMode(conversation) === ASSISTANT_CONTROL_MODE.ASSISTANT;
   }
 
   patchConversation(conversation, patch = {}) {

@@ -6,6 +6,7 @@ import assistantMemoryService from './memory-service.js';
 import assistantPolicyService from './policy-service.js';
 import assistantWorkspaceStore from './workspace-store.js';
 import assistantClarificationStore from './clarification-store.js';
+import { getAssistantControlMode } from './assistant-state.js';
 import { resolveWorkspaceScopeRef, buildWorkspaceMetadata } from './scope-resolver.js';
 import { buildTrackedSupervisorSessionIds, buildTrackedSupervisorTaskIds } from '../agent-orchestrator/supervisor-task-memory.js';
 import supervisorTaskStore from '../agent-orchestrator/supervisor-task-store.js';
@@ -82,7 +83,7 @@ function summarizeConversation(conversation = {}) {
     activeTaskId: conversation?.metadata?.supervisor?.taskMemory?.activeTaskId || brief.taskId || null,
     trackedRuntimeSessionIds,
     trackedTaskIds,
-    assistantMode: assistantState.mode || 'direct-runtime',
+    assistantMode: getAssistantControlMode(conversation),
     assistantSessionId: assistantState.assistantSessionId || null,
     assistantLastRunId: assistantState.lastRunId || null,
     runtimeStatus: brief.status || '',

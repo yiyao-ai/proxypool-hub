@@ -3,6 +3,7 @@ import agentRuntimeSessionManager from '../agent-runtime/session-manager.js';
 import agentTaskStore from '../agent-core/task-store.js';
 import agentChannelDeliveryStore from '../agent-channels/delivery-store.js';
 import assistantRunStore from './run-store.js';
+import { getAssistantControlMode } from './assistant-state.js';
 import { buildTrackedSupervisorSessionIds, buildTrackedSupervisorTaskIds } from '../agent-orchestrator/supervisor-task-memory.js';
 import supervisorTaskStore from '../agent-orchestrator/supervisor-task-store.js';
 
@@ -26,7 +27,7 @@ function summarizeConversation(conversation = null) {
     title: conversation.title || '',
     activeRuntimeSessionId: conversation.activeRuntimeSessionId || null,
     activeTaskId: conversation?.metadata?.supervisor?.taskMemory?.activeTaskId || brief.taskId || null,
-    assistantMode: assistantState.mode || 'direct-runtime',
+    assistantMode: getAssistantControlMode(conversation),
     assistantSessionId: assistantState.assistantSessionId || null,
     assistantLastRunId: assistantState.lastRunId || null,
     runtimeStatus: brief.status || '',

@@ -13,6 +13,12 @@ import { AssistantTaskViewService } from '../assistant-core/task-view-service.js
 import agentRuntimeSessionManager from '../agent-runtime/session-manager.js';
 import agentChannelRegistry from './registry.js';
 import assistantRunStore from '../assistant-core/run-store.js';
+import { getAssistantControlMode } from '../assistant-core/assistant-state.js';
+import {
+  arbitrateConversationDelivery,
+  buildAssistantCoreDeliveryState
+} from './conversation-delivery-arbiter.js';
+import agentChannelDeliverySender, { AgentChannelDeliverySender } from './delivery-sender.js';
 
 function buildInboundKey(message) {
   return [
@@ -32,7 +38,8 @@ export class AgentChannelRouter {
     registry = agentChannelRegistry,
     messageService = agentOrchestratorMessageService,
     taskStore = agentTaskStore,
-    assistantModeService = null
+    assistantModeService = null,
+    deliverySender = agentChannelDeliverySender
   } = {}) {
     this.conversationStore = conversationStore;
     this.deliveryStore = deliveryStore;
@@ -40,6 +47,14 @@ export class AgentChannelRouter {
     this.registry = registry;
     this.messageService = messageService;
     this.taskStore = taskStore;
+    this.deliverySender = deliverySender instanceof AgentChannelDeliverySender
+      ? deliverySender
+      : new AgentChannelDeliverySender({
+          registry: this.registry,
+          deliveryStore: this.deliveryStore
+        });
+    this.deliverySender.setRegistry?.(this.registry);
+    this.deliverySender.setDeliveryStore?.(this.deliveryStore);
     this.supervisorTaskStore = this.messageService?.supervisorTaskStore;
     this.assistantModeService = assistantModeService || new AssistantModeService({
       conversationStore: this.conversationStore,
@@ -80,6 +95,16 @@ export class AgentChannelRouter {
         ? `${message.externalUserName} / ${message.channel}`
         : `${message.externalUserId} / ${message.channel}`,
       metadata: {
+        assistantCore: buildAssistantCoreDeliveryState(
+          this.conversationStore.findByExternal?.(
+            message.channel,
+            message.accountId,
+            message.externalConversationId,
+            message.externalUserId,
+            message.externalThreadId
+          )?.metadata?.assistantCore || {},
+          {}
+        ),
         lastMessageType: message.messageType || 'text',
         channelContext: {
           ...((message.metadata && typeof message.metadata === 'object') ? message.metadata : {})
@@ -118,7 +143,6 @@ export class AgentChannelRouter {
       model: options.model,
       executionMode: 'async',
       onBackgroundResult: async (backgroundResult) => {
-        const provider = this.registry.get(message.channel, message.accountId);
         const outboundText = String(backgroundResult?.message || '').trim();
         const relatedRuntimeSessionIds = Array.isArray(backgroundResult?.assistantRun?.relatedRuntimeSessionIds)
           ? backgroundResult.assistantRun.relatedRuntimeSessionIds.filter(Boolean)
@@ -158,26 +182,47 @@ export class AgentChannelRouter {
             }
           });
         }
-        if (!provider?.sendMessage || !outboundText) {
+        if (!outboundText) {
           return;
         }
-
-        const result = await provider.sendMessage({
-          conversation: backgroundResult.conversation || this.conversationStore.get(conversation.id),
-          text: outboundText
+        const latestConversation = backgroundResult.conversation || this.conversationStore.get(conversation.id);
+        const decision = arbitrateConversationDelivery({
+          conversation: latestConversation,
+          source: {
+            type: 'assistant_run_result'
+          },
+          payload: {
+            assistantRun: backgroundResult?.assistantRun || null
+          }
         });
-
-        this.deliveryStore.saveOutbound({
+        if (decision.action === 'send_now') {
+          await this.deliverySender.send({
+            conversation: latestConversation,
+            channel: message.channel,
+            sessionId: primaryRuntimeSessionId,
+            payload: {
+              text: outboundText,
+              assistantRunId: backgroundResult?.assistantRun?.id || '',
+              kind: 'assistant-run-result',
+              sourceType: 'assistant_run_result'
+            },
+            message: {
+              text: outboundText
+            }
+          });
+          return;
+        }
+        this.deliverySender.suppress({
+          conversation: latestConversation,
           channel: message.channel,
-          conversationId: conversation.id,
           sessionId: primaryRuntimeSessionId,
-          externalMessageId: result?.messageId || '',
-          status: 'sent',
           payload: {
             text: outboundText,
             assistantRunId: backgroundResult?.assistantRun?.id || '',
-            kind: 'assistant-run-result'
-          }
+            kind: 'assistant-run-result',
+            sourceType: 'assistant_run_result'
+          },
+          reason: decision.reason
         });
       }
     });
@@ -211,7 +256,7 @@ export class AgentChannelRouter {
       cwd: options.cwd,
       model: options.model,
       metadata: {
-        assistantMode: conversation?.metadata?.assistantCore?.mode || 'direct-runtime',
+        assistantMode: getAssistantControlMode(conversation),
         source: {
           kind: 'channel',
           channel: message.channel,

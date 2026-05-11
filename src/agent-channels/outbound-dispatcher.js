@@ -9,6 +9,12 @@ import agentChannelConversationStore from './conversation-store.js';
 import agentChannelDeliveryStore from './delivery-store.js';
 import { formatAgentRuntimeEventForChannel } from './formatter.js';
 import agentChannelRegistry from './registry.js';
+import { AssistantEventIngestService } from '../assistant-core/event-ingest-service.js';
+import { AssistantObservationService } from '../assistant-core/observation-service.js';
+import {
+  arbitrateConversationDelivery
+} from './conversation-delivery-arbiter.js';
+import agentChannelDeliverySender, { AgentChannelDeliverySender } from './delivery-sender.js';
 
 const NOTIFIABLE_EVENT_TYPES = new Set([
   AGENT_EVENT_TYPE.STARTED,
@@ -25,7 +31,9 @@ export class AgentChannelOutboundDispatcher {
     deliveryStore = agentChannelDeliveryStore,
     registry = agentChannelRegistry,
     taskStore = agentTaskStore,
-    supervisorTaskStore: supervisorTaskStoreArg = supervisorTaskStore
+    supervisorTaskStore: supervisorTaskStoreArg = supervisorTaskStore,
+    deliverySender = agentChannelDeliverySender,
+    eventIngestService = null
   } = {}) {
     this.runtimeSessionManager = runtimeSessionManager;
     this.conversationStore = conversationStore;
@@ -33,6 +41,24 @@ export class AgentChannelOutboundDispatcher {
     this.registry = registry;
     this.taskStore = taskStore;
     this.supervisorTaskStore = supervisorTaskStoreArg;
+    this.eventIngestService = eventIngestService instanceof AssistantEventIngestService
+      ? eventIngestService
+      : new AssistantEventIngestService({
+          observationService: new AssistantObservationService({
+            conversationStore: this.conversationStore,
+            runtimeSessionManager: this.runtimeSessionManager,
+            taskStore: this.taskStore,
+            deliveryStore: this.deliveryStore
+          })
+        });
+    this.deliverySender = deliverySender instanceof AgentChannelDeliverySender
+      ? deliverySender
+      : new AgentChannelDeliverySender({
+          registry: this.registry,
+          deliveryStore: this.deliveryStore
+        });
+    this.deliverySender.setRegistry?.(this.registry);
+    this.deliverySender.setDeliveryStore?.(this.deliveryStore);
     this.unsubscribe = null;
   }
 
@@ -76,38 +102,55 @@ export class AgentChannelOutboundDispatcher {
       if (!Array.isArray(conversation?.trackedRuntimeSessionIds) || !conversation.trackedRuntimeSessionIds.includes(event.sessionId)) {
         this.conversationStore.trackRuntimeSessions(conversation.id, [event.sessionId]);
       }
-      const provider = this.registry.get(conversation.channel, conversation.accountId);
-      if (!provider?.sendMessage) {
-        continue;
-      }
-
       const formatted = formatAgentRuntimeEventForChannel({ event, session });
-      if (!formatted?.text) {
-        continue;
-      }
-
       try {
-        const outboundText = formatted.fullText || formatted.text || '';
-        const result = await provider.sendMessage({
-          conversation,
-          text: outboundText,
-          buttons: formatted.buttons || [],
-          session,
-          event
-        });
-
-        this.deliveryStore.saveOutbound({
-          channel: conversation.channel,
-          conversationId: conversation.id,
-          sessionId: event.sessionId,
-          eventSeq: event.seq,
-          externalMessageId: result?.messageId || '',
-          status: 'sent',
+        const latestConversation = this.conversationStore.get(conversation.id) || conversation;
+        const decision = arbitrateConversationDelivery({
+          conversation: latestConversation,
+          source: {
+            type: 'runtime_event'
+          },
           payload: {
-            ...formatted,
-            fullText: outboundText
+            event,
+            session,
+            formatted
           }
         });
+        const basePayload = {
+          ...(formatted || {}),
+          sourceType: 'runtime_event',
+          eventType: event?.type || '',
+          result: event?.payload?.result || '',
+          summary: event?.payload?.summary || session?.summary || ''
+        };
+        if (formatted?.text && decision.action === 'send_now') {
+          await this.deliverySender.send({
+            conversation: latestConversation,
+            channel: latestConversation.channel,
+            sessionId: event.sessionId,
+            eventSeq: event.seq,
+            payload: {
+              ...basePayload
+            },
+            message: {
+              text: formatted.fullText || formatted.text || '',
+              buttons: formatted.buttons || [],
+              session,
+              event
+            }
+          });
+        } else {
+          this.deliverySender.suppress({
+            conversation: latestConversation,
+            channel: latestConversation.channel,
+            sessionId: event.sessionId,
+            eventSeq: event.seq,
+            payload: {
+              ...basePayload
+            },
+            reason: decision.reason
+          });
+        }
 
         if (event.type === AGENT_EVENT_TYPE.APPROVAL_REQUEST) {
           this.conversationStore.patch(conversation.id, {
@@ -158,6 +201,44 @@ export class AgentChannelOutboundDispatcher {
             }
           }
         });
+        const postPatchConversation = this.conversationStore.get(conversation.id) || latestConversation;
+        if (!formatted?.text && decision.action === 'send_now') {
+          this.deliverySender.suppress({
+            conversation: postPatchConversation,
+            channel: postPatchConversation.channel,
+            sessionId: event.sessionId,
+            eventSeq: event.seq,
+            payload: {
+              ...basePayload
+            },
+            reason: 'runtime_event_missing_formatted_text'
+          });
+        }
+        if (decision.action === 'forward_to_assistant') {
+          const assistantNotification = await this.eventIngestService?.ingestRuntimeEvent?.({
+            conversation: postPatchConversation,
+            session,
+            event
+          }) || null;
+          if (assistantNotification?.notified && assistantNotification.message) {
+            await this.deliverySender.send({
+              conversation: postPatchConversation,
+              channel: postPatchConversation.channel,
+              sessionId: event.sessionId,
+              eventSeq: event.seq,
+              payload: {
+                text: assistantNotification.message,
+                assistantRunId: assistantNotification?.assistantRun?.id || '',
+                kind: 'assistant-run-result',
+                sourceType: 'assistant_run_result',
+                eventType: event?.type || ''
+              },
+              message: {
+                text: assistantNotification.message
+              }
+            });
+          }
+        }
       } catch (error) {
         this.deliveryStore.saveOutbound({
           channel: conversation.channel,
@@ -167,8 +248,8 @@ export class AgentChannelOutboundDispatcher {
           status: 'failed',
           error: error.message,
           payload: {
-            ...formatted,
-            fullText: outboundText
+            ...(formatted || {}),
+            fullText: formatted?.fullText || formatted?.text || ''
           }
         });
       }

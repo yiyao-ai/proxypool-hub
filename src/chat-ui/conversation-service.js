@@ -9,6 +9,7 @@ import assistantRunStore from '../assistant-core/run-store.js';
 import AssistantModeService from '../assistant-core/mode-service.js';
 import { AssistantObservationService } from '../assistant-core/observation-service.js';
 import { AssistantTaskViewService } from '../assistant-core/task-view-service.js';
+import { getAssistantControlMode } from '../assistant-core/assistant-state.js';
 import agentRuntimeSessionManager from '../agent-runtime/session-manager.js';
 import agentChannelDeliveryStore from '../agent-channels/delivery-store.js';
 
@@ -83,7 +84,7 @@ export class ChatUiConversationService {
       model,
       metadata: {
         ...(metadata || {}),
-        assistantMode: conversation?.metadata?.assistantCore?.mode || 'direct-runtime',
+        assistantMode: getAssistantControlMode(conversation),
         source: {
           kind: 'chat-ui',
           sessionId: String(sessionId || ''),

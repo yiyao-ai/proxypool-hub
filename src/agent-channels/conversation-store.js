@@ -3,6 +3,7 @@ import { join } from 'path';
 
 import { CONFIG_DIR } from '../account-manager.js';
 import { CHANNEL_CONVERSATION_MODE, createChannelConversation } from './models.js';
+import { buildAssistantCoreDeliveryState } from './conversation-delivery-arbiter.js';
 import { buildTrackedSupervisorTaskIds, normalizeSupervisorTaskMemory } from '../agent-orchestrator/supervisor-task-memory.js';
 
 function nowIso() {
@@ -36,6 +37,14 @@ function resolveConversationTaskBindings(conversation = {}) {
   return {
     activeTaskId,
     trackedTaskIds
+  };
+}
+
+function normalizeAssistantCoreMetadata(metadata = {}) {
+  const source = metadata && typeof metadata === 'object' ? metadata : {};
+  return {
+    ...source,
+    assistantCore: buildAssistantCoreDeliveryState(source.assistantCore || {}, {})
   };
 }
 
@@ -88,6 +97,7 @@ export class AgentChannelConversationStore {
     const taskBindings = resolveConversationTaskBindings(conversation);
     const updated = {
       ...conversation,
+      metadata: normalizeAssistantCoreMetadata(conversation.metadata || {}),
       trackedRuntimeSessionIds: normalizeTrackedRuntimeSessionIds([
         ...(Array.isArray(conversation?.trackedRuntimeSessionIds) ? conversation.trackedRuntimeSessionIds : []),
         conversation?.activeRuntimeSessionId || ''
@@ -144,10 +154,10 @@ export class AgentChannelConversationStore {
     );
     if (existing) {
       return this.patch(existing.id, {
-        metadata: {
+        metadata: normalizeAssistantCoreMetadata({
           ...(existing.metadata || {}),
           ...(metadata || {})
-        },
+        }),
         title: title || existing.title
       });
     }
