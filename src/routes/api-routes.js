@@ -79,6 +79,32 @@ import {
   handleGetAssistantTask
 } from './assistant-tasks-route.js';
 import {
+  handleGetAssistantPersonDashboard,
+  handleListAssistantProjects,
+  handleGetAssistantProject,
+  handleListAssistantProjectTasks,
+  handleCreateAssistantTask,
+  handlePatchAssistantTask,
+  handleReplaceAssistantTaskPlan,
+  handleMoveAssistantTask,
+  handlePromoteAssistantTaskToProject,
+  handleGetAssistantTaskDashboard,
+  handleListAssistantExecutions,
+  handleGetAssistantExecution,
+  handleCreateAssistantTaskExecution,
+  handleCreateAssistantExecutionHandoff,
+  handleSendAssistantExecutionInput,
+  handleRespawnAssistantExecution,
+  handleConsumeAssistantExecutionHandoff,
+  handleListAssistantEpisodes,
+  handleGetAssistantEpisode,
+  handleGetAssistantExecutionTranscript,
+  handleListAssistantScheduledTasks,
+  handleCreateAssistantScheduledTask,
+  handleUpdateAssistantAutonomy,
+  handleRunAssistantScheduledTask
+} from './assistant-entities-route.js';
+import {
   handleGetAssistantAgentStatus,
   handleTestAssistantBinding,
   handleGetAssistantBindingCatalog,
@@ -382,8 +408,32 @@ export function registerApiRoutes(app, { port }) {
   app.get('/api/assistant/runs', handleListAssistantRuns);
   app.get('/api/assistant/runs/:id', handleGetAssistantRun);
   app.post('/api/assistant/runs/:id/resume', handleResumeAssistantRun);
+  app.get('/api/assistant/persons/:id/dashboard', handleGetAssistantPersonDashboard);
+  app.get('/api/assistant/projects', handleListAssistantProjects);
+  app.get('/api/assistant/projects/:id', handleGetAssistantProject);
+  app.get('/api/assistant/projects/:id/tasks', handleListAssistantProjectTasks);
   app.get('/api/assistant/tasks', handleListAssistantTasks);
+  app.post('/api/assistant/tasks', handleCreateAssistantTask);
   app.get('/api/assistant/tasks/:id', handleGetAssistantTask);
+  app.patch('/api/assistant/tasks/:id', handlePatchAssistantTask);
+  app.post('/api/assistant/tasks/:id/plan:replace', handleReplaceAssistantTaskPlan);
+  app.post('/api/assistant/tasks/:id/promote-to-project', handlePromoteAssistantTaskToProject);
+  app.post('/api/assistant/tasks/:id/move', handleMoveAssistantTask);
+  app.get('/api/assistant/tasks/:id/dashboard', handleGetAssistantTaskDashboard);
+  app.get('/api/assistant/executions', handleListAssistantExecutions);
+  app.get('/api/assistant/executions/:id', handleGetAssistantExecution);
+  app.post('/api/assistant/tasks/:id/executions', handleCreateAssistantTaskExecution);
+  app.post('/api/assistant/executions/:id/input', handleSendAssistantExecutionInput);
+  app.post('/api/assistant/executions/:id/respawn', handleRespawnAssistantExecution);
+  app.post('/api/assistant/executions/:id/handoff', handleCreateAssistantExecutionHandoff);
+  app.post('/api/assistant/executions/:id/handoff/:handoffId/consume', handleConsumeAssistantExecutionHandoff);
+  app.get('/api/assistant/executions/:id/transcript', handleGetAssistantExecutionTranscript);
+  app.get('/api/assistant/scheduled-tasks', handleListAssistantScheduledTasks);
+  app.post('/api/assistant/scheduled-tasks', handleCreateAssistantScheduledTask);
+  app.post('/api/assistant/scheduled-tasks/:id/run', handleRunAssistantScheduledTask);
+  app.get('/api/assistant/episodes', handleListAssistantEpisodes);
+  app.get('/api/assistant/episodes/:id', handleGetAssistantEpisode);
+  app.post('/api/assistant/autonomy:update', handleUpdateAssistantAutonomy);
   app.get('/api/assistant/memory', handleGetAssistantMemory);
   app.get('/api/assistant/policies', handleGetAssistantPolicies);
   app.get('/api/assistant/agent-status', handleGetAssistantAgentStatus);

@@ -177,6 +177,13 @@
                                 <span class="sidebar-label" x-text="t('assistantTasks')"></span>
                             </button>
                             <button class="nav-item"
+                                :class="{'active': activeTab === 'assistantWorkbench'}" @click="setActiveTab('assistantWorkbench')" :title="sidebarCollapsed ? t('assistantWorkbench') : ''">
+                                <svg class="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 5h18M3 12h18M3 19h18M8 5v14m8-14v14" />
+                                </svg>
+                                <span class="sidebar-label" x-text="t('assistantWorkbench')"></span>
+                            </button>
+                            <button class="nav-item"
                                 :class="{'active': activeTab === 'conversationRecords'}" @click="setActiveTab('conversationRecords')" :title="sidebarCollapsed ? t('conversationRecords') : ''">
                                 <svg class="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6M7 4h10a2 2 0 012 2v12a2 2 0 01-2 2H7a2 2 0 01-2-2V6a2 2 0 012-2z" />
@@ -420,6 +427,8 @@
                     <div x-show="activeTab === 'conversationRecords'" x-transition class="view-container session-workspace-view" data-partial-view="conversationRecords"></div>
 
                     <div x-show="activeTab === 'assistantTasks'" x-transition class="view-container session-workspace-view" data-partial-view="assistantTasks"></div>
+
+                    <div x-show="activeTab === 'assistantWorkbench'" x-transition class="view-container session-workspace-view" data-partial-view="assistantWorkbench"></div>
 
                     <div x-show="activeTab === 'localModels'" x-transition class="view-container workspace-view" data-partial-view="localModels"></div>
 

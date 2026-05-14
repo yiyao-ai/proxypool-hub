@@ -31,21 +31,21 @@ function buildUserProfile(values = {}) {
 
 function detectSaveScope(text, scopeRefs = {}) {
   const source = normalizeText(text).toLowerCase();
-  if (!source) return { scope: 'conversation', scopeRef: scopeRefs.conversation || '' };
+  if (!source) return { scope: 'task', scopeRef: scopeRefs.task || '' };
 
   if (/(以后都|总是|所有对话|全局|global|always|for all chats)/i.test(source)) {
-    return { scope: 'global_user', scopeRef: scopeRefs.global_user || 'default-user' };
+    return { scope: 'person', scopeRef: scopeRefs.person || 'default-user' };
   }
 
   if (/(这个项目|当前项目|这个仓库|当前仓库|workspace|project|repo)/i.test(source)) {
-    return { scope: 'workspace', scopeRef: scopeRefs.workspace || '' };
+    return { scope: 'project', scopeRef: scopeRefs.project || '' };
   }
 
   if (/(这个会话|当前会话|本次会话|runtime session|this runtime)/i.test(source)) {
-    return { scope: 'runtime_session', scopeRef: scopeRefs.runtime_session || '' };
+    return { scope: 'execution', scopeRef: scopeRefs.execution || '' };
   }
 
-  return { scope: 'conversation', scopeRef: scopeRefs.conversation || '' };
+  return { scope: 'task', scopeRef: scopeRefs.task || '' };
 }
 
 export class AssistantMemoryService {
@@ -76,7 +76,7 @@ export class AssistantMemoryService {
       scope: normalizedScope,
       scopeRef: normalizedScopeRef
     });
-    if (normalizedScope !== 'runtime_session') {
+    if (normalizedScope !== 'execution') {
       return preferences;
     }
     const sessionEntries = this.listRuntimeSessionMemory({
@@ -85,7 +85,7 @@ export class AssistantMemoryService {
     return [
       ...preferences,
       ...sessionEntries.map((entry) => ({
-        scope: 'runtime_session',
+        scope: 'execution',
         scopeRef: normalizedScopeRef,
         key: entry.key,
         value: entry.value,
@@ -169,9 +169,12 @@ export class AssistantMemoryService {
       metadata: {
         sourceText: normalizeText(text),
         source: 'explicit_user',
-        workspaceRef: scopeRefs.workspace || '',
-        conversationId: scopeRefs.conversation || '',
-        runtimeSessionId: scopeRefs.runtime_session || ''
+        projectRef: scopeRefs.project || '',
+        taskId: scopeRefs.task || '',
+        executionId: scopeRefs.execution || '',
+        workspaceRef: scopeRefs.project || '',
+        conversationId: scopeRefs.task || '',
+        runtimeSessionId: scopeRefs.execution || ''
       }
     }));
   }
@@ -267,11 +270,19 @@ export class AssistantMemoryService {
       rawRequest: entry?.rawRequest || null
     })));
 
-    const rememberedPolicies = this.policyService?.listPolicies?.({
-      scope: 'runtime_session',
-      scopeRef: normalizedSessionId
-    }) || [];
-    pushRecord('authorization', 'authorization:remembered_policies', rememberedPolicies.map((entry) => ({
+    const rememberedPolicies = this.buildScopeCandidates({
+      runtimeSession,
+      metadata
+    }).flatMap((candidate) => this.policyService?.listPolicies?.({
+      scope: candidate.scope,
+      scopeRef: candidate.scopeRef
+    }) || []);
+    const uniquePolicies = rememberedPolicies.filter((entry, index, list) => {
+      const id = normalizeText(entry?.id);
+      if (!id) return false;
+      return list.findIndex((candidate) => normalizeText(candidate?.id) === id) === index;
+    });
+    pushRecord('authorization', 'authorization:remembered_policies', uniquePolicies.map((entry) => ({
       policyId: normalizeText(entry?.id),
       scope: normalizeText(entry?.scope),
       scopeRef: normalizeText(entry?.scopeRef),

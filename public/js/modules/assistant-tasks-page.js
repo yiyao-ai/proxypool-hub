@@ -116,7 +116,8 @@ export function createAssistantTasksPageModule() {
 
     assistantTaskStateLabel(task) {
       const state = String(task?.state || 'idle');
-      if (state === 'waiting_approval' || state === 'waiting_runtime') return this.t('agentRuntimeStatusWaitingApproval');
+      if (state === 'waiting_approval') return this.t('agentRuntimeStatusWaitingApproval');
+      if (state === 'waiting_runtime') return this.t('agentRuntimeStatusRunning');
       if (state === 'waiting_user') return this.t('agentRuntimeStatusWaitingUser');
       if (state === 'running' || state === 'starting') return this.t('agentRuntimeStatusRunning');
       if (state === 'completed' || state === 'ready') return this.t('agentRuntimeStatusReady');
@@ -126,8 +127,11 @@ export function createAssistantTasksPageModule() {
 
     assistantTaskStatePillClass(task) {
       const state = String(task?.state || 'idle');
-      if (state === 'waiting_approval' || state === 'waiting_runtime') {
+      if (state === 'waiting_approval') {
         return 'border-yellow-500/30 bg-yellow-500/10 text-yellow-400';
+      }
+      if (state === 'waiting_runtime') {
+        return 'border-neon-green/30 bg-neon-green/10 text-neon-green';
       }
       if (state === 'waiting_user') {
         return 'border-blue-500/30 bg-blue-500/10 text-blue-400';

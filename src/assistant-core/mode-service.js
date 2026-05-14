@@ -7,7 +7,6 @@ import AssistantRunner from './runner.js';
 import agentOrchestratorMessageService from '../agent-orchestrator/message-service.js';
 import assistantTaskViewService from './task-view-service.js';
 import AssistantDialogueService from '../assistant-agent/dialogue-service.js';
-import { CHANNEL_CONVERSATION_MODE } from '../agent-channels/models.js';
 import { buildAssistantCoreDeliveryState } from '../agent-channels/conversation-delivery-arbiter.js';
 import { getAssistantControlMode } from './assistant-state.js';
 import { buildSupervisorBrief } from '../agent-orchestrator/supervisor-brief.js';
@@ -17,9 +16,11 @@ import { finalizeSupervisorTaskMemory, normalizeSupervisorTaskMemory, upsertSupe
 import { AGENT_SESSION_STATUS } from '../agent-runtime/models.js';
 import supervisorTaskStore from '../agent-orchestrator/supervisor-task-store.js';
 import {
-  syncSupervisorTaskForRuntimeStart,
   syncSupervisorTaskForRuntimeTerminal
 } from '../agent-orchestrator/supervisor-task-sync.js';
+import { buildPendingRuntimeMarkerPatch } from './pending-runtime-state.js';
+import { bindConversationToRuntimeStart } from './conversation-runtime-binding.js';
+import assistantPendingActionStore from './pending-action-store.js';
 
 // CliGate Assistant mainline entry.
 // /cligate, assistant runs, async closure, and observability should converge on assistant-core + assistant-agent.
@@ -54,6 +55,39 @@ function buildAssistantMetadata(current = {}, patch = {}) {
   return buildAssistantCoreDeliveryState(current, {
     ...patch,
     updatedAt: nowIso()
+  });
+}
+
+function buildAssistantPendingAction(executed = {}, conversation = null, persistedRun = null, runText = '') {
+  const block = (Array.isArray(executed?.toolResults) ? executed.toolResults : []).find((entry) => (
+    entry?.result?.kind === 'policy_block'
+    && entry?.result?.requiresConfirmation === true
+  )) || null;
+  if (!block?.toolName) {
+    return null;
+  }
+
+  const requestedPath = normalizeText(
+    block?.input?.cwd
+      || block?.input?.workspaceRef
+      || block?.input?.workspaceId
+  );
+  const summary = normalizeText(block?.summary)
+    || (requestedPath ? `Target scope: ${requestedPath}` : '');
+
+  return assistantPendingActionStore.create({
+    conversationId: conversation?.id || '',
+    assistantRunId: persistedRun?.id || '',
+    toolName: block.toolName,
+    input: block.input || {},
+    title: /[\u3400-\u9fff]/.test(String(runText || ''))
+      ? '需要确认后继续执行'
+      : 'Confirmation required before continuing',
+    summary,
+    metadata: {
+      reason: block?.result?.reason || '',
+      requestedPath
+    }
   });
 }
 
@@ -213,32 +247,14 @@ function sleep(ms) {
 }
 
 function syncPendingRuntimeMarkers(conversationStore, messageService, conversation = null) {
-  const sessionId = String(conversation?.activeRuntimeSessionId || '').trim();
-  if (!conversation?.id || !sessionId) {
+  if (!conversation?.id) {
     return conversation;
   }
 
-  const patch = {};
-  const pendingApprovalId = String(conversation?.lastPendingApprovalId || '').trim();
-  if (pendingApprovalId) {
-    const stillPending = messageService.listPendingApprovals(sessionId)
-      .some((entry) => String(entry?.approvalId || '').trim() === pendingApprovalId);
-    if (!stillPending) {
-      patch.lastPendingApprovalId = null;
-    }
-  }
-
-  const pendingQuestionId = String(conversation?.lastPendingQuestionId || '').trim();
-  if (pendingQuestionId) {
-    const stillPending = messageService.listPendingQuestions(sessionId)
-      .some((entry) => (
-        String(entry?.questionId || '').trim() === pendingQuestionId
-        && String(entry?.status || '').trim() === 'pending'
-      ));
-    if (!stillPending) {
-      patch.lastPendingQuestionId = null;
-    }
-  }
+  const patch = buildPendingRuntimeMarkerPatch(
+    conversation,
+    messageService?.runtimeSessionManager || null
+  );
 
   const pendingClarificationId = String(conversation?.lastPendingClarificationId || '').trim();
   if (pendingClarificationId) {
@@ -335,6 +351,10 @@ export class AssistantModeService {
 
   async finalizeRunSuccess({ conversation, assistantSession, runText, executed, assistantModeActive } = {}) {
     const persistedRun = this.assistantRunStore.save(executed.run);
+    const pendingAction = persistedRun.status === ASSISTANT_RUN_STATUS.WAITING_USER
+      && persistedRun?.metadata?.stopPolicy?.reason === 'assistant_confirmation_required'
+      ? buildAssistantPendingAction(executed, conversation, persistedRun, runText)
+      : null;
     this.assistantSessionStore.save({
       ...assistantSession,
       lastRunId: persistedRun.id,
@@ -349,7 +369,8 @@ export class AssistantModeService {
         mode: assistantModeActive ? ASSISTANT_CONTROL_MODE.ASSISTANT : ASSISTANT_CONTROL_MODE.DIRECT_RUNTIME,
         assistantSessionId: assistantSession.id,
         lastRunId: persistedRun.id,
-        lastRunSummary: executed.reply.summary
+        lastRunSummary: executed.reply.summary,
+        pendingActionConfirmToken: pendingAction?.confirmToken || null
       })
     };
     let nextConversation = this.patchConversation(conversation, {
@@ -387,7 +408,10 @@ export class AssistantModeService {
           userInput: runText,
           store: this.taskStore
         });
-        const synced = syncSupervisorTaskForRuntimeStart({
+        nextConversation = bindConversationToRuntimeStart({
+          conversationStore: this.conversationStore,
+          messageService: this.messageService,
+          supervisorTaskStore: this.supervisorTaskStore,
           conversation: nextConversation,
           session: runtime,
           supervisorContext: sourceContext
@@ -401,56 +425,12 @@ export class AssistantModeService {
                 title: runtime.title || taskRecord?.title || runText || '',
                 summary: String(executed.reply.summary || runtime.summary || '').trim()
               },
-          taskMemory: nextConversation?.metadata?.supervisor?.taskMemory || conversation.metadata?.supervisor?.taskMemory || null,
-          pendingApproval,
-          pendingQuestion,
           userInput: runText,
           originKind: 'assistant',
           activate: runtime.id === delegatedRuntime.id,
-          store: this.supervisorTaskStore
-        });
-        const taskMemory = synced.taskMemory;
-        nextConversation = this.conversationStore.patch(conversation.id, {
-          activeTaskId: taskMemory?.activeTaskId || nextConversation?.activeTaskId || conversation?.activeTaskId || null,
-          trackedTaskIds: taskMemory?.taskOrder || nextConversation?.trackedTaskIds || conversation?.trackedTaskIds || [],
-          metadata: {
-            ...(nextConversation?.metadata || conversation?.metadata || {}),
-            assistantCore: nextAssistantMetadata.assistantCore,
-            supervisor: {
-              ...(((nextConversation?.metadata || conversation?.metadata || {})?.supervisor
-                && typeof ((nextConversation?.metadata || conversation?.metadata || {})?.supervisor) === 'object')
-                ? ((nextConversation?.metadata || conversation?.metadata || {})?.supervisor)
-                : {}),
-              taskMemory,
-              brief: synced.brief
-            }
-          }
-        });
+          assistantMetadata: nextAssistantMetadata.assistantCore
+        }) || nextConversation;
       }
-
-      nextConversation = this.conversationStore.bindRuntimeSession(conversation.id, delegatedRuntime.id, {
-        mode: CHANNEL_CONVERSATION_MODE.AGENT_RUNTIME,
-        lastPendingApprovalId: this.messageService.listPendingApprovals(delegatedRuntime.id)[0]?.approvalId || null,
-        lastPendingQuestionId: this.messageService.listPendingQuestions(delegatedRuntime.id)
-          .find((entry) => entry.status === 'pending')?.questionId || null,
-        activeTaskId: nextConversation?.metadata?.supervisor?.taskMemory?.activeTaskId || nextConversation?.activeTaskId || conversation?.activeTaskId || null,
-        trackedTaskIds: nextConversation?.metadata?.supervisor?.taskMemory?.taskOrder || nextConversation?.trackedTaskIds || conversation?.trackedTaskIds || [],
-        metadata: {
-          ...(nextConversation?.metadata || conversation?.metadata || {}),
-          assistantCore: nextAssistantMetadata.assistantCore,
-          supervisor: {
-            ...(((nextConversation?.metadata || conversation?.metadata || {})?.supervisor
-              && typeof ((nextConversation?.metadata || conversation?.metadata || {})?.supervisor) === 'object')
-              ? ((nextConversation?.metadata || conversation?.metadata || {})?.supervisor)
-                : {}),
-            taskMemory: nextConversation?.metadata?.supervisor?.taskMemory || null,
-            brief: buildSupervisorBrief({
-              taskMemory: nextConversation?.metadata?.supervisor?.taskMemory || null,
-              session: delegatedRuntime
-            })
-          }
-        }
-      });
     }
 
     nextConversation = syncPendingRuntimeMarkers(
@@ -471,7 +451,8 @@ export class AssistantModeService {
       assistantRun: persistedRun,
       observability: buildAssistantRunObservability(persistedRun),
       toolResults: executed.toolResults,
-      conversation: nextConversation
+      conversation: nextConversation,
+      pendingAction
     };
   }
 
@@ -492,6 +473,16 @@ export class AssistantModeService {
         : null;
     };
 
+    // Wait until codex/claude-code sessions reach a terminal status. The
+    // previous 500ms hard timeout was far too short for real runs (codex
+    // commonly takes 10–30s), which caused the aggregator to bail with
+    // status="running" and empty result/summary, then a follow-up user
+    // message hit "session is already running" because turnHandles were
+    // still in use. We now wait up to a configurable ceiling and only bail
+    // as a last-resort safety net.
+    const aggregationTimeoutMs = Number.isFinite(Number(this.aggregationTimeoutMs))
+      ? Number(this.aggregationTimeoutMs)
+      : 10 * 60 * 1000; // 10 minutes
     const immediate = sessionsReady();
     const sessions = immediate || await new Promise((resolve) => {
       let settled = false;
@@ -510,18 +501,19 @@ export class AssistantModeService {
       }));
       const pollTimer = setInterval(() => {
         finish(sessionsReady());
-      }, 25);
-      const timeoutTimer = setTimeout(async () => {
-        for (let attempt = 0; attempt < 10; attempt += 1) {
-          const terminal = sessionsReady();
-          if (terminal) {
-            finish(terminal);
-            return;
-          }
-          await sleep(25);
-        }
-        finish(readSessions());
       }, 250);
+      const timeoutTimer = setTimeout(() => {
+        // Last-resort bail — emit whatever we have. Any non-terminal session
+        // here represents a stuck runtime and the synthesizer will know to
+        // mark it as such instead of hallucinating a reply.
+        if (settled) return;
+        settled = true;
+        for (const unsubscribe of unsubscribers) {
+          unsubscribe();
+        }
+        clearInterval(pollTimer);
+        resolve(readSessions());
+      }, aggregationTimeoutMs);
     });
 
     const latestConversation = this.conversationStore.get(conversationId);
@@ -591,17 +583,36 @@ export class AssistantModeService {
     });
 
     const failed = sessions.some((session) => session.status === AGENT_SESSION_STATUS.FAILED || session.status === AGENT_SESSION_STATUS.CANCELLED);
+    const aggregatedFallback = buildAggregatedRuntimeMessage({ sessions: runtimeSummaries, runText });
+    // Only invoke the LLM rewrite when sessions are truly terminal AND have
+    // useful content — otherwise we'd be asking the LLM to "summarize"
+    // empty output, which it can only do by hallucinating.
+    const allTerminal = sessions.every((session) => isTerminalRuntimeStatus(session?.status));
+    const hasUsableContent = runtimeSummaries.some((entry) => (
+      String(entry?.result || '').trim()
+      || String(entry?.summary || '').trim()
+      || String(entry?.error || '').trim()
+    ));
+    const synthesized = (allTerminal && hasUsableContent)
+      ? await (this.dialogueService?.synthesizeRuntimeReply?.({
+          runText,
+          sessions: runtimeSummaries
+        }) || Promise.resolve(null))
+      : null;
+    const finalReply = (synthesized && String(synthesized).trim()) || aggregatedFallback;
     const finalRun = this.assistantRunStore.save({
       ...currentRun,
       status: failed ? ASSISTANT_RUN_STATUS.FAILED : ASSISTANT_RUN_STATUS.COMPLETED,
       summary: failed ? 'Parallel runtime tasks finished with at least one failure.' : 'Parallel runtime tasks finished.',
-      result: buildAggregatedRuntimeMessage({ sessions: runtimeSummaries, runText }),
+      result: finalReply,
       metadata: {
         ...(currentRun?.metadata || {}),
         runtimeAggregation: {
           done: true,
           sessionIds,
-          runtimeSummaries
+          runtimeSummaries,
+          syntheticReply: synthesized ? 'llm' : 'fallback',
+          rawAggregated: aggregatedFallback
         },
         stopPolicy: {
           status: failed ? ASSISTANT_RUN_STATUS.FAILED : ASSISTANT_RUN_STATUS.COMPLETED,

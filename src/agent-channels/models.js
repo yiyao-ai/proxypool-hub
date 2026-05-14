@@ -61,7 +61,9 @@ export function createChannelConversation({
     activeTaskId: null,
     trackedTaskIds: [],
     lastPendingApprovalId: null,
+    lastPendingApprovalSessionId: null,
     lastPendingQuestionId: null,
+    lastPendingQuestionSessionId: null,
     lastPendingClarificationId: null,
     title: String(title || `${externalUserId || 'unknown'} / ${channel || 'channel'}`),
     metadata: {

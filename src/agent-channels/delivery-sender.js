@@ -1,13 +1,16 @@
 import agentChannelRegistry from './registry.js';
 import agentChannelDeliveryStore from './delivery-store.js';
+import stateCoordinator from '../assistant-core/domain/state-coordinator.js';
 
 export class AgentChannelDeliverySender {
   constructor({
     registry = agentChannelRegistry,
-    deliveryStore = agentChannelDeliveryStore
+    deliveryStore = agentChannelDeliveryStore,
+    stateCoordinator: stateCoordinatorArg = stateCoordinator
   } = {}) {
     this.registry = registry;
     this.deliveryStore = deliveryStore;
+    this.stateCoordinator = stateCoordinatorArg;
   }
 
   setRegistry(registry) {
@@ -16,6 +19,10 @@ export class AgentChannelDeliverySender {
 
   setDeliveryStore(deliveryStore) {
     this.deliveryStore = deliveryStore || this.deliveryStore;
+  }
+
+  setStateCoordinator(stateCoordinatorArg) {
+    this.stateCoordinator = stateCoordinatorArg || this.stateCoordinator;
   }
 
   async send({
@@ -44,7 +51,7 @@ export class AgentChannelDeliverySender {
       event: message?.event || null
     });
 
-    this.deliveryStore.saveOutbound({
+    const delivery = this.deliveryStore.saveOutbound({
       channel: conversation?.channel || channel,
       conversationId: conversation?.id,
       sessionId,
@@ -54,6 +61,14 @@ export class AgentChannelDeliverySender {
       payload: {
         ...payload,
         fullText: outboundText
+      }
+    });
+    this.stateCoordinator?.recordDeliveryEpisode?.({
+      delivery,
+      conversationId: conversation?.id,
+      runtimeSessionId: sessionId,
+      metadata: {
+        source: 'agent_channel_delivery_sender'
       }
     });
 
@@ -68,7 +83,7 @@ export class AgentChannelDeliverySender {
     payload = {},
     reason = ''
   } = {}) {
-    return this.deliveryStore.saveOutbound({
+    const delivery = this.deliveryStore.saveOutbound({
       channel: conversation?.channel || channel,
       conversationId: conversation?.id,
       sessionId,
@@ -79,6 +94,15 @@ export class AgentChannelDeliverySender {
         suppressionReason: String(reason || '').trim()
       }
     });
+    this.stateCoordinator?.recordDeliveryEpisode?.({
+      delivery,
+      conversationId: conversation?.id,
+      runtimeSessionId: sessionId,
+      metadata: {
+        source: 'agent_channel_delivery_sender'
+      }
+    });
+    return delivery;
   }
 }
 

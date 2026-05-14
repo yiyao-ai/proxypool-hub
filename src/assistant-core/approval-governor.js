@@ -17,10 +17,10 @@ function detectApprovalRememberPreference(conversation = null) {
   const combined = textPool.join('\n');
   if (!combined) return 'none';
   if (/(这个对话|这次对话|当前对话|this conversation|this chat)/i.test(combined)) {
-    return 'conversation';
+    return 'task';
   }
   if (/(以后|后续|别再问|都允许|全部允许|from now on|don'?t ask again|remember)/i.test(combined)) {
-    return 'runtime_session';
+    return 'execution';
   }
   return 'none';
 }
@@ -92,7 +92,7 @@ export class AssistantApprovalGovernor {
       approvalId: approval.approvalId,
       decision: decision.action,
       remember: decision.action === 'approve'
-        ? (rememberPreference === 'conversation' ? 'conversation' : 'none')
+        ? (rememberPreference === 'task' ? 'conversation' : 'none')
         : 'none',
       conversationId: resolveConversationScopeRef(conversation, runtimeSession)
     });
@@ -100,7 +100,7 @@ export class AssistantApprovalGovernor {
     return {
       ...decision,
       resolvedApproval: resolved,
-      remember: rememberPreference === 'conversation' ? 'conversation' : 'none'
+      remember: rememberPreference === 'task' ? 'task' : 'none'
     };
   }
 
@@ -108,10 +108,10 @@ export class AssistantApprovalGovernor {
     conversation = null,
     runtimeSession = null,
     approval = null,
-    scope = 'runtime_session'
+    scope = 'execution'
   } = {}) {
-    const normalizedScope = String(scope || 'runtime_session').trim() || 'runtime_session';
-    const scopeRef = normalizedScope === 'conversation'
+    const normalizedScope = String(scope || 'execution').trim() || 'execution';
+    const scopeRef = normalizedScope === 'task'
       ? resolveConversationScopeRef(conversation, runtimeSession)
       : resolveRuntimeScopeRef(runtimeSession);
     if (!scopeRef) return null;

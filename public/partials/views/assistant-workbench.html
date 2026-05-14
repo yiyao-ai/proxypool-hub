@@ -1,0 +1,266 @@
+<div class="session-workspace-header flex items-center justify-between gap-4 mb-6">
+    <div class="session-workspace-title flex flex-wrap items-center gap-4">
+        <div>
+            <div class="session-workspace-eyebrow text-[11px] font-mono uppercase tracking-[0.18em] text-gray-500">Assistant</div>
+            <h1 class="text-2xl font-bold text-white tracking-tight mt-2" x-text="t('assistantWorkbench')"></h1>
+        </div>
+        <div class="session-workspace-badge flex items-center h-6 px-3 rounded-full bg-space-800/80 border border-space-border/50 shadow-sm backdrop-blur-sm">
+            <span class="text-[10px] font-mono text-gray-400 uppercase tracking-wider" x-text="t('assistantWorkbenchBadge')"></span>
+        </div>
+    </div>
+    <button class="btn btn-sm btn-surface"
+        @click="loadAssistantWorkbench()"
+        :disabled="assistantWorkbenchLoading">
+        <span x-text="assistantWorkbenchLoading ? t('loading') : t('refresh')"></span>
+    </button>
+</div>
+
+<div class="grid grid-cols-1 xl:grid-cols-[280px_320px_minmax(0,1fr)] gap-4 min-h-0">
+    <section class="view-card !p-4 flex flex-col min-h-[70vh]">
+        <div class="flex items-center justify-between gap-3 mb-4">
+            <h3 class="text-xs font-mono text-gray-400 uppercase tracking-widest" x-text="t('assistantWorkbenchProjects')"></h3>
+            <span class="text-[11px] font-mono text-gray-500" x-text="assistantWorkbenchProjects.length"></span>
+        </div>
+        <div class="space-y-3 overflow-y-auto custom-scrollbar pr-1">
+            <template x-for="project in assistantWorkbenchProjects" :key="project.id">
+                <button type="button" class="w-full text-left rounded-xl border p-3 transition-all"
+                    :class="assistantWorkbenchProjectClass(project)"
+                    @click="selectAssistantWorkbenchProject(project.id)">
+                    <div class="flex items-start justify-between gap-3">
+                        <div class="min-w-0">
+                            <div class="text-sm text-white truncate" x-text="project.name"></div>
+                            <div class="text-[11px] text-gray-500 font-mono truncate mt-1" x-text="project.cwd || project.kind"></div>
+                        </div>
+                        <span class="inline-flex items-center rounded-full border border-space-border/30 px-2 py-0.5 text-[10px] font-mono text-gray-400" x-text="project.kind"></span>
+                    </div>
+                    <div class="mt-2 text-xs text-gray-400 whitespace-pre-wrap" x-show="project.summary" x-text="project.summary"></div>
+                </button>
+            </template>
+            <div class="text-xs text-gray-500 font-mono" x-show="!assistantWorkbenchLoading && assistantWorkbenchProjects.length === 0" x-text="t('assistantWorkbenchProjectsEmpty')"></div>
+        </div>
+    </section>
+
+    <section class="view-card !p-4 flex flex-col min-h-[70vh]">
+        <div class="flex items-center justify-between gap-3 mb-4">
+            <h3 class="text-xs font-mono text-gray-400 uppercase tracking-widest" x-text="t('assistantWorkbenchTasks')"></h3>
+            <span class="text-[11px] font-mono text-gray-500" x-text="assistantWorkbenchTasks.length"></span>
+        </div>
+        <div class="space-y-3 overflow-y-auto custom-scrollbar pr-1">
+            <template x-for="task in assistantWorkbenchTasks" :key="task.id">
+                <button type="button" class="w-full text-left rounded-xl border p-3 transition-all"
+                    :class="assistantWorkbenchTaskClass(task)"
+                    @click="selectAssistantWorkbenchTask(task.id)">
+                    <div class="flex items-start justify-between gap-3">
+                        <div class="min-w-0">
+                            <div class="text-sm text-white truncate" x-text="task.title"></div>
+                            <div class="text-[11px] text-gray-500 font-mono truncate mt-1" x-text="task.goal || task.id"></div>
+                        </div>
+                        <span class="inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-mono"
+                            :class="assistantWorkbenchTaskStateClass(task)"
+                            x-text="task.lifecycleState || 'open'"></span>
+                    </div>
+                    <div class="mt-2 text-xs text-gray-400 whitespace-pre-wrap" x-show="task.summary" x-text="task.summary"></div>
+                </button>
+            </template>
+            <div class="text-xs text-gray-500 font-mono" x-show="!assistantWorkbenchLoading && assistantWorkbenchTasks.length === 0" x-text="t('assistantWorkbenchTasksEmpty')"></div>
+        </div>
+    </section>
+
+    <section class="space-y-4 min-h-[70vh]">
+        <div class="view-card !p-4" x-show="assistantWorkbenchDashboard">
+            <div class="flex items-start justify-between gap-4 mb-4">
+                <div>
+                    <h3 class="text-sm font-semibold text-white" x-text="assistantWorkbenchDashboard?.task?.title || '-'"></h3>
+                    <div class="text-[11px] font-mono text-gray-500 mt-1" x-text="assistantWorkbenchDashboard?.project?.name || '-'"></div>
+                </div>
+                <span class="inline-flex items-center rounded-full border border-space-border/30 px-2.5 py-1 text-[10px] font-mono text-gray-300"
+                    x-text="assistantWorkbenchDashboard?.activitySnapshot?.activeExecutionCount + ' exec'"></span>
+            </div>
+
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                <div class="rounded-xl border border-space-border/30 bg-space-950/40 p-4">
+                    <div class="text-[11px] font-mono text-gray-500 uppercase tracking-wider mb-2" x-text="t('goal')"></div>
+                    <div class="text-sm text-white whitespace-pre-wrap" x-text="assistantWorkbenchDashboard?.task?.goal || '-'"></div>
+                </div>
+                <div class="rounded-xl border border-space-border/30 bg-space-950/40 p-4">
+                    <div class="text-[11px] font-mono text-gray-500 uppercase tracking-wider mb-2" x-text="t('summary')"></div>
+                    <div class="text-sm text-white whitespace-pre-wrap" x-text="assistantWorkbenchDashboard?.task?.summary || '-'"></div>
+                </div>
+            </div>
+
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mt-4">
+                <div class="rounded-xl border border-space-border/30 bg-space-950/40 p-4">
+                    <div class="text-[11px] font-mono text-gray-500 uppercase tracking-wider mb-2" x-text="t('assistantWorkbenchPlan')"></div>
+                    <div class="space-y-2" x-show="assistantWorkbenchList(assistantWorkbenchDashboard?.task?.plan).length > 0">
+                        <template x-for="(item, index) in assistantWorkbenchList(assistantWorkbenchDashboard?.task?.plan)" :key="index">
+                            <div class="text-sm text-white whitespace-pre-wrap" x-text="item"></div>
+                        </template>
+                    </div>
+                    <div class="text-xs text-gray-500 font-mono" x-show="assistantWorkbenchList(assistantWorkbenchDashboard?.task?.plan).length === 0">-</div>
+                </div>
+                <div class="rounded-xl border border-space-border/30 bg-space-950/40 p-4">
+                    <div class="text-[11px] font-mono text-gray-500 uppercase tracking-wider mb-2" x-text="t('assistantWorkbenchCompletionCriteria')"></div>
+                    <div class="text-sm text-white whitespace-pre-wrap" x-text="assistantWorkbenchDashboard?.task?.completionCriteria || '-'"></div>
+                </div>
+            </div>
+
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-4 mt-4">
+                <div class="rounded-xl border border-space-border/30 bg-space-950/40 p-4">
+                    <div class="text-[11px] font-mono text-gray-500 uppercase tracking-wider mb-2" x-text="t('assistantWorkbenchTodos')"></div>
+                    <div class="space-y-2" x-show="assistantWorkbenchList(assistantWorkbenchDashboard?.task?.todos).length > 0">
+                        <template x-for="(item, index) in assistantWorkbenchList(assistantWorkbenchDashboard?.task?.todos)" :key="index">
+                            <div class="text-sm text-white whitespace-pre-wrap" x-text="item"></div>
+                        </template>
+                    </div>
+                    <div class="text-xs text-gray-500 font-mono" x-show="assistantWorkbenchList(assistantWorkbenchDashboard?.task?.todos).length === 0">-</div>
+                </div>
+                <div class="rounded-xl border border-space-border/30 bg-space-950/40 p-4">
+                    <div class="text-[11px] font-mono text-gray-500 uppercase tracking-wider mb-2" x-text="t('assistantWorkbenchBlockers')"></div>
+                    <div class="space-y-2" x-show="assistantWorkbenchList(assistantWorkbenchDashboard?.task?.blockers).length > 0">
+                        <template x-for="(item, index) in assistantWorkbenchList(assistantWorkbenchDashboard?.task?.blockers)" :key="index">
+                            <div class="text-sm text-white whitespace-pre-wrap" x-text="item"></div>
+                        </template>
+                    </div>
+                    <div class="text-xs text-gray-500 font-mono" x-show="assistantWorkbenchList(assistantWorkbenchDashboard?.task?.blockers).length === 0">-</div>
+                </div>
+                <div class="rounded-xl border border-space-border/30 bg-space-950/40 p-4">
+                    <div class="text-[11px] font-mono text-gray-500 uppercase tracking-wider mb-2" x-text="t('assistantWorkbenchOpenQuestions')"></div>
+                    <div class="space-y-2" x-show="assistantWorkbenchList(assistantWorkbenchDashboard?.task?.openQuestions).length > 0">
+                        <template x-for="(item, index) in assistantWorkbenchList(assistantWorkbenchDashboard?.task?.openQuestions)" :key="index">
+                            <div class="text-sm text-white whitespace-pre-wrap" x-text="item"></div>
+                        </template>
+                    </div>
+                    <div class="text-xs text-gray-500 font-mono" x-show="assistantWorkbenchList(assistantWorkbenchDashboard?.task?.openQuestions).length === 0">-</div>
+                </div>
+            </div>
+
+            <div class="mt-4 rounded-xl border border-space-border/30 bg-space-950/40 p-4">
+                <div class="text-[11px] font-mono text-gray-500 uppercase tracking-wider mb-3" x-text="t('assistantWorkbenchExecutions')"></div>
+                <div class="space-y-3">
+                    <template x-for="execution in (assistantWorkbenchDashboard?.executions || [])" :key="execution.id">
+                        <div class="rounded-xl border border-space-border/30 bg-space-900/35 p-3">
+                            <div class="flex items-center justify-between gap-3">
+                                <div>
+                                    <div class="text-sm text-white" x-text="execution.provider + ' · ' + execution.role"></div>
+                                    <div class="text-[11px] font-mono text-gray-500 mt-1" x-text="execution.currentRuntimeSessionId || execution.id"></div>
+                                </div>
+                                <span class="inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-mono"
+                                    :class="assistantWorkbenchExecutionStateClass(execution)"
+                                    x-text="execution.status"></span>
+                            </div>
+                            <div class="mt-2 text-xs text-gray-400 whitespace-pre-wrap" x-text="execution.lastTurnSummary || execution.objective || '-'"></div>
+                            <div class="grid grid-cols-1 lg:grid-cols-3 gap-3 mt-3">
+                                <div class="rounded-lg border border-space-border/20 bg-space-950/40 px-3 py-2">
+                                    <div class="text-[10px] font-mono text-gray-500 uppercase tracking-wider mb-1" x-text="t('assistantWorkbenchRecentScope')"></div>
+                                    <div class="text-xs text-gray-300 whitespace-pre-wrap" x-text="assistantWorkbenchList(execution.recentScope).join('\n') || '-'"></div>
+                                </div>
+                                <div class="rounded-lg border border-space-border/20 bg-space-950/40 px-3 py-2">
+                                    <div class="text-[10px] font-mono text-gray-500 uppercase tracking-wider mb-1" x-text="t('assistantWorkbenchRecentCommands')"></div>
+                                    <div class="text-xs text-gray-300 whitespace-pre-wrap" x-text="assistantWorkbenchList(execution.recentCommands).join('\n') || '-'"></div>
+                                </div>
+                                <div class="rounded-lg border border-space-border/20 bg-space-950/40 px-3 py-2">
+                                    <div class="text-[10px] font-mono text-gray-500 uppercase tracking-wider mb-1" x-text="t('assistantWorkbenchHandoffInbox')"></div>
+                                    <div class="text-xs text-gray-300 whitespace-pre-wrap" x-text="assistantWorkbenchList(execution.handoffInbox).map((entry) => entry.title || entry.kind).join('\n') || '-'"></div>
+                                </div>
+                            </div>
+                        </div>
+                    </template>
+                </div>
+            </div>
+        </div>
+
+        <div class="grid grid-cols-1 2xl:grid-cols-2 gap-4">
+            <div class="view-card !p-4">
+                <div class="flex items-center justify-between gap-3 mb-3">
+                    <h3 class="text-xs font-mono text-gray-400 uppercase tracking-widest" x-text="t('assistantWorkbenchEpisodes')"></h3>
+                    <span class="text-[11px] font-mono text-gray-500" x-text="assistantWorkbenchEpisodes.length"></span>
+                </div>
+                <div class="flex flex-wrap gap-2 mb-3">
+                    <template x-for="filter in [
+                        ['all', t('assistantWorkbenchFilterAll')],
+                        ['task', t('assistantWorkbenchFilterTask')],
+                        ['execution', t('assistantWorkbenchFilterExecution')],
+                        ['runtime', t('assistantWorkbenchFilterRuntime')],
+                        ['approval', t('assistantWorkbenchFilterApproval')],
+                        ['question', t('assistantWorkbenchFilterQuestion')],
+                        ['delivery', t('assistantWorkbenchFilterDelivery')]
+                    ]" :key="filter[0]">
+                        <button type="button"
+                            class="inline-flex items-center rounded-full border px-2.5 py-1 text-[10px] font-mono transition-all"
+                            :class="assistantWorkbenchEpisodeFilterClass(filter[0])"
+                            @click="assistantWorkbenchSetEpisodeFilter(filter[0])"
+                            x-text="filter[1]"></button>
+                    </template>
+                </div>
+                <div class="space-y-3 max-h-[28rem] overflow-y-auto custom-scrollbar pr-1">
+                    <template x-for="episode in assistantWorkbenchFilteredEpisodes()" :key="episode.id">
+                        <div class="rounded-xl border border-space-border/30 bg-space-900/35 p-3">
+                            <div class="flex items-center justify-between gap-3">
+                                <span class="text-[10px] font-mono text-neon-cyan" x-text="episode.kind"></span>
+                                <span class="text-[10px] font-mono text-gray-500" x-text="formatRelativeTime(episode.createdAt)"></span>
+                            </div>
+                            <div class="mt-2 text-sm text-white whitespace-pre-wrap" x-text="assistantWorkbenchEpisodeSummary(episode)"></div>
+                        </div>
+                    </template>
+                    <div class="text-xs text-gray-500 font-mono" x-show="assistantWorkbenchFilteredEpisodes().length === 0" x-text="t('assistantWorkbenchEpisodesEmpty')"></div>
+                </div>
+            </div>
+
+            <div class="view-card !p-4">
+                <div class="flex items-center justify-between gap-3 mb-3">
+                    <h3 class="text-xs font-mono text-gray-400 uppercase tracking-widest" x-text="t('assistantWorkbenchTranscript')"></h3>
+                    <span class="text-[11px] font-mono text-gray-500" x-text="assistantWorkbenchTranscript?.session?.id || '-'"></span>
+                </div>
+                <div class="space-y-3 max-h-[28rem] overflow-y-auto custom-scrollbar pr-1" x-show="assistantWorkbenchTranscript?.turns?.length">
+                    <template x-for="entry in (assistantWorkbenchTranscript?.turns || [])" :key="entry.turn.id">
+                        <div class="rounded-xl border border-space-border/30 bg-space-900/35 p-3">
+                            <div class="text-sm text-white whitespace-pre-wrap" x-text="entry.turn.input || '-'"></div>
+                            <div class="mt-2 text-xs text-gray-400 whitespace-pre-wrap" x-text="entry.turn.summary || '-'"></div>
+                            <div class="mt-3 space-y-2">
+                                <template x-for="event in (entry.events || [])" :key="event.seq">
+                                    <div class="rounded-lg border border-space-border/20 bg-space-950/40 px-3 py-2">
+                                        <div class="flex items-center justify-between gap-2">
+                                            <span class="text-[10px] font-mono text-gray-500" x-text="event.type"></span>
+                                            <span class="text-[10px] font-mono text-gray-600" x-text="'#' + event.seq"></span>
+                                        </div>
+                                        <div class="mt-1 text-xs text-gray-300 whitespace-pre-wrap" x-text="event.payload?.text || event.payload?.message || event.payload?.command || event.payload?.summary || '-'"></div>
+                                    </div>
+                                </template>
+                            </div>
+                        </div>
+                    </template>
+                </div>
+                <div class="text-xs text-gray-500 font-mono" x-show="!assistantWorkbenchTranscript?.turns?.length" x-text="t('assistantWorkbenchTranscriptEmpty')"></div>
+            </div>
+        </div>
+
+        <div class="view-card !p-4">
+            <div class="flex items-center justify-between gap-3 mb-3">
+                <h3 class="text-xs font-mono text-gray-400 uppercase tracking-widest" x-text="t('assistantWorkbenchConversationContext')"></h3>
+                <span class="text-[11px] font-mono text-gray-500" x-text="assistantWorkbenchConversationContext?.conversation?.id || '-'"></span>
+            </div>
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
+                <div class="rounded-xl border border-space-border/30 bg-space-950/40 p-4">
+                    <div class="text-[11px] font-mono text-gray-500 uppercase tracking-wider mb-2">Conversation</div>
+                    <div class="text-sm text-white whitespace-pre-wrap" x-text="assistantWorkbenchConversationContext?.conversation?.title || '-'"></div>
+                    <div class="text-[11px] font-mono text-gray-500 uppercase tracking-wider mt-4 mb-2">Presentation</div>
+                    <div class="text-sm text-white whitespace-pre-wrap" x-text="assistantWorkbenchConversationContext?.conversation?.assistantMode || '-'"></div>
+                    <div class="text-[11px] font-mono text-gray-500 uppercase tracking-wider mt-4 mb-2">Working Set</div>
+                    <div class="text-xs text-gray-300 whitespace-pre-wrap" x-text="assistantWorkbenchList(assistantWorkbenchConversationContext?.conversation?.trackedTaskIds).join('\n') || '-'"></div>
+                </div>
+                <div class="rounded-xl border border-space-border/30 bg-space-950/40 p-4">
+                    <div class="text-[11px] font-mono text-gray-500 uppercase tracking-wider mb-2">Pending</div>
+                    <div class="text-xs text-gray-300 whitespace-pre-wrap" x-text="assistantWorkbenchConversationContext?.pendingClarification?.question || assistantWorkbenchConversationContext?.pendingQuestions?.[0]?.text || assistantWorkbenchConversationContext?.pendingApprovals?.[0]?.title || '-'"></div>
+                    <div class="text-[11px] font-mono text-gray-500 uppercase tracking-wider mt-4 mb-2">Workspace</div>
+                    <div class="text-xs text-gray-300 whitespace-pre-wrap" x-text="assistantWorkbenchConversationContext?.workspace?.workspaceRef || '-'"></div>
+                </div>
+                <div class="rounded-xl border border-space-border/30 bg-space-950/40 p-4">
+                    <div class="text-[11px] font-mono text-gray-500 uppercase tracking-wider mb-2">Memory</div>
+                    <div class="text-xs text-gray-300 whitespace-pre-wrap" x-text="assistantWorkbenchConversationContext?.memory?.preferredProvider || assistantWorkbenchConversationContext?.memory?.profile?.preferredProvider || '-'"></div>
+                    <div class="text-[11px] font-mono text-gray-500 uppercase tracking-wider mt-4 mb-2">Policy</div>
+                    <div class="text-xs text-gray-300 whitespace-pre-wrap" x-text="String((assistantWorkbenchConversationContext?.policy?.project || []).length + (assistantWorkbenchConversationContext?.policy?.task || []).length + (assistantWorkbenchConversationContext?.policy?.execution || []).length)"></div>
+                </div>
+            </div>
+        </div>
+    </section>
+</div>

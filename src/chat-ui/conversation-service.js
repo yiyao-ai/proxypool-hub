@@ -2,8 +2,6 @@ import agentOrchestratorMessageService from '../agent-orchestrator/message-servi
 import agentTaskStore from '../agent-core/task-store.js';
 import { syncTaskFromRuntimeResult } from '../agent-core/task-service.js';
 import { buildSupervisorBrief } from '../agent-orchestrator/supervisor-brief.js';
-import { CHANNEL_CONVERSATION_MODE } from '../agent-channels/models.js';
-import { syncSupervisorTaskForRuntimeStart } from '../agent-orchestrator/supervisor-task-sync.js';
 import chatUiConversationStore from './conversation-store.js';
 import assistantRunStore from '../assistant-core/run-store.js';
 import AssistantModeService from '../assistant-core/mode-service.js';
@@ -12,6 +10,10 @@ import { AssistantTaskViewService } from '../assistant-core/task-view-service.js
 import { getAssistantControlMode } from '../assistant-core/assistant-state.js';
 import agentRuntimeSessionManager from '../agent-runtime/session-manager.js';
 import agentChannelDeliveryStore from '../agent-channels/delivery-store.js';
+import {
+  bindConversationToRuntimeStart,
+  buildPendingResolutionPatch
+} from '../assistant-core/conversation-runtime-binding.js';
 
 export class ChatUiConversationService {
   constructor({
@@ -105,51 +107,25 @@ export class ChatUiConversationService {
       const supervisorContext = (result?.supervisorContext && typeof result.supervisorContext === 'object')
         ? result.supervisorContext
         : {};
-      const pendingApproval = this.messageService.listPendingApprovals(result.session.id)[0] || null;
-      const pendingQuestion = this.messageService.listPendingQuestions(result.session.id)
-        .find((entry) => entry.status === 'pending') || null;
-      const synced = syncSupervisorTaskForRuntimeStart({
+      bindConversationToRuntimeStart({
+        conversationStore: this.conversationStore,
+        messageService: this.messageService,
+        supervisorTaskStore: this.supervisorTaskStore,
         conversation,
         session: result.session,
         supervisorContext,
-        taskMemory: conversation.metadata?.supervisor?.taskMemory || null,
-        pendingApproval,
-        pendingQuestion,
         userInput: text,
         originKind: String(supervisorContext.kind || '').trim() || 'direct',
-        activate: true,
-        store: this.supervisorTaskStore
-      });
-
-      this.conversationStore.bindRuntimeSession(conversation.id, result.session.id, {
-        mode: CHANNEL_CONVERSATION_MODE.AGENT_RUNTIME,
-        lastPendingApprovalId: pendingApproval?.approvalId || null,
-        lastPendingQuestionId: pendingQuestion?.questionId || null,
-        activeTaskId: synced.taskMemory?.activeTaskId || conversation.activeTaskId || null,
-        trackedTaskIds: synced.taskMemory?.taskOrder || conversation.trackedTaskIds || [],
-        metadata: {
-          ...(conversation.metadata || {}),
-          supervisor: {
-            ...((conversation.metadata?.supervisor && typeof conversation.metadata.supervisor === 'object')
-              ? conversation.metadata.supervisor
-              : {}),
-            taskMemory: synced.taskMemory,
-            brief: synced.brief
-          }
-        }
+        activate: true
       });
     }
 
     if (result?.type === 'approval_resolved') {
-      this.conversationStore.patch(conversation.id, {
-        lastPendingApprovalId: null
-      });
+      this.conversationStore.patch(conversation.id, buildPendingResolutionPatch('approval'));
     }
 
     if (result?.type === 'question_answered') {
-      this.conversationStore.patch(conversation.id, {
-        lastPendingQuestionId: null
-      });
+      this.conversationStore.patch(conversation.id, buildPendingResolutionPatch('question'));
     }
 
     const response = {

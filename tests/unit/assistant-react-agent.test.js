@@ -339,6 +339,146 @@ test('Assistant ReAct loop can delegate runtime work and return a natural-langua
   assert.ok(result.assistantRun.steps.some((entry) => entry.toolName === 'summarize_runtime_result'));
 });
 
+test('Assistant ReAct keeps going after a policy confirmation block and can still answer directly', async () => {
+  const fixture = createFixture();
+  const llmClient = new FakeLlmClient([
+    {
+      toolCalls: [{
+        id: 'tool_delegate_weather_1',
+        name: 'delegate_to_runtime',
+        input: {
+          provider: 'codex',
+          task: '帮我查一下今天上海的天气',
+          cwd: 'D:\\github\\proxypool-hub'
+        }
+      }]
+    },
+    {
+      text: '这一步会超出当前工作区范围，需要你确认后我才能继续。'
+    }
+  ]);
+  const dialogueService = new AssistantDialogueService({
+    runStore: fixture.runStore,
+    observationService: fixture.observationService,
+    taskViewService: fixture.taskViewService,
+    messageService: fixture.messageService,
+    llmClient
+  });
+
+  dialogueService.toolExecutor.policyService = {
+    canExecuteToolCall() {
+      return {
+        allowed: true,
+        reason: 'assistant_delegation_within_scope',
+        requiresConfirmation: true,
+        scopeExpanded: true
+      };
+    }
+  };
+
+  const conversation = fixture.conversationStore.findOrCreateBySessionId('assistant-react-policy-block-1', {
+    assistantCore: {
+      mode: 'assistant'
+    }
+  });
+  const run = fixture.runStore.create({
+    assistantSessionId: 'assistant-session-policy-block',
+    conversationId: conversation.id,
+    triggerText: '/cligate 帮我查一下今天上海的天气',
+    status: 'running'
+  });
+  const result = await dialogueService.run({
+    run,
+    conversation,
+    text: '帮我查一下今天上海的天气'
+  });
+
+  assert.equal(result.run.metadata?.assistantAgent?.mode, undefined);
+  assert.equal(result.run.status, 'waiting_user');
+  assert.match(String(result.reply?.message || ''), /确认|confirmation/i);
+  assert.equal(result.run.metadata?.stopPolicy?.reason, 'assistant_confirmation_required');
+  assert.ok(result.toolResults.some((entry) => entry?.result?.kind === 'policy_block'));
+  assert.equal(llmClient.calls.length, 2);
+});
+
+test('Assistant mode success payload includes a pendingAction for confirmation-required policy blocks', async () => {
+  const fixture = createFixture();
+  const llmClient = new FakeLlmClient([
+    {
+      toolCalls: [{
+        id: 'tool_delegate_weather_pending_action',
+        name: 'delegate_to_runtime',
+        input: {
+          provider: 'codex',
+          task: '帮我查一下今天深圳的天气',
+          cwd: 'D:\\github\\proxypool-hub'
+        }
+      }]
+    },
+    {
+      text: '这一步需要你确认后我才能继续。'
+    }
+  ]);
+  const dialogueService = new AssistantDialogueService({
+    runStore: fixture.runStore,
+    observationService: fixture.observationService,
+    taskViewService: fixture.taskViewService,
+    messageService: fixture.messageService,
+    llmClient
+  });
+  const assistantModeService = new AssistantModeService({
+    conversationStore: fixture.conversationStore,
+    assistantSessionStore: fixture.sessionStore,
+    assistantRunStore: fixture.runStore,
+    observationService: fixture.observationService,
+    messageService: fixture.messageService,
+    taskViewService: fixture.taskViewService,
+    dialogueService
+  });
+
+  dialogueService.toolExecutor.policyService = {
+    canExecuteToolCall() {
+      return {
+        allowed: true,
+        reason: 'assistant_delegation_within_scope',
+        requiresConfirmation: true,
+        scopeExpanded: true
+      };
+    }
+  };
+
+  const conversation = fixture.conversationStore.findOrCreateBySessionId('assistant-react-pending-action-1', {
+    assistantCore: {
+      mode: 'assistant'
+    }
+  });
+  const assistantSession = assistantModeService.ensureAssistantSession(conversation);
+  const run = fixture.runStore.create({
+    assistantSessionId: assistantSession.id,
+    conversationId: conversation.id,
+    triggerText: '/cligate 帮我查一下今天深圳的天气',
+    status: 'queued'
+  });
+  const executed = await dialogueService.run({
+    run,
+    conversation,
+    text: '帮我查一下今天深圳的天气'
+  });
+  const finalized = await assistantModeService.finalizeRunSuccess({
+    conversation,
+    assistantSession,
+    runText: '帮我查一下今天深圳的天气',
+    executed,
+    assistantModeActive: true
+  });
+
+  assert.equal(finalized.assistantRun.status, 'waiting_user');
+  assert.ok(finalized.pendingAction);
+  assert.equal(finalized.pendingAction.toolName, 'delegate_to_runtime');
+  assert.equal(finalized.pendingAction.input?.task, '帮我查一下今天深圳的天气');
+  assert.ok(finalized.pendingAction.confirmToken);
+});
+
 test('Assistant dialogue fallback records the underlying LLM failure reason', async () => {
   const service = createAssistantServiceWithLlmClient(new FailingLlmClient());
 
@@ -442,6 +582,9 @@ test('Assistant ReAct prompt includes task-space-first context', async () => {
     lastConversationId: conversation.id,
     sourceTaskId: 'task-source-1',
     metadata: {
+      assistantProjectId: 'assistant-project-1',
+      assistantTaskId: 'assistant-task-1',
+      assistantExecutionId: 'assistant-execution-1',
       latestExecutionId: waitingSession.id,
       originKind: 'related_sibling',
       runtimeSessionId: waitingSession.id,
@@ -492,9 +635,15 @@ test('Assistant ReAct prompt includes task-space-first context', async () => {
   assert.match(promptText, /"requestType":/);
   assert.match(promptText, /"preferredAction":/);
   assert.match(promptText, /"preferredTaskId":/);
+  assert.match(promptText, /"focusTaskExecutionContinuity":/);
   assert.match(promptText, /"originKind": "related_sibling"/);
   assert.match(promptText, /"sourceTaskId": "task-source-1"/);
   assert.match(promptText, /"latestExecutionId":/);
+  assert.match(promptText, /"assistantProjectId":/);
+  assert.match(promptText, /"assistantExecutionId":/);
+  assert.match(promptText, /"preferredAssistantExecutionId":/);
+  assert.match(promptText, /"preferredExecutionSource":/);
+  assert.match(promptText, /"canContinuePreferredExecution":/);
   assert.match(String(service.llmClient.calls[0]?.system || ''), /Use continue_task|优先继续该 task/);
   assert.match(String(service.llmClient.calls[0]?.system || ''), /clarification|澄清/);
   assert.match(String(service.llmClient.calls[0]?.system || ''), /resolve_runtime_approval/);
@@ -502,6 +651,9 @@ test('Assistant ReAct prompt includes task-space-first context', async () => {
   assert.match(String(service.llmClient.calls[0]?.system || ''), /Decision example|决策示例/);
   assert.match(String(service.llmClient.calls[0]?.system || ''), /routingHints|requestType|preferredExecutionTarget/);
   assert.match(String(service.llmClient.calls[0]?.system || ''), /originKind|sourceTaskId|latestExecutionId/);
+  assert.match(String(service.llmClient.calls[0]?.system || ''), /assistantExecutionId|assistantProjectId|Project\/Task\/Execution/);
+  assert.match(String(service.llmClient.calls[0]?.system || ''), /check Shenzhen weather.*check Shanghai weather|查深圳天气.*再查上海天气/);
+  assert.match(String(service.llmClient.calls[0]?.system || ''), /parameter swaps, entity swaps, and object swaps within the same workflow|参数替换、实体替换、对象替换通常仍然属于自然延续/);
 });
 
 test('AssistantLlmClient returns no candidates when no supervisor binding is configured (no silent emergency fallback)', async () => {
@@ -845,13 +997,13 @@ test('Assistant ReAct prompt includes user profile when global preferences exist
   });
 
   service.observationService.memoryService.preferenceStore.upsertPreference({
-    scope: 'global_user',
+    scope: 'person',
     scopeRef: 'default-user',
     key: 'reply_language',
     value: 'zh-CN'
   });
   service.observationService.memoryService.preferenceStore.upsertPreference({
-    scope: 'global_user',
+    scope: 'person',
     scopeRef: 'default-user',
     key: 'preferred_runtime_provider',
     value: 'claude-code'
@@ -1017,6 +1169,93 @@ test('Assistant reflection summarizes continue_task results when the runtime tur
 
   assert.ok(result.run.steps.some((entry) => entry.toolName === 'continue_task'));
   assert.ok(result.run.steps.some((entry) => entry.toolName === 'summarize_runtime_result'));
+});
+
+test('Assistant continue_task prefers latest execution over primary execution when task view exposes both', async () => {
+  const service = createAssistantService({
+    llmResponses: [
+      {
+        toolCalls: [{
+          id: 'tool_continue_task_latest_exec',
+          name: 'continue_task',
+          input: {
+            taskId: 'task-latest-exec',
+            message: 'continue latest execution'
+          }
+        }]
+      },
+      {
+        text: 'I continued the latest execution.'
+      }
+    ]
+  });
+
+  const primarySession = await service.runtimeSessionManager.createSession({
+    provider: 'codex',
+    input: 'primary task'
+  });
+  const latestSession = await service.runtimeSessionManager.createSession({
+    provider: 'codex',
+    input: 'latest task'
+  });
+  const conversation = service.conversationStore.findOrCreateBySessionId('assistant-react-latest-exec-1', {
+    supervisor: {
+      taskMemory: {
+        activeTaskId: 'task-latest-exec'
+      }
+    }
+  });
+
+  service.supervisorTaskStore.create({
+    id: 'task-latest-exec',
+    conversationId: conversation.id,
+    title: 'Latest execution task',
+    goal: 'latest execution task',
+    status: 'running',
+    executorStrategy: 'codex',
+    primaryExecutionId: primarySession.id,
+    metadata: {
+      runtimeSessionId: latestSession.id,
+      latestExecutionId: latestSession.id,
+      provider: 'codex',
+      assistantTaskId: 'assistant-task-latest-exec',
+      assistantExecutionId: 'assistant-exec-latest-exec'
+    }
+  });
+
+  service.taskViewService.assistantTaskStore.create({
+    id: 'assistant-task-latest-exec',
+    projectId: 'project-latest-exec',
+    ownerPersonId: 'person-latest-exec',
+    title: 'Latest execution task',
+    goal: 'latest execution task'
+  });
+  service.taskViewService.assistantExecutionStore.create({
+    id: 'assistant-exec-latest-exec',
+    taskId: 'assistant-task-latest-exec',
+    ownerPersonId: 'person-latest-exec',
+    provider: 'codex',
+    role: 'secondary',
+    objective: 'latest execution task',
+    currentRuntimeSessionId: latestSession.id
+  });
+
+  const run = service.runStore.create({
+    assistantSessionId: 'assistant-session-latest-exec',
+    conversationId: conversation.id,
+    triggerText: '/cligate continue latest execution',
+    status: 'running'
+  });
+  await service.dialogueService.run({
+    run,
+    conversation,
+    text: 'Continue the latest execution'
+  });
+
+  const primaryTurns = service.runtimeSessionManager.listTurns(primarySession.id, { limit: 10 });
+  const latestTurns = service.runtimeSessionManager.listTurns(latestSession.id, { limit: 10 });
+  assert.notEqual(primaryTurns[0]?.input, 'continue latest execution');
+  assert.equal(latestTurns[0]?.input, 'continue latest execution');
 });
 
 test('Assistant can start a secondary execution for the current supervisor task', async () => {

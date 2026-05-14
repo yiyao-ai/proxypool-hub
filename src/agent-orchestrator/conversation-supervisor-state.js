@@ -17,13 +17,23 @@ export function buildConversationSupervisorPatch({ conversation, session, event 
   const sessionId = session?.id || event?.sessionId || null;
   const rememberedTask = sessionId ? taskMemory.bySession?.[sessionId] || null : null;
   const taskId = rememberedTask?.taskId || sessionId;
-  const taskTitle = rememberedTask?.title || session?.title || event?.payload?.title || '';
+  // Latest-turn input takes priority: when the same runtime session handles a
+  // second user request (continueRuntimeTask), the supervisor record must
+  // reflect the new request rather than freezing on the first turn's title.
+  const turnInput = String(event?.payload?.input || '').trim();
+  const taskTitle = turnInput
+    || session?.title
+    || event?.payload?.title
+    || rememberedTask?.title
+    || '';
   const taskProvider = rememberedTask?.provider || session?.provider || '';
   const shouldActivate = conversation?.activeTaskId
     ? conversation.activeTaskId === taskId
     : conversation?.activeRuntimeSessionId === sessionId;
 
   if (event?.type === AGENT_EVENT_TYPE.STARTED && sessionId) {
+    // Clear stale summary/result on each new turn so cross-turn carry-over
+    // (turn 1 summary leaking into turn 2 record) cannot happen.
     taskMemory = upsertSupervisorTaskRecord(taskMemory, sessionId, {
       taskId,
       provider: taskProvider,
@@ -59,13 +69,15 @@ export function buildConversationSupervisorPatch({ conversation, session, event 
   }
 
   if (event?.type === AGENT_EVENT_TYPE.COMPLETED && sessionId) {
+    // Prefer this turn's summary from the event payload so the record reflects
+    // the latest turn, not session.summary which can be stuck on turn 1.
     taskMemory = finalizeSupervisorTaskMemory(taskMemory, sessionId, {
       taskId,
       provider: taskProvider,
       title: taskTitle,
       status: 'completed',
       lastUpdateAt: event?.ts || new Date().toISOString(),
-      summary: String(session?.summary || event?.payload?.summary || '').trim(),
+      summary: String(event?.payload?.summary || session?.summary || '').trim(),
       result: String(event?.payload?.result || '').trim(),
       pendingApprovalTitle: '',
       pendingQuestion: ''

@@ -27,6 +27,7 @@ function summarizePendingApprovals(conversationContext = null) {
     count: pendingApprovals.length,
     items: pendingApprovals.slice(0, 5).map((entry) => ({
       approvalId: String(entry?.approvalId || '').trim(),
+      sessionId: String(entry?.sessionId || '').trim(),
       title: String(entry?.title || '').trim(),
       summary: String(entry?.summary || '').trim(),
       createdAt: String(entry?.createdAt || '').trim()
@@ -45,6 +46,7 @@ function summarizePendingQuestions(conversationContext = null) {
     count: pendingQuestions.length,
     items: pendingQuestions.slice(0, 5).map((entry) => ({
       questionId: String(entry?.questionId || '').trim(),
+      sessionId: String(entry?.sessionId || '').trim(),
       text: String(entry?.text || '').trim(),
       options: Array.isArray(entry?.options) ? entry.options : [],
       createdAt: String(entry?.createdAt || '').trim()
@@ -95,6 +97,13 @@ function summarizeTaskRecord(task = null) {
     taskId: task.taskId || task.id || '',
     conversationId: task.conversationId || task?.conversation?.id || '',
     title: task?.task?.title || task.title || '',
+    assistantProjectId: task?.assistantDomain?.project?.id || '',
+    assistantProjectName: task?.assistantDomain?.project?.name || '',
+    assistantProjectKind: task?.assistantDomain?.project?.kind || '',
+    assistantExecutionId: task?.assistantDomain?.execution?.id || '',
+    assistantExecutionStatus: task?.assistantDomain?.execution?.status || '',
+    assistantExecutionRole: task?.assistantDomain?.execution?.role || '',
+    assistantExecutionRuntimeSessionId: task?.assistantDomain?.execution?.currentRuntimeSessionId || '',
     state: task.state || task?.task?.status || '',
     waitingReason: task.waitingReason || '',
     summary: task.summary || '',
@@ -112,6 +121,7 @@ function summarizeTaskRecord(task = null) {
     lastTurnSummary: truncate(lastTurnSummary, 200),
     staleSinceHours: computeStaleSinceHours(updatedAt),
     pending: task?.pending || { approvalCount: 0, questionCount: 0 },
+    assistantDomain: task?.assistantDomain || null,
     updatedAt
   };
 }
@@ -266,7 +276,20 @@ function buildRoutingHints({ text = '', taskSpace = null, referenceResolution = 
     shouldClarify: Boolean(decisionHints.shouldClarify),
     preferredAction: String(decisionHints.preferredAction || ''),
     preferredTaskId: String(decisionHints.preferredTaskId || ''),
-    preferredExecutionTarget: String(decisionHints.focusTaskExecutionTarget || ''),
+    preferredExecutionTarget: String(
+      decisionHints?.focusTaskExecutionContinuity?.preferredRuntimeSessionId
+      || decisionHints.focusTaskExecutionTarget
+      || ''
+    ),
+    preferredAssistantExecutionId: String(
+      decisionHints?.focusTaskExecutionContinuity?.preferredAssistantExecutionId
+      || ''
+    ),
+    preferredExecutionSource: String(
+      decisionHints?.focusTaskExecutionContinuity?.source
+      || ''
+    ),
+    canContinuePreferredExecution: decisionHints?.focusTaskExecutionContinuity?.canContinue === true,
     preferredReferenceAction: String(referenceSummary.recommendedAction || ''),
     preferredReferenceTaskId: String(referenceSummary.preferredTaskId || ''),
     preferredReferenceWorkspaceRef: String(referenceSummary.preferredWorkspaceRef || ''),
@@ -289,16 +312,19 @@ function buildSystemPrompt(language = 'en') {
       '如果需要查看状态或上下文，再调用只读工具。',
       '当前对话上下文以 task space 为中心，不要默认把 active runtime 当作唯一主线。',
       '特别注意 task 的 originKind、sourceTaskId、primaryExecutionId、latestExecutionId，这些字段用于理解当前 task 是重试、回到源任务、相关 sibling task，还是普通延续。',
+      '如果上下文里同时给出了 assistantProjectId / assistantProjectName / assistantExecutionId / assistantExecutionStatus / assistantExecutionRole，优先按 Project/Task/Execution 语义理解，而不是把 conversation 或 runtime session 当作唯一真相源。',
       '先看 focus task、waiting tasks、active tasks，再决定是直接回答、观察、继续某个 task、发起新委派，还是先澄清。',
       '如果 task_space 里有 decisionHints，优先遵循 preferredAction、preferredTaskId、reason，再结合 focusTaskReason 和 taskRelationshipSummary 判断。',
       '如果上下文里有 routingHints，优先把它当作当前用户请求的意图线索；尤其注意 requestType、shouldClarify、preferredTaskId、preferredExecutionTarget。',
       '如果 reference_resolution.summary 给出了 high/medium confidence 的 preferred task 或 workspace，优先把它作为引用理解的主要线索；如果 shouldAskUser 为 true，就不要猜。',
       'assistant mode 下没有任何 pre-LLM 的 pending 硬路由。即使存在 runtime approval 或 runtime question，也必须由你结合用户这条消息显式判断。',
-      '如果上下文出现 pending_runtime_approval，并且用户是在批准或拒绝该请求，调用 resolve_runtime_approval；不要假设系统会自动批准。如果用户消息含"允许后续 / 本会话同意 / 以后都 / from now on / 一律允许"等"sticky approval"语义，approve 的同时把 remember 参数设为 "session"（默认 scope）；如果用户明说"这次对话/这个聊天/this conversation 都同意"，则 remember="conversation" 并附带 conversationId。这样系统会创建 wildcard 策略，后续同类请求自动通过，不再打扰用户。',
+      '如果上下文出现 pending_runtime_approval，并且用户是在批准或拒绝该请求，调用 resolve_runtime_approval；不要假设系统会自动批准。remember 参数的取值要严格按用户语义判定：(a) 用户只说"同意 / 可以 / 这次允许 / 这一次"——没有提到以后/本会话/记住——按一次性处理，remember 留空（默认 none）。(b) 用户说"本会话 / 本次会话 / 这次对话 / 这个聊天 / 整个项目 / 后续 / 以后都 / 一律 / 记住 / from now on / this conversation"——覆盖跨多文件多轮的措辞——使用 remember="conversation" 并附带 conversationId。**重点：用户说"本会话/本次会话"时务必用 "conversation"，不要误用 "session"**——"session" 在系统里只覆盖当前那一次 runtime 执行，下一次 codex/claude-code 启动就失效，颗粒度远比用户预期小。(c) 仅当用户明确说"只对这一次 codex 执行/this runtime session"时才用 remember="session"。系统会自动把策略的 path pattern 扩展到 file_path 所在的目录（例如 Write D:\\proj\\index.html → D:\\proj\\\\**），所以同目录下后续文件不会再打扰用户，不需要逐文件确认。',
       '如果上下文出现 pending_runtime_question，并且用户是在回答该问题，调用 answer_runtime_question；不要假设系统会自动转发。',
       '如果上下文出现 pending_clarification，并且用户是在回答这个澄清问题，调用 resolve_clarification；如果澄清已无意义，则调用 cancel_pending_clarification。',
+      '如果某个工具返回的结果里出现 kind="policy_block" 且 requiresConfirmation=true，说明这次操作超出了自动授权边界。此时不要继续尝试其他有副作用的工具调用，直接向用户明确请求确认。',
       '如果存在 pending runtime interaction，但用户显然是在切换任务、查询状态、或发起新需求，就按 task space 和 routing hints 决策，不要被 pending 状态绑死。',
       '如果已有明确的 focus task 或单个 waiting task，优先继续该 task；继续任务时优先使用 continue_task，而不是直接假定 latest runtime。',
+      '当一个 task 同时存在 primaryExecutionId、latestExecutionId 和 assistantExecutionId 时，优先把 latest/assistant execution 当作默认续接目标；只有在用户明确要求回到旧执行，或 latest execution 不可用时，才回退到 primary execution。',
       '如果存在多个活跃 task 且用户指向不清，不要猜测，应先澄清用户要继续哪个 task。',
       '只有在确实不存在可复用 task，或者用户明确要求新开执行时，才委派新的 runtime。',
       '如果 task-space 信息不足，优先用 get_conversation_task_space 或其他只读工具补上下文。',
@@ -311,7 +337,7 @@ function buildSystemPrompt(language = 'en') {
       '如果 runtime 已给出结果，要先理解并总结，再回复用户。',
       '尽量简洁、准确、直接，不编造不存在的状态或结果。',
       '反幻觉硬性约束：你只能描述自己在本轮已经实际产生过 tool_use 的工具。如果在本轮 transcript 里没有针对 delegate_to_codex / continue_task / send_runtime_input 等 runtime 工具的 tool_use，就严禁声称"已经用 Codex 查过/已经让 Claude Code 跑了/Codex 返回了…"等。需要时直接调工具，或如实说"我还没调用工具"。',
-      '路由相关性纪律：在 continue_task 之前，对照 <recent_tasks> 中该 task 的 lastTurnInput 与 lastTurnSummary 判断用户当前消息是否是它的自然延续。如果话题明显不同（比如用户问天气而该 task 上一轮在分析代码），优先 delegate_to_codex 起一个新 session，而不是 continue 一个已被其他话题污染的旧 session。',
+      '路由相关性纪律：在 continue_task 之前，对照 <recent_tasks> 中该 task 的 lastTurnInput 与 lastTurnSummary 判断用户当前消息是否是它的自然延续。如果话题明显不同（比如用户问天气而该 task 上一轮在分析代码），优先 delegate_to_codex 起一个新 session，而不是 continue 一个已被其他话题污染的旧 session。注意：同一工作流里的参数替换、实体替换、对象替换通常仍然属于自然延续，例如“查深圳天气”之后“再查上海天气”、或“修 A 文件”之后“再修 B 文件”。不要因为核心对象变了就机械地新开 task。',
       '默认 provider 偏好：发起新 delegate 时，**默认使用 <default_runtime_provider> 指定的 provider**（通常是 codex）。仅在以下情况才用别的 provider：(a) 用户消息明确按名指定，例如"用 claude code / cc / claude-code"；(b) <user_profile>.preferredRuntimeProvider 显式设置了别的偏好；(c) 默认 provider 已被证明不可用（连续失败 / 缺少凭证）。**不要凭"另一个 provider 也许更好"擅自切换**——这会让用户对实际在用什么工具产生困惑。',
       '不要输出内部 chain-of-thought，只输出结论、必要说明和下一步。'
     ].join(' ');
@@ -325,16 +351,19 @@ function buildSystemPrompt(language = 'en') {
     'Use read-only tools when you need context.',
     'Treat the current conversation as a task space, not as a single active runtime thread.',
     'Pay close attention to task fields such as originKind, sourceTaskId, primaryExecutionId, and latestExecutionId. They tell you whether a task is a retry, a return-to-source task, a related sibling task, or a normal continuation.',
+    'When assistantProjectId / assistantProjectName / assistantExecutionId / assistantExecutionStatus / assistantExecutionRole are present, reason in Project/Task/Execution terms instead of treating the conversation or runtime session as the only source of truth.',
     'Check focusTask, waitingTasks, and activeTasks before deciding whether to answer, observe, continue an existing task, start a new delegation, or ask for clarification.',
     'When task_space includes decisionHints, prefer following preferredAction, preferredTaskId, and reason, then confirm against focusTaskReason and taskRelationshipSummary.',
     'When the context includes routingHints, treat them as strong clues about the user request intent, especially requestType, shouldClarify, preferredTaskId, and preferredExecutionTarget.',
     'When reference_resolution.summary offers a high- or medium-confidence preferred task or workspace, treat it as the main clue for resolving user references. If shouldAskUser is true, do not guess.',
     'In assistant mode there is no pre-LLM hard routing for pending runtime interactions. Even if a runtime approval or question is pending, you must inspect the user message and decide explicitly.',
-    'If the context includes pending_runtime_approval and the user is approving or denying that request, call resolve_runtime_approval. Do not assume the system will auto-route it. When the user grants a sticky approval ("allow subsequent / from now on / 后续 / 本会话 / 一律 / always"), set remember="session" alongside decision="approve" so the system records a wildcard policy and stops asking for the same kind of permission. When the user explicitly scopes it to the current conversation ("this conversation / 这次对话都同意"), use remember="conversation" plus the conversationId. Default remember="none" for one-shot approvals.',
+    'If the context includes pending_runtime_approval and the user is approving or denying that request, call resolve_runtime_approval. Do not assume the system will auto-route it. Pick the remember parameter strictly by the user\'s wording: (a) one-shot phrasings like "approve / ok / yes / just this one / 同意 / 可以 / 这次允许" → leave remember empty (default "none"). (b) Sticky phrasings that clearly span multiple files or turns — "本会话 / 本次会话 / 这次对话 / 这个聊天 / 整个项目 / 后续 / 以后都 / 一律 / 记住 / from now on / for this conversation / always / don\'t ask again" — use remember="conversation" plus conversationId. **Important: Chinese "本会话/本次会话" maps to "conversation", NOT "session" — "session" in this system only covers the current single runtime execution and expires when the next codex/claude-code session starts, which is far narrower than the user expects.** (c) Use remember="session" only when the user explicitly says "only for this runtime session / 只对这一次 codex". The system automatically broadens path patterns from a file to its containing directory (e.g. Write D:\\proj\\index.html → D:\\proj\\\\**), so sibling files in the same directory do not require a fresh approval.',
     'If the context includes pending_runtime_question and the user is answering that question, call answer_runtime_question. Do not assume the system will auto-forward it.',
     'If the context includes pending_clarification and the user is answering that clarification, call resolve_clarification. If that clarification is no longer relevant, call cancel_pending_clarification.',
+    'If any tool result contains kind="policy_block" with requiresConfirmation=true, the action has crossed the auto-approved boundary. Stop issuing further mutating tool calls and ask the user for explicit confirmation.',
     'If a runtime approval or question is pending but the user is clearly switching tasks, asking for status, or starting new work, follow task-space and routing hints instead of being trapped by the pending state.',
     'When there is a clear focus task or a single waiting task, prefer continuing that task. Use continue_task for task follow-up instead of assuming the latest runtime session.',
+    'When a task exposes primaryExecutionId, latestExecutionId, and assistantExecutionId at the same time, treat the latest/assistant execution as the default continuation target. Only fall back to the primary execution when the user explicitly wants the older execution or when the latest execution is unavailable.',
     'If multiple active tasks exist and the user intent is ambiguous, do not guess. Ask for clarification first.',
     'Only delegate a brand-new runtime task when no existing task should be reused, or when the user clearly asks to start fresh.',
     'If task-space context is insufficient, prefer get_conversation_task_space or other read-only tools before acting.',
@@ -347,7 +376,7 @@ function buildSystemPrompt(language = 'en') {
     'When runtime returns a result, summarize it for the user before replying.',
     'Be concise, accurate, and do not invent facts or state.',
     'Anti-hallucination hard rule: you may only describe tools you have actually produced a `tool_use` block for in this turn. If your transcript does not contain a `tool_use` for delegate_to_codex / continue_task / send_runtime_input, you have NOT used Codex or Claude Code in this turn — do not say you have, do not invent results. If a runtime tool is needed, call it now, or honestly state that you have not yet called it.',
-    'Routing relevance discipline: before calling continue_task, compare the user message against the target task\'s lastTurnInput and lastTurnSummary in <recent_tasks>. If the user is clearly on a different topic from that task\'s recent activity (e.g. asking about weather while the task was analyzing code), prefer delegate_to_codex with a fresh session over continuing a session whose working memory has drifted to a different topic.',
+    'Routing relevance discipline: before calling continue_task, compare the user message against the target task\'s lastTurnInput and lastTurnSummary in <recent_tasks>. If the user is clearly on a different topic from that task\'s recent activity (e.g. asking about weather while the task was analyzing code), prefer delegate_to_codex with a fresh session over continuing a session whose working memory has drifted to a different topic. Important: parameter swaps, entity swaps, and object swaps within the same workflow are usually still natural continuations, such as "check Shenzhen weather" followed by "check Shanghai weather" or "fix file A" followed by "fix file B". Do not start a new task just because the concrete target changed.',
     'Default provider preference: when starting a fresh delegation, use the provider named by <default_runtime_provider> (usually codex). Only choose a different provider when (a) the user explicitly named one ("use claude code", "cc", "claude-code"), (b) <user_profile>.preferredRuntimeProvider is set, or (c) the default provider has demonstrably failed (repeated errors / missing credentials). Do not switch providers on a hunch — silently changing tools confuses the user about what is actually running.',
     'Do not reveal chain-of-thought.'
   ].join(' ');

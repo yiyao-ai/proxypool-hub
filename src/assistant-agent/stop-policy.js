@@ -40,6 +40,13 @@ function deriveWaitingReason(toolResults = []) {
   return 'runtime_waiting_on_user';
 }
 
+function hasConfirmationBlock(toolResults = []) {
+  return toolResults.some((entry) => (
+    entry?.result?.kind === 'policy_block'
+    && entry?.result?.requiresConfirmation === true
+  ));
+}
+
 export function deriveAssistantRunStopState({
   toolResults = [],
   assistantText = '',
@@ -56,6 +63,14 @@ export function deriveAssistantRunStopState({
       status: ASSISTANT_RUN_STATUS.FAILED,
       closure: ASSISTANT_RUN_CLOSURE_STATE.FAILED,
       reason: 'runtime_failed'
+    };
+  }
+
+  if (hasConfirmationBlock(toolResults)) {
+    return {
+      status: ASSISTANT_RUN_STATUS.WAITING_USER,
+      closure: ASSISTANT_RUN_CLOSURE_STATE.WAITING_USER,
+      reason: 'assistant_confirmation_required'
     };
   }
 

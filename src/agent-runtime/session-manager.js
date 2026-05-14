@@ -148,7 +148,18 @@ export class AgentRuntimeSessionManager {
   _emitEvent(sessionId, type, payload = {}) {
     const nextSeq = (this.seqBySession.get(sessionId) || 0) + 1;
     this.seqBySession.set(sessionId, nextSeq);
-    const event = createAgentEvent(sessionId, nextSeq, type, payload);
+    // Attach the current turn's input so downstream supervisor records reflect
+    // the latest turn's request — without this, continued sessions reuse the
+    // first turn's title forever and produce visible cross-talk.
+    const enrichedPayload = { ...(payload || {}) };
+    const referencedTurnId = String(payload?.turnId || '').trim();
+    if (referencedTurnId && !enrichedPayload.input) {
+      const turn = this._getTurn(sessionId, referencedTurnId);
+      if (turn?.input) {
+        enrichedPayload.input = String(turn.input || '');
+      }
+    }
+    const event = createAgentEvent(sessionId, nextSeq, type, enrichedPayload);
     const session = this.getSession(sessionId);
     if (session) {
       session.lastEventSeq = nextSeq;

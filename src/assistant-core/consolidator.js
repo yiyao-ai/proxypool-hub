@@ -8,7 +8,7 @@ import { logger } from '../utils/logger.js';
 // 由 §11 / v2.5 P3 引入：后台周期性整理三件事
 //   1. 清理过期 PendingClarification（让长时间没人回答的澄清自动作废）
 //   2. 用最近的 task postmortem 刷新对应 workspace.summary（喂给 prompt <known_cwds> 用）
-//   3. 把出现 ≥ N 次的稳定偏好从 conversation/workspace/runtime_session scope 提升到 global_user
+//   3. 把出现 ≥ N 次的稳定偏好从 task/project/execution scope 提升到 person
 //      （形成可跨对话共享的 UserProfile）
 //
 // 默认 30 分钟跑一轮；server 启动时立即跑一次再进入定时。
@@ -204,7 +204,7 @@ export class AssistantConsolidator {
     const allRecords = this.preferenceStore.listPreferences({ key });
     if (!Array.isArray(allRecords) || allRecords.length === 0) return null;
 
-    const candidates = allRecords.filter((entry) => entry?.scope !== 'global_user');
+    const candidates = allRecords.filter((entry) => entry?.scope !== 'person');
     if (candidates.length < this.profileMinOccurrences) return null;
 
     // 用 Map 计数候选值
@@ -221,7 +221,7 @@ export class AssistantConsolidator {
     if (!winnerValue || winnerCount < this.profileMinOccurrences) return null;
 
     const existing = this.preferenceStore.getPreference({
-      scope: 'global_user',
+      scope: 'person',
       scopeRef: this.globalUserScopeRef,
       key
     });
@@ -230,7 +230,7 @@ export class AssistantConsolidator {
     }
 
     this.preferenceStore.upsertPreference({
-      scope: 'global_user',
+      scope: 'person',
       scopeRef: this.globalUserScopeRef,
       key,
       value: winnerValue,

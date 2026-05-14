@@ -4,6 +4,11 @@ import { ASSISTANT_RUN_STATUS } from './models.js';
 import assistantObservationService, { AssistantObservationService } from './observation-service.js';
 import assistantApprovalGovernor, { AssistantApprovalGovernor } from './approval-governor.js';
 import assistantEventNarrationService, { AssistantEventNarrationService } from './event-narration-service.js';
+import stateCoordinator, { StateCoordinator } from './domain/state-coordinator.js';
+import {
+  resolvePendingApprovalSessionId,
+  resolvePendingQuestionSessionId
+} from './pending-runtime-state.js';
 
 function nowIso() {
   return new Date().toISOString();
@@ -19,6 +24,23 @@ function toText(value) {
   return String(value || '').trim();
 }
 
+function mapRuntimeEventToEpisodeKind(eventType = '') {
+  switch (toText(eventType)) {
+    case 'worker.approval_request':
+      return 'runtime.approval_requested';
+    case 'worker.approval_resolved':
+      return 'runtime.approval_resolved';
+    case 'worker.question':
+      return 'runtime.question_asked';
+    case 'worker.completed':
+      return 'runtime.completed';
+    case 'worker.failed':
+      return 'runtime.failed';
+    default:
+      return '';
+  }
+}
+
 function isAssistantModeConversation(conversation = null) {
   return String(conversation?.metadata?.assistantCore?.controlMode || conversation?.metadata?.assistantCore?.mode || '').trim() === 'assistant';
 }
@@ -26,14 +48,23 @@ function isAssistantModeConversation(conversation = null) {
 function isCurrentConversationTask(conversation = null, sessionId = '') {
   const normalized = toText(sessionId);
   if (!normalized) return false;
+  const currentTask = conversation?.metadata?.supervisor?.taskMemory?.currentTask
+    || conversation?.metadata?.supervisor?.taskMemory?.current
+    || null;
+  if (toText(currentTask?.sessionId) === normalized) {
+    return true;
+  }
+  if (toText(resolvePendingApprovalSessionId(conversation)) === normalized) {
+    return true;
+  }
+  if (toText(resolvePendingQuestionSessionId(conversation)) === normalized) {
+    return true;
+  }
   const activeRuntimeSessionId = toText(conversation?.activeRuntimeSessionId);
   if (activeRuntimeSessionId && activeRuntimeSessionId === normalized) {
     return true;
   }
-  const currentTask = conversation?.metadata?.supervisor?.taskMemory?.currentTask
-    || conversation?.metadata?.supervisor?.taskMemory?.current
-    || null;
-  return toText(currentTask?.sessionId) === normalized;
+  return false;
 }
 
 function buildEventMessage({ conversation, session, event }) {
@@ -83,7 +114,30 @@ function buildApprovalAutoDecisionMessage({ conversation, session, approval, gov
   return '';
 }
 
-function shouldNotifyAssistant({ conversation, session, event }) {
+function hasPendingUserRunForSession({ conversation, sessionId, assistantRunStore }) {
+  if (!conversation?.id || !sessionId || !assistantRunStore?.listByConversationId) {
+    return false;
+  }
+  const recentRuns = assistantRunStore.listByConversationId(conversation.id, { limit: 25 }) || [];
+  return recentRuns.some((run) => {
+    if (!run) return false;
+    const ids = Array.isArray(run.relatedRuntimeSessionIds) ? run.relatedRuntimeSessionIds : [];
+    if (!ids.includes(sessionId)) return false;
+    // Skip the duplicate when a user-initiated dialogue run is going to deliver
+    // the final synthesized reply itself. We accept either a still-waiting
+    // run or a freshly-completed dialogue run (within the last 60s) — the
+    // dialogue path owns delivery for that user message.
+    const triggerText = String(run.triggerText || '');
+    const isUserRun = !triggerText.startsWith('[runtime-event]');
+    if (!isUserRun) return false;
+    if (run.status === 'waiting_runtime') return true;
+    const updatedAtMs = Date.parse(String(run.updatedAt || ''));
+    if (!Number.isFinite(updatedAtMs)) return false;
+    return Date.now() - updatedAtMs < 60_000;
+  });
+}
+
+function shouldNotifyAssistant({ conversation, session, event, assistantRunStore }) {
   const eventType = String(event?.type || '').trim();
   if (!isAssistantModeConversation(conversation)) {
     return {
@@ -100,15 +154,25 @@ function shouldNotifyAssistant({ conversation, session, event }) {
   }
 
   if (eventType === 'worker.completed') {
-    if (isCurrentConversationTask(conversation, session?.id || event?.sessionId || '')) {
+    const sessionId = session?.id || event?.sessionId || '';
+    if (!isCurrentConversationTask(conversation, sessionId)) {
       return {
-        shouldNotify: true,
-        reason: 'completed_current_task'
+        shouldNotify: false,
+        reason: 'completed_non_focus_task'
+      };
+    }
+    // A user-message-initiated dialogue run owns the final reply via
+    // waitForRelatedRuntimeAggregation. Suppress the duplicate runtime-event
+    // narration to avoid sending two messages to the channel for one user query.
+    if (hasPendingUserRunForSession({ conversation, sessionId, assistantRunStore })) {
+      return {
+        shouldNotify: false,
+        reason: 'dialogue_run_owns_reply'
       };
     }
     return {
-      shouldNotify: false,
-      reason: 'completed_non_focus_task'
+      shouldNotify: true,
+      reason: 'completed_current_task'
     };
   }
 
@@ -124,7 +188,8 @@ export class AssistantEventIngestService {
     assistantRunStore: assistantRunStoreArg = assistantRunStore,
     observationService = assistantObservationService,
     approvalGovernor = assistantApprovalGovernor,
-    eventNarrationService = assistantEventNarrationService
+    eventNarrationService = assistantEventNarrationService,
+    stateCoordinator: stateCoordinatorArg = stateCoordinator
   } = {}) {
     this.assistantSessionStore = assistantSessionStoreArg instanceof AssistantSessionStore
       ? assistantSessionStoreArg
@@ -141,16 +206,77 @@ export class AssistantEventIngestService {
     this.eventNarrationService = eventNarrationService instanceof AssistantEventNarrationService
       ? eventNarrationService
       : eventNarrationService;
+    this.stateCoordinator = stateCoordinatorArg instanceof StateCoordinator
+      ? stateCoordinatorArg
+      : stateCoordinatorArg;
+  }
+
+  recordRuntimeEventEpisode({
+    conversation,
+    session,
+    event,
+    reason = '',
+    assistantRun = null,
+    governanceResult = null,
+    pendingApproval = null
+  } = {}) {
+    const episodeKind = mapRuntimeEventToEpisodeKind(event?.type);
+    if (!episodeKind || !conversation?.id) {
+      return null;
+    }
+
+    const runtimeSessionId = toText(session?.id || event?.sessionId);
+    return this.stateCoordinator?.recordRuntimeEpisode?.({
+      kind: episodeKind,
+      runtimeSessionId,
+      conversationId: conversation.id,
+      payload: {
+        eventType: toText(event?.type),
+        reason: toText(reason),
+        provider: toText(session?.provider || event?.payload?.provider),
+        title: toText(event?.payload?.title || session?.title),
+        summary: toText(event?.payload?.summary || session?.summary),
+        result: toText(event?.payload?.result),
+        error: toText(event?.payload?.message || session?.error),
+        approvalId: toText(event?.payload?.approvalId || pendingApproval?.approvalId),
+        approvalStatus: toText(event?.payload?.decision || event?.payload?.status),
+        questionId: toText(event?.payload?.questionId),
+        assistantRunId: toText(assistantRun?.id),
+        assistantSessionId: toText(assistantRun?.assistantSessionId),
+        governanceAction: toText(governanceResult?.action),
+        governanceReason: toText(governanceResult?.reason)
+      },
+      metadata: {
+        source: 'assistant_event_ingest',
+        rawEventType: toText(event?.type)
+      }
+    }) || null;
+  }
+
+  persistRuntimeEvent({ conversation, session, event } = {}) {
+    return this.recordRuntimeEventEpisode({
+      conversation,
+      session,
+      event,
+      reason: 'runtime_event_recorded'
+    });
   }
 
   async ingestRuntimeEvent({ conversation, session, event } = {}) {
-    const decision = shouldNotifyAssistant({ conversation, session, event });
+    const persistedEpisode = this.persistRuntimeEvent({ conversation, session, event });
+    const decision = shouldNotifyAssistant({
+      conversation,
+      session,
+      event,
+      assistantRunStore: this.assistantRunStore
+    });
     if (!decision.shouldNotify) {
       return {
         notified: false,
         reason: decision.reason,
         assistantRun: null,
-        message: ''
+        message: '',
+        episode: persistedEpisode
       };
     }
 
@@ -218,13 +344,36 @@ export class AssistantEventIngestService {
             generatedAt: nowIso()
           }
         });
+        const episode = persistedEpisode
+          ? this.stateCoordinator?.episodeLedger?.save?.({
+              ...persistedEpisode,
+              payload: {
+                ...(persistedEpisode.payload || {}),
+                reason: toText(governanceResult.reason || `approval_${governanceResult.action}`),
+                assistantRunId: toText(run?.id),
+                assistantSessionId: toText(run?.assistantSessionId),
+                governanceAction: toText(governanceResult?.action),
+                governanceReason: toText(governanceResult?.reason),
+                approvalId: toText(event?.payload?.approvalId || pendingApproval?.approvalId)
+              }
+            }) || persistedEpisode
+          : this.recordRuntimeEventEpisode({
+              conversation,
+              session,
+              event,
+              reason: governanceResult.reason || `approval_${governanceResult.action}`,
+              assistantRun: run,
+              governanceResult,
+              pendingApproval
+            });
         return {
           notified: true,
           reason: governanceResult.reason || `approval_${governanceResult.action}`,
           assistantSession,
           assistantRun: run,
           message,
-          governance: governanceResult
+          governance: governanceResult,
+          episode: episode || persistedEpisode
         };
       }
     }
@@ -263,6 +412,25 @@ export class AssistantEventIngestService {
         generatedAt: nowIso()
       }
     });
+    const episode = persistedEpisode
+      ? this.stateCoordinator?.episodeLedger?.save?.({
+          ...persistedEpisode,
+          payload: {
+            ...(persistedEpisode.payload || {}),
+            reason: toText(decision.reason),
+            assistantRunId: toText(run?.id),
+            assistantSessionId: toText(run?.assistantSessionId),
+            approvalId: toText(event?.payload?.approvalId || pendingApproval?.approvalId)
+          }
+        }) || persistedEpisode
+      : this.recordRuntimeEventEpisode({
+          conversation,
+          session,
+          event,
+          reason: decision.reason,
+          assistantRun: run,
+          pendingApproval
+        });
 
     this.assistantSessionStore.save({
       ...assistantSession,
@@ -279,7 +447,8 @@ export class AssistantEventIngestService {
       reason: decision.reason,
       assistantSession,
       assistantRun: run,
-      message
+      message,
+      episode: episode || persistedEpisode
     };
   }
 }

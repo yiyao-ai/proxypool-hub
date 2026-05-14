@@ -120,31 +120,31 @@ test('Consolidator skips workspace refresh when summary is fresh and no new task
   assert.equal(result.refreshedWorkspaces.length, 0);
 });
 
-test('Consolidator promotes preferences to global_user when threshold is met', async () => {
+test('Consolidator promotes preferences to person when threshold is met', async () => {
   const { consolidator, preferenceStore } = createFixture();
 
   // 三个不同的 conversation 都偏好 zh-CN
   preferenceStore.upsertPreference({
-    scope: 'conversation',
+    scope: 'task',
     scopeRef: 'conv-1',
     key: 'reply_language',
     value: 'zh-CN'
   });
   preferenceStore.upsertPreference({
-    scope: 'conversation',
+    scope: 'task',
     scopeRef: 'conv-2',
     key: 'reply_language',
     value: 'zh-CN'
   });
   preferenceStore.upsertPreference({
-    scope: 'workspace',
+    scope: 'project',
     scopeRef: 'D:\\proj',
     key: 'reply_language',
     value: 'zh-CN'
   });
   // 一个英语的偏好（少数派）
   preferenceStore.upsertPreference({
-    scope: 'conversation',
+    scope: 'task',
     scopeRef: 'conv-3',
     key: 'reply_language',
     value: 'en'
@@ -158,7 +158,7 @@ test('Consolidator promotes preferences to global_user when threshold is met', a
   assert.equal(promotedReply.occurrences, 3);
 
   const persisted = preferenceStore.getPreference({
-    scope: 'global_user',
+    scope: 'person',
     scopeRef: 'default-user',
     key: 'reply_language'
   });
@@ -170,13 +170,13 @@ test('Consolidator does not promote when occurrences below threshold', async () 
   const { consolidator, preferenceStore } = createFixture();
 
   preferenceStore.upsertPreference({
-    scope: 'conversation',
+    scope: 'task',
     scopeRef: 'conv-1',
     key: 'preferred_runtime_provider',
     value: 'claude-code'
   });
   preferenceStore.upsertPreference({
-    scope: 'conversation',
+    scope: 'task',
     scopeRef: 'conv-2',
     key: 'preferred_runtime_provider',
     value: 'claude-code'
@@ -189,7 +189,7 @@ test('Consolidator does not promote when occurrences below threshold', async () 
     undefined
   );
   const persisted = preferenceStore.getPreference({
-    scope: 'global_user',
+    scope: 'person',
     scopeRef: 'default-user',
     key: 'preferred_runtime_provider'
   });
@@ -200,25 +200,25 @@ test('Consolidator skips re-promotion when global value already matches', async 
   const { consolidator, preferenceStore } = createFixture();
 
   preferenceStore.upsertPreference({
-    scope: 'global_user',
+    scope: 'person',
     scopeRef: 'default-user',
     key: 'reply_language',
     value: 'zh-CN'
   });
   preferenceStore.upsertPreference({
-    scope: 'conversation',
+    scope: 'task',
     scopeRef: 'conv-1',
     key: 'reply_language',
     value: 'zh-CN'
   });
   preferenceStore.upsertPreference({
-    scope: 'conversation',
+    scope: 'task',
     scopeRef: 'conv-2',
     key: 'reply_language',
     value: 'zh-CN'
   });
   preferenceStore.upsertPreference({
-    scope: 'conversation',
+    scope: 'task',
     scopeRef: 'conv-3',
     key: 'reply_language',
     value: 'zh-CN'

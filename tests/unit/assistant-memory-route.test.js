@@ -38,13 +38,13 @@ test('assistant memory and policy routes return scoped records and merged memory
   const policyService = new AssistantPolicyService({ approvalPolicyStore });
 
   preferenceStore.upsertPreference({
-    scope: 'workspace',
+    scope: 'project',
     scopeRef: 'D:\\repo',
     key: 'preferred_runtime_provider',
     value: 'claude-code'
   });
   approvalPolicyStore.createPolicy({
-    scope: 'workspace',
+    scope: 'project',
     scopeRef: 'D:\\repo',
     provider: 'claude-code',
     toolName: 'Read'
@@ -66,11 +66,11 @@ test('assistant memory and policy routes return scoped records and merged memory
     assert.equal(mergedRes._body.memory.values.preferred_runtime_provider, 'claude-code');
 
     const scopedRes = mockRes();
-    handleGetAssistantMemory({ query: { scope: 'workspace', scopeRef: 'D:\\repo' } }, scopedRes);
+    handleGetAssistantMemory({ query: { scope: 'project', scopeRef: 'D:\\repo' } }, scopedRes);
     assert.equal(scopedRes._body.records.length, 1);
 
     const policyRes = mockRes();
-    handleGetAssistantPolicies({ query: { scope: 'workspace', scopeRef: 'D:\\repo' } }, policyRes);
+    handleGetAssistantPolicies({ query: { scope: 'project', scopeRef: 'D:\\repo' } }, policyRes);
     assert.equal(policyRes._body.policies.length, 1);
 
     const invalidRes = mockRes();

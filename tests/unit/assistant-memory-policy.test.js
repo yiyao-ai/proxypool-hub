@@ -16,6 +16,7 @@ import AgentRuntimeSessionStore from '../../src/agent-runtime/session-store.js';
 import { AgentOrchestratorMessageService } from '../../src/agent-orchestrator/message-service.js';
 import { AssistantMemoryService } from '../../src/assistant-core/memory-service.js';
 import { AssistantPolicyService } from '../../src/assistant-core/policy-service.js';
+import { buildScopeRefs } from '../../src/assistant-core/scope-resolver.js';
 import { AssistantWorkspaceStore } from '../../src/assistant-core/workspace-store.js';
 import { AssistantToolRegistry } from '../../src/assistant-core/tool-registry.js';
 import AssistantToolExecutor from '../../src/assistant-core/tool-executor.js';
@@ -87,7 +88,7 @@ class AutoApprovalProvider {
   }
 }
 
-test('AssistantMemoryService resolves layered preferences across global, workspace, and conversation scopes', () => {
+test('AssistantMemoryService resolves layered preferences across person, project, and task scopes', () => {
   const preferenceStore = new AgentPreferenceStore({
     configDir: createTempDir('cligate-assistant-memory-')
   });
@@ -97,19 +98,19 @@ test('AssistantMemoryService resolves layered preferences across global, workspa
   const memoryService = new AssistantMemoryService({ preferenceStore, workspaceStore });
 
   preferenceStore.upsertPreference({
-    scope: 'global_user',
+    scope: 'person',
     scopeRef: 'default-user',
     key: 'reply_language',
     value: 'en'
   });
   preferenceStore.upsertPreference({
-    scope: 'workspace',
+    scope: 'project',
     scopeRef: 'D:\\repo',
     key: 'preferred_runtime_provider',
     value: 'claude-code'
   });
   preferenceStore.upsertPreference({
-    scope: 'conversation',
+    scope: 'task',
     scopeRef: 'conv-1',
     key: 'reply_language',
     value: 'zh-CN'
@@ -128,13 +129,13 @@ test('AssistantMemoryService resolves layered preferences across global, workspa
   assert.equal(workspaceStore.getByRef('D:\\repo')?.workspaceRef, 'D:\\repo');
 });
 
-test('AgentOrchestratorMessageService uses workspace-scoped preferred provider when no conversation preference exists', async () => {
+test('AgentOrchestratorMessageService uses project-scoped preferred provider when no task preference exists', async () => {
   const preferenceStore = new AgentPreferenceStore({
     configDir: createTempDir('cligate-assistant-workspace-pref-')
   });
   const memoryService = new AssistantMemoryService({ preferenceStore });
   preferenceStore.upsertPreference({
-    scope: 'workspace',
+    scope: 'project',
     scopeRef: 'D:\\repo',
     key: 'preferred_runtime_provider',
     value: 'claude-code'
@@ -172,13 +173,13 @@ test('AgentOrchestratorMessageService uses workspace-scoped preferred provider w
   assert.equal(response.provider, 'claude-code');
 });
 
-test('AssistantPolicyService enables workspace-scoped approval auto-resolution', async () => {
+test('AssistantPolicyService enables project-scoped approval auto-resolution', async () => {
   const approvalPolicyStore = new AgentRuntimeApprovalPolicyStore({
     configDir: createTempDir('cligate-assistant-policy-')
   });
   const policyService = new AssistantPolicyService({ approvalPolicyStore });
   policyService.createApprovalPolicy({
-    scope: 'workspace',
+    scope: 'project',
     scopeRef: 'D:\\repo',
     provider: 'claude-code',
     toolName: 'Read',
@@ -239,7 +240,112 @@ test('AssistantPolicyService marks cross-workspace delegation as requiring confi
   assert.equal(decision.riskLevel, 'high');
 });
 
-test('AssistantToolExecutor blocks tool calls that require confirmation', async () => {
+test('buildScopeRefs prefers assistant domain ids over legacy conversation and runtime identifiers', () => {
+  const refs = buildScopeRefs({
+    conversation: {
+      id: 'conv-legacy-1',
+      metadata: {
+        assistantDomain: {
+          workingSet: {
+            primaryPersonId: 'person-42',
+            primaryProjectId: 'project-42',
+            primaryTaskId: 'task-42'
+          }
+        },
+        supervisor: {
+          taskMemory: {
+            activeTaskId: 'task-legacy-1'
+          }
+        },
+        workspaceId: 'D:\\repo-legacy'
+      }
+    },
+    runtimeSession: {
+      id: 'session-legacy-1',
+      metadata: {
+        assistantPersonId: 'person-rt',
+        assistantProjectId: 'project-rt',
+        assistantTaskId: 'task-rt',
+        assistantExecutionId: 'execution-rt'
+      },
+      cwd: 'D:\\repo-session'
+    },
+    cwd: 'D:\\repo-cwd',
+    metadata: {
+      assistantPersonId: 'person-top',
+      assistantProjectId: 'project-top',
+      assistantTaskId: 'task-top',
+      assistantExecutionId: 'execution-top'
+    }
+  });
+
+  assert.equal(refs.person, 'person-top');
+  assert.equal(refs.project, 'project-top');
+  assert.equal(refs.task, 'task-top');
+  assert.equal(refs.execution, 'execution-top');
+  assert.equal(refs.global_user, 'person-top');
+  assert.equal(refs.workspace, 'project-top');
+  assert.equal(refs.conversation, 'task-top');
+  assert.equal(refs.runtime_session, 'execution-top');
+});
+
+test('buildScopeRefs prefers explicit workspace paths over assistant project ids for project scope', () => {
+  const refs = buildScopeRefs({
+    conversation: {
+      id: 'conv-weather-1',
+      metadata: {
+        assistantDomain: {
+          workingSet: {
+            primaryProjectId: 'project-42'
+          }
+        }
+      }
+    },
+    cwd: 'D:\\github\\proxypool-hub',
+    metadata: {
+      assistantProjectId: 'project-42'
+    }
+  });
+
+  assert.equal(refs.project, 'D:\\github\\proxypool-hub');
+  assert.equal(refs.workspace, 'D:\\github\\proxypool-hub');
+});
+
+test('AssistantPolicyService does not require confirmation for same-workspace delegation when assistant project id is present', () => {
+  const approvalPolicyStore = new AgentRuntimeApprovalPolicyStore({
+    configDir: createTempDir('cligate-assistant-policy-same-workspace-')
+  });
+  const policyService = new AssistantPolicyService({ approvalPolicyStore });
+
+  const decision = policyService.canExecuteToolCall({
+    toolName: 'delegate_to_runtime',
+    conversation: {
+      id: 'conv-weather-2',
+      metadata: {
+        assistantDomain: {
+          workingSet: {
+            primaryProjectId: 'project-42'
+          }
+        }
+      }
+    },
+    cwd: 'D:\\github\\proxypool-hub',
+    metadata: {
+      assistantProjectId: 'project-42'
+    },
+    input: {
+      provider: 'codex',
+      task: '帮我查一下今天上海的天气',
+      cwd: 'D:\\github\\proxypool-hub'
+    }
+  });
+
+  assert.equal(decision.allowed, true);
+  assert.equal(decision.scopeExpanded, false);
+  assert.equal(decision.requiresConfirmation, false);
+});
+
+test('AssistantToolExecutor returns a policy block when a tool call requires confirmation', async () => {
   const registry = new AssistantToolRegistry();
   registry.register({
     name: 'delegate_to_runtime',
@@ -254,23 +360,25 @@ test('AssistantToolExecutor blocks tool calls that require confirmation', async 
     policyService: new AssistantPolicyService({ approvalPolicyStore })
   });
 
-  await assert.rejects(
-    () => executor.executeToolCall({
-      toolName: 'delegate_to_runtime',
-      input: {
-        provider: 'codex',
-        task: 'inspect',
-        cwd: 'D:\\repo-b'
-      }
-    }, {
-      conversation: { id: 'conv-2', metadata: { workspaceId: 'D:\\repo-a' } },
-      run: { metadata: {} }
-    }),
-    /requires confirmation/i
-  );
+  const result = await executor.executeToolCall({
+    toolName: 'delegate_to_runtime',
+    input: {
+      provider: 'codex',
+      task: 'inspect',
+      cwd: 'D:\\repo-b'
+    }
+  }, {
+    conversation: { id: 'conv-2', metadata: { workspaceId: 'D:\\repo-a' } },
+    run: { metadata: {} }
+  });
+
+  assert.equal(result.success, false);
+  assert.equal(result.result?.kind, 'policy_block');
+  assert.equal(result.result?.requiresConfirmation, true);
+  assert.match(String(result.summary || ''), /requires confirmation/i);
 });
 
-test('AssistantMemoryService turns runtime_session into a session-memory carrier for runtime state', async () => {
+test('AssistantMemoryService turns execution into a session-memory carrier for runtime state', async () => {
   const runtimeSessionManager = new AgentRuntimeSessionManager({
     registry: (() => {
       const registry = new AgentRuntimeRegistry();
@@ -327,7 +435,7 @@ test('AssistantMemoryService turns runtime_session into a session-memory carrier
     limit: 20
   });
   const listed = memoryService.listMemory({
-    scope: 'runtime_session',
+    scope: 'execution',
     scopeRef: session.id
   });
 

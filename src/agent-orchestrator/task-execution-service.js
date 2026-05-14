@@ -3,6 +3,8 @@ import supervisorTaskStore from './supervisor-task-store.js';
 import assistantWorkspaceStore from '../assistant-core/workspace-store.js';
 import { createSupervisorTask } from './supervisor-task-store.js';
 import { normalizeWorkspaceRef } from '../assistant-core/workspace-store.js';
+import agentChannelConversationStore from '../agent-channels/conversation-store.js';
+import stateCoordinator from '../assistant-core/domain/state-coordinator.js';
 
 function toText(value) {
   return String(value || '').trim();
@@ -83,7 +85,7 @@ function buildExecutionRecord({
   updatedAt = ''
 } = {}) {
   return {
-    executionId: toText(executionId || runtimeSessionId),
+    executionId: toText(executionId),
     taskId: toText(taskId),
     executor: toText(executor),
     runtimeSessionId: toText(runtimeSessionId),
@@ -97,15 +99,197 @@ function buildExecutionRecord({
   };
 }
 
+function normalizeExecutionRole(role = '') {
+  return toText(role) || 'primary';
+}
+
 export class TaskExecutionService {
   constructor({
     runtimeSessionManager = agentRuntimeSessionManager,
     supervisorTaskStore: supervisorTaskStoreArg = supervisorTaskStore,
-    workspaceStore = assistantWorkspaceStore
+    workspaceStore = assistantWorkspaceStore,
+    conversationStore = agentChannelConversationStore,
+    stateCoordinator: stateCoordinatorArg = stateCoordinator
   } = {}) {
     this.runtimeSessionManager = runtimeSessionManager;
     this.supervisorTaskStore = supervisorTaskStoreArg;
     this.workspaceStore = workspaceStore;
+    this.conversationStore = conversationStore;
+    this.stateCoordinator = stateCoordinatorArg;
+  }
+
+  _ensureSupervisorTaskFromAssistantDomain({ taskId = '', sessionId = '' } = {}) {
+    const normalizedTaskId = toText(taskId);
+    const normalizedSessionId = toText(sessionId);
+    const existing = normalizedTaskId ? this.supervisorTaskStore.get(normalizedTaskId) : null;
+    if (existing?.id) {
+      return existing;
+    }
+
+    const executionFromRuntime = normalizedSessionId && this.stateCoordinator?.executionStore?.findByRuntimeSessionId
+      ? this.stateCoordinator.executionStore.findByRuntimeSessionId(normalizedSessionId)
+      : null;
+    const assistantTask = normalizedTaskId && this.stateCoordinator?.taskStore?.get
+      ? this.stateCoordinator.taskStore.get(normalizedTaskId)
+      : (executionFromRuntime?.taskId && this.stateCoordinator?.taskStore?.get
+          ? this.stateCoordinator.taskStore.get(executionFromRuntime.taskId)
+          : null);
+    if (!assistantTask?.id) {
+      return null;
+    }
+
+    const preferredExecutionId = toText(
+      executionFromRuntime?.id
+      || assistantTask.activeExecutionIds?.[assistantTask.activeExecutionIds.length - 1]
+      || assistantTask.allExecutionIds?.[assistantTask.allExecutionIds.length - 1]
+    );
+    const assistantExecution = preferredExecutionId && this.stateCoordinator?.executionStore?.get
+      ? this.stateCoordinator.executionStore.get(preferredExecutionId)
+      : executionFromRuntime;
+    const assistantProject = assistantTask.projectId && this.stateCoordinator?.projectStore?.get
+      ? this.stateCoordinator.projectStore.get(assistantTask.projectId)
+      : null;
+    const runtimeSessionId = toText(
+      normalizedSessionId
+      || assistantExecution?.currentRuntimeSessionId
+      || executionFromRuntime?.currentRuntimeSessionId
+    );
+    const runtimeSession = runtimeSessionId
+      ? this.runtimeSessionManager.getSession(runtimeSessionId)
+      : null;
+    const executionHistory = Array.isArray(assistantExecution?.runtimeSessionHistory)
+      ? assistantExecution.runtimeSessionHistory
+      : [];
+
+    return this.supervisorTaskStore.save({
+      id: assistantTask.id,
+      conversationId: toText(assistantTask.lastConversationId),
+      lastConversationId: toText(assistantTask.lastConversationId),
+      title: toText(assistantTask.title),
+      goal: toText(assistantTask.goal),
+      status: toText(runtimeSession?.status || assistantExecution?.status || assistantTask.lifecycleState || 'ready'),
+      executorStrategy: toText(assistantExecution?.provider || runtimeSession?.provider),
+      primaryExecutionId: runtimeSessionId,
+      executionIds: [
+        runtimeSessionId,
+        ...executionHistory
+      ].filter(Boolean),
+      summary: toText(assistantTask.summary || assistantExecution?.lastTurnSummary || runtimeSession?.summary),
+      error: toText(runtimeSession?.error),
+      cwd: toText(assistantProject?.cwd || runtimeSession?.cwd),
+      workspaceId: toText(assistantProject?.id || ''),
+      metadata: {
+        assistantPersonId: toText(assistantTask.ownerPersonId || assistantExecution?.ownerPersonId),
+        assistantProjectId: toText(assistantProject?.id || assistantTask.projectId),
+        assistantTaskId: assistantTask.id,
+        assistantExecutionId: toText(assistantExecution?.id),
+        latestExecutionId: runtimeSessionId,
+        runtimeSessionId,
+        provider: toText(assistantExecution?.provider || runtimeSession?.provider),
+        originKind: 'assistant_domain_compat'
+      }
+    });
+  }
+
+  _resolveContinuationBinding({ taskId = '', sessionId = '' } = {}) {
+    const normalizedTaskId = toText(taskId);
+    const normalizedSessionId = toText(sessionId);
+    const supervisorTask = normalizedTaskId
+      ? (this.supervisorTaskStore.get(normalizedTaskId) || this._ensureSupervisorTaskFromAssistantDomain({
+          taskId: normalizedTaskId,
+          sessionId: normalizedSessionId
+        }))
+      : this._ensureSupervisorTaskFromAssistantDomain({
+          taskId: '',
+          sessionId: normalizedSessionId
+        });
+    const assistantExecutionId = toText(
+      supervisorTask?.metadata?.assistantExecutionId
+    );
+    const assistantExecution = assistantExecutionId && this.stateCoordinator?.executionStore?.get
+      ? this.stateCoordinator.executionStore.get(assistantExecutionId)
+      : null;
+    const runtimeSessionIdFromExecution = toText(assistantExecution?.currentRuntimeSessionId);
+    const compatibilityExecution = !assistantExecution && normalizedSessionId && this.stateCoordinator?.executionStore?.findByRuntimeSessionId
+      ? this.stateCoordinator.executionStore.findByRuntimeSessionId(normalizedSessionId)
+      : null;
+    const compatibilityExecutionId = toText(compatibilityExecution?.id);
+    const compatibilityRuntimeSessionId = toText(compatibilityExecution?.currentRuntimeSessionId);
+    const resolvedRuntimeSessionId = toText(
+      runtimeSessionIdFromExecution
+      || compatibilityRuntimeSessionId
+      || supervisorTask?.metadata?.latestExecutionId
+      || supervisorTask?.metadata?.runtimeSessionId
+      || supervisorTask?.primaryExecutionId
+      || normalizedSessionId
+    );
+
+    return {
+      supervisorTask,
+      assistantExecutionId: assistantExecutionId || compatibilityExecutionId,
+      assistantExecution: assistantExecution || compatibilityExecution || null,
+      runtimeSessionId: resolvedRuntimeSessionId
+    };
+  }
+
+  _syncAssistantDomainTaskExecution({
+    supervisorTask = null,
+    session = null,
+    input = '',
+    cwd = '',
+    conversationId = '',
+    provider = '',
+    role = 'primary',
+    reuseExecutionId = '',
+    assistantRationale = null
+  } = {}) {
+    if (!this.stateCoordinator || !supervisorTask?.id || !session?.id) {
+      return null;
+    }
+    // Domain fact write path: supervisor/runtime compatibility data is dual-written into the assistant entities here.
+    const synced = this.stateCoordinator.syncTaskExecutionBridge({
+      supervisorTask,
+      session,
+      input,
+      cwd,
+      conversationId,
+      provider,
+      role,
+      reuseExecutionId,
+      assistantRationale
+    });
+    if (!synced) {
+      return null;
+    }
+
+    const nextSupervisorTask = this.supervisorTaskStore.save({
+      ...supervisorTask,
+      metadata: {
+        ...(supervisorTask.metadata || {}),
+        assistantPersonId: synced.person.id,
+        assistantProjectId: synced.project.id,
+        assistantTaskId: synced.task.id,
+        assistantExecutionId: synced.execution.id
+      }
+    });
+
+    this.runtimeSessionManager.patchSession(session.id, {
+      metadata: {
+        ...(session.metadata || {}),
+        assistantPersonId: synced.person.id,
+        assistantProjectId: synced.project.id,
+        assistantTaskId: synced.task.id,
+        assistantExecutionId: synced.execution.id
+      }
+    });
+
+    return {
+      person: synced.person,
+      project: synced.project,
+      task: synced.task,
+      execution: synced.execution,
+      supervisorTask: nextSupervisorTask
+    };
   }
 
   async startTaskExecution({
@@ -119,7 +303,7 @@ export class TaskExecutionService {
     metadata = {}
   } = {}) {
     const normalizedTaskId = toText(taskId);
-    const normalizedRole = toText(role) || 'primary';
+    const normalizedRole = normalizeExecutionRole(role);
     const normalizedSourceTaskId = toText(metadata?.sourceTaskId);
     const existingTask = normalizedTaskId ? this.supervisorTaskStore.get(normalizedTaskId) : null;
     const resolvedTaskId = normalizedTaskId || createSupervisorTask().id;
@@ -139,7 +323,7 @@ export class TaskExecutionService {
     });
     const execution = buildExecutionRecord({
       taskId: normalizedTaskId,
-      executionId: session.id,
+      executionId: '',
       runtimeSessionId: session.id,
       executor: session.provider,
       role: normalizedRole,
@@ -217,6 +401,42 @@ export class TaskExecutionService {
           executionIds: [...new Set([...(existingTask.executionIds || []), ...(supervisorTask.executionIds || []), session.id])]
         });
       }
+      this._syncAssistantDomainTaskExecution({
+        supervisorTask: this.supervisorTaskStore.get(supervisorTask.id) || supervisorTask,
+        session,
+        input,
+        cwd,
+        conversationId,
+        provider: session.provider,
+        role: normalizedRole,
+        assistantRationale: {
+          routeReason: 'dual-write from task execution start',
+          candidateEvidence: [
+            `supervisorTaskId:${supervisorTask.id}`,
+            `runtimeSessionId:${session.id}`,
+            `role:${normalizedRole}`
+          ]
+        }
+      });
+      const syncedTask = this.supervisorTaskStore.get(supervisorTask.id) || supervisorTask;
+      const syncedExecutionId = toText(syncedTask?.metadata?.assistantExecutionId);
+      execution.executionId = syncedExecutionId || execution.executionId;
+      execution.taskId = syncedTask.id;
+      this.stateCoordinator?.recordRuntimeEpisode?.({
+        kind: 'runtime.session_spawned',
+        conversationId,
+        runtimeSessionId: session.id,
+        executionId: syncedExecutionId || '',
+        payload: {
+          provider: toText(session.provider),
+          role: normalizedRole,
+          reason: 'task_execution_start',
+          taskId: syncedTask.id
+        },
+        metadata: {
+          source: 'task_execution_service'
+        }
+      });
     }
 
     return {
@@ -232,8 +452,12 @@ export class TaskExecutionService {
   } = {}) {
     const normalizedTaskId = toText(taskId);
     const normalizedSessionId = toText(sessionId);
-    const task = normalizedTaskId ? this.supervisorTaskStore.get(normalizedTaskId) : null;
-    const resolvedSessionId = toText(task?.primaryExecutionId || normalizedSessionId);
+    const binding = this._resolveContinuationBinding({
+      taskId: normalizedTaskId,
+      sessionId: normalizedSessionId
+    });
+    const task = binding.supervisorTask;
+    const resolvedSessionId = binding.runtimeSessionId;
     if (!resolvedSessionId) {
       throw new Error('task execution target is required');
     }
@@ -245,14 +469,38 @@ export class TaskExecutionService {
     if (!cancelledOrMissing) {
       try {
         const session = await this.runtimeSessionManager.sendInput(resolvedSessionId, input);
+        const currentTask = normalizedTaskId ? this.supervisorTaskStore.get(normalizedTaskId) : task;
+        if (currentTask?.id) {
+          const currentAssistantExecutionId = toText(
+            currentTask?.metadata?.assistantExecutionId
+            || binding.assistantExecutionId
+          );
+          this._syncAssistantDomainTaskExecution({
+            supervisorTask: currentTask,
+            session,
+            input,
+            cwd: currentTask.cwd || session.cwd || '',
+            conversationId: currentTask.lastConversationId || currentTask.conversationId || '',
+            provider: session.provider,
+            role: normalizeExecutionRole(currentTask?.metadata?.executionRole),
+            reuseExecutionId: currentAssistantExecutionId,
+            assistantRationale: {
+              routeReason: 'dual-write from task execution continue',
+              candidateEvidence: [
+                `supervisorTaskId:${currentTask.id}`,
+                `runtimeSessionId:${session.id}`
+              ]
+            }
+          });
+        }
         return {
           ...session,
           execution: buildExecutionRecord({
             taskId: normalizedTaskId || toText(task?.id),
-            executionId: resolvedSessionId,
+            executionId: binding.assistantExecutionId,
             runtimeSessionId: resolvedSessionId,
             executor: session.provider,
-            role: normalizedTaskId && task?.primaryExecutionId === resolvedSessionId ? 'primary' : '',
+            role: normalizeExecutionRole(task?.metadata?.executionRole),
             status: session.status,
             summary: session.summary,
             error: session.error,
@@ -313,9 +561,9 @@ export class TaskExecutionService {
       })
     });
 
+    const reusedAssistantExecutionId = toText(task?.metadata?.assistantExecutionId || binding.assistantExecutionId);
     const updatedTask = this.supervisorTaskStore.save({
       ...task,
-      executionIds: [...new Set([...(task.executionIds || []), fallbackSession.id])],
       lastUpdateAt: new Date().toISOString(),
       metadata: {
         ...(task.metadata || {}),
@@ -323,12 +571,46 @@ export class TaskExecutionService {
         runtimeSessionId: fallbackSession.id
       }
     });
+    this._syncAssistantDomainTaskExecution({
+      supervisorTask: updatedTask,
+      session: fallbackSession,
+      input,
+      cwd,
+      conversationId,
+      provider: fallbackSession.provider,
+      role: 'fallback',
+      reuseExecutionId: reusedAssistantExecutionId,
+      assistantRationale: {
+        routeReason: 'dual-write from fallback execution continue',
+        candidateEvidence: [
+          `supervisorTaskId:${updatedTask.id}`,
+          `runtimeSessionId:${fallbackSession.id}`,
+          `reusedExecution:${toText(task?.metadata?.assistantExecutionId)}`
+        ]
+      }
+    });
+    this.stateCoordinator?.recordRuntimeEpisode?.({
+      kind: 'execution_runtime_session_swapped',
+      conversationId,
+      runtimeSessionId: fallbackSession.id,
+      executionId: reusedAssistantExecutionId,
+      taskId: updatedTask.id,
+      payload: {
+        fromRuntimeSessionId: resolvedSessionId,
+        toRuntimeSessionId: fallbackSession.id,
+        provider: toText(fallbackSession.provider),
+        reason: cancelledOrMissing ? (existingSession ? 'cancelled_session_fallback' : 'missing_session_fallback') : 'respawn_fallback'
+      },
+      metadata: {
+        source: 'task_execution_service'
+      }
+    });
 
     return {
       ...fallbackSession,
       execution: buildExecutionRecord({
         taskId: updatedTask.id,
-        executionId: fallbackSession.id,
+        executionId: reusedAssistantExecutionId,
         runtimeSessionId: fallbackSession.id,
         executor: fallbackSession.provider,
         role: 'fallback',

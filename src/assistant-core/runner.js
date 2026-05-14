@@ -214,6 +214,38 @@ function buildWaitingSupervisorReply({ text, runtimeDetail = null, runtimeStatus
   return null;
 }
 
+function findPolicyConfirmationBlock(toolResults = []) {
+  return [...toolResults].reverse().find((entry) => (
+    entry?.result?.kind === 'policy_block'
+    && entry?.result?.requiresConfirmation === true
+  )) || null;
+}
+
+function buildPolicyConfirmationReply({ text, block = null } = {}) {
+  const zh = isChineseText(text);
+  const requestedPath = String(
+    block?.input?.cwd
+      || block?.input?.workspaceRef
+      || block?.input?.workspaceId
+      || ''
+  ).trim();
+  const detail = requestedPath || String(block?.summary || block?.result?.hint || '').trim();
+  if (zh) {
+    return {
+      summary: '等待确认',
+      message: detail
+        ? `这一步需要你确认后我才能继续。\n${detail}`
+        : '这一步需要你确认后我才能继续。'
+    };
+  }
+  return {
+    summary: 'Waiting for confirmation',
+    message: detail
+      ? `I need your confirmation before I can continue with this action.\n\n${detail}`
+      : 'I need your confirmation before I can continue with this action.'
+  };
+}
+
 export class AssistantRunner {
   constructor({
     runStore = assistantRunStore,
@@ -378,6 +410,7 @@ export class AssistantRunner {
       const pendingApprovals = Array.isArray(runtimeDetail?.pendingApprovals)
         ? runtimeDetail.pendingApprovals.length
         : Number(runtimeDetail?.pendingApprovals || 0);
+      const policyConfirmationBlock = findPolicyConfirmationBlock(toolResults);
       let closure = ASSISTANT_RUN_CLOSURE_STATE.EXECUTOR_DONE;
       let stopReason = 'tool_phase_finished';
       const waitingReply = buildWaitingSupervisorReply({
@@ -387,7 +420,11 @@ export class AssistantRunner {
         pendingQuestions,
         pendingApprovals
       });
-      if (pendingQuestions > 0 || runtimeStatus === 'waiting_user') {
+      if (policyConfirmationBlock) {
+        finalStatus = ASSISTANT_RUN_STATUS.WAITING_USER;
+        closure = ASSISTANT_RUN_CLOSURE_STATE.WAITING_USER;
+        stopReason = 'assistant_confirmation_required';
+      } else if (pendingQuestions > 0 || runtimeStatus === 'waiting_user') {
         finalStatus = ASSISTANT_RUN_STATUS.WAITING_USER;
         closure = ASSISTANT_RUN_CLOSURE_STATE.WAITING_USER;
         stopReason = 'runtime_waiting_user_input';
@@ -406,7 +443,12 @@ export class AssistantRunner {
         stopReason = 'assistant_reply_completed';
       }
 
-      const finalReply = waitingReply || reply;
+      const finalReply = policyConfirmationBlock
+        ? buildPolicyConfirmationReply({
+            text,
+            block: policyConfirmationBlock
+          })
+        : (waitingReply || reply);
 
       const completedRun = this.runStore.save({
         ...currentRun,

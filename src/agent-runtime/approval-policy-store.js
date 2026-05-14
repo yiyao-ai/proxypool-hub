@@ -5,8 +5,27 @@ import { join } from 'path';
 import { CONFIG_DIR } from '../account-manager.js';
 import { approvalPolicyMatchesRequest } from './approval-policy.js';
 
+const CANONICAL_SCOPE_BY_ALIAS = {
+  execution: 'execution',
+  runtime_session: 'execution',
+  session: 'execution',
+  task: 'task',
+  conversation: 'task',
+  project: 'project',
+  workspace: 'project',
+  person: 'person',
+  global_user: 'person',
+  global: 'person'
+};
+
 function nowIso() {
   return new Date().toISOString();
+}
+
+function normalizeScope(scope = '') {
+  const value = String(scope || '').trim();
+  if (!value) return '';
+  return CANONICAL_SCOPE_BY_ALIAS[value] || value;
 }
 
 export class AgentRuntimeApprovalPolicyStore {
@@ -43,14 +62,14 @@ export class AgentRuntimeApprovalPolicyStore {
     );
   }
 
-  createPolicy({ scope = 'session', scopeRef, provider, toolName, decision = 'allow', pathPatterns = [], commandPrefixes = [], metadata = {} } = {}) {
+  createPolicy({ scope = 'execution', scopeRef, provider, toolName, decision = 'allow', pathPatterns = [], commandPrefixes = [], metadata = {} } = {}) {
     if (!scopeRef) {
       throw new Error('scopeRef is required');
     }
 
     const policy = {
       id: crypto.randomUUID(),
-      scope: String(scope || 'session'),
+      scope: normalizeScope(scope) || 'execution',
       scopeRef: String(scopeRef),
       provider: String(provider || ''),
       toolName: String(toolName || ''),
@@ -68,15 +87,17 @@ export class AgentRuntimeApprovalPolicyStore {
   }
 
   listPolicies({ scope, scopeRef } = {}) {
+    const normalizedScope = normalizeScope(scope);
     return this.records.filter((entry) => (
-      (!scope || entry.scope === scope)
+      (!normalizedScope || normalizeScope(entry.scope) === normalizedScope)
       && (!scopeRef || entry.scopeRef === scopeRef)
     ));
   }
 
-  findMatchingPolicy({ scope = 'session', scopeRef, provider, rawRequest } = {}) {
+  findMatchingPolicy({ scope = 'execution', scopeRef, provider, rawRequest } = {}) {
+    const normalizedScope = normalizeScope(scope) || 'execution';
     return this.records.find((entry) => (
-      entry.scope === scope
+      normalizeScope(entry.scope) === normalizedScope
       && entry.scopeRef === String(scopeRef || '')
       && (!provider || !entry.provider || entry.provider === provider)
       && approvalPolicyMatchesRequest(entry, rawRequest)

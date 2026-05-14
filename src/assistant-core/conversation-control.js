@@ -35,7 +35,9 @@ export class AssistantConversationControlService {
     return this.conversationStore.patch(current.id, {
       activeRuntimeSessionId: null,
       lastPendingApprovalId: null,
+      lastPendingApprovalSessionId: null,
       lastPendingQuestionId: null,
+      lastPendingQuestionSessionId: null,
       metadata: buildMetadataPatch(current.metadata || {})
     });
   }

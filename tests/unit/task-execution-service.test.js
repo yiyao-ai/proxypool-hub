@@ -16,6 +16,14 @@ import { SupervisorTaskStore } from '../../src/agent-orchestrator/supervisor-tas
 import { TaskExecutionService } from '../../src/agent-orchestrator/task-execution-service.js';
 import { AgentOrchestratorMessageService } from '../../src/agent-orchestrator/message-service.js';
 import { AssistantWorkspaceStore } from '../../src/assistant-core/workspace-store.js';
+import { AgentChannelConversationStore } from '../../src/agent-channels/conversation-store.js';
+import { StateCoordinator } from '../../src/assistant-core/domain/state-coordinator.js';
+import { PersonStore } from '../../src/assistant-core/domain/person-store.js';
+import { ProjectStore } from '../../src/assistant-core/domain/project-store.js';
+import { TaskStore } from '../../src/assistant-core/domain/task-store.js';
+import { ExecutionStore } from '../../src/assistant-core/domain/execution-store.js';
+import { ScheduledTaskStore } from '../../src/assistant-core/domain/scheduled-task-store.js';
+import { EpisodeLedger } from '../../src/assistant-core/domain/episode-ledger.js';
 
 function createTempDir(prefix) {
   return mkdtempSync(join(tmpdir(), prefix));
@@ -68,10 +76,25 @@ function createFixture() {
   const workspaceStore = new AssistantWorkspaceStore({
     configDir: createTempDir('cligate-task-execution-workspace-')
   });
+  const conversationStore = new AgentChannelConversationStore({
+    configDir: createTempDir('cligate-task-execution-conversation-')
+  });
+  const assistantConfigDir = createTempDir('cligate-task-execution-assistant-domain-');
+  const stateCoordinator = new StateCoordinator({
+    conversationStore,
+    personStore: new PersonStore({ configDir: assistantConfigDir }),
+    projectStore: new ProjectStore({ configDir: assistantConfigDir }),
+    taskStore: new TaskStore({ configDir: assistantConfigDir }),
+    executionStore: new ExecutionStore({ configDir: assistantConfigDir }),
+    scheduledTaskStore: new ScheduledTaskStore({ configDir: assistantConfigDir }),
+    episodeLedger: new EpisodeLedger({ configDir: assistantConfigDir })
+  });
   const taskExecutionService = new TaskExecutionService({
     runtimeSessionManager,
     supervisorTaskStore,
-    workspaceStore
+    workspaceStore,
+    conversationStore,
+    stateCoordinator
   });
   const messageService = new AgentOrchestratorMessageService({
     runtimeSessionManager,
@@ -83,13 +106,15 @@ function createFixture() {
     runtimeSessionManager,
     supervisorTaskStore,
     workspaceStore,
+    conversationStore,
+    stateCoordinator,
     taskExecutionService,
     messageService
   };
 }
 
 test('TaskExecutionService starts a fresh execution and binds it to the supervisor task', async () => {
-  const { taskExecutionService, supervisorTaskStore, workspaceStore } = createFixture();
+  const { taskExecutionService, supervisorTaskStore, workspaceStore, stateCoordinator } = createFixture();
 
   const session = await taskExecutionService.startTaskExecution({
     taskId: 'task-alpha',
@@ -102,7 +127,6 @@ test('TaskExecutionService starts a fresh execution and binds it to the supervis
   const task = supervisorTaskStore.get('task-alpha');
   const workspace = workspaceStore.getByRef('D:\\repo-a');
   assert.ok(session.id);
-  assert.equal(session.execution.executionId, session.id);
   assert.equal(session.execution.runtimeSessionId, session.id);
   assert.equal(session.execution.role, 'primary');
   assert.equal(task.id, 'task-alpha');
@@ -115,8 +139,52 @@ test('TaskExecutionService starts a fresh execution and binds it to the supervis
   assert.equal(task.cwdBasename, 'repo-a');
   assert.equal(task.workspaceId, workspace?.id);
   assert.equal(task.metadata.workspaceId, workspace?.id);
+  assert.equal(session.execution.executionId, task.metadata.assistantExecutionId || '');
   assert.ok(workspace?.taskIds.includes('task-alpha'));
   assert.ok(workspace?.openTaskIds.includes('task-alpha'));
+  const spawnedEpisodes = stateCoordinator.episodeLedger.listByEntity({
+    conversationId: 'conv-alpha',
+    runtimeSessionId: session.id,
+    kind: 'runtime.session_spawned',
+    limit: 10
+  });
+  assert.equal(spawnedEpisodes.length, 1);
+  assert.equal(spawnedEpisodes[0].payload.reason, 'task_execution_start');
+});
+
+test('TaskExecutionService dual-writes assistant domain entities on task start', async () => {
+  const { taskExecutionService, supervisorTaskStore, conversationStore, stateCoordinator } = createFixture();
+
+  const conversation = conversationStore.findOrCreateByExternal({
+    channel: 'chat-ui',
+    accountId: 'default',
+    externalConversationId: 'assistant-dual-write-start',
+    externalUserId: 'local-user',
+    title: 'Chat UI / assistant-dual-write-start'
+  });
+
+  const session = await taskExecutionService.startTaskExecution({
+    taskId: 'task-assistant-start',
+    conversationId: conversation.id,
+    provider: 'codex',
+    input: 'inspect repo',
+    cwd: 'D:\\repo-assistant-start'
+  });
+
+  const supervisorTask = supervisorTaskStore.get('task-assistant-start');
+  assert.ok(supervisorTask?.metadata?.assistantTaskId);
+  assert.ok(supervisorTask?.metadata?.assistantExecutionId);
+
+  const assistantTask = stateCoordinator.taskStore.get(supervisorTask.metadata.assistantTaskId);
+  const assistantExecution = stateCoordinator.executionStore.get(supervisorTask.metadata.assistantExecutionId);
+  const assistantProject = stateCoordinator.projectStore.get(supervisorTask.metadata.assistantProjectId);
+  const updatedConversation = conversationStore.get(conversation.id);
+
+  assert.equal(assistantTask?.title, supervisorTask.title);
+  assert.equal(assistantExecution?.currentRuntimeSessionId, session.id);
+  assert.equal(String(assistantExecution?.providerSessionId || ''), String(session.providerSessionId || ''));
+  assert.equal(assistantProject?.kind, 'misc');
+  assert.equal(updatedConversation.metadata?.assistantDomain?.workingSet?.primaryTaskId, assistantTask.id);
 });
 
 test('AgentOrchestratorMessageService continues a task through its primary execution', async () => {
@@ -147,7 +215,7 @@ test('AgentOrchestratorMessageService continues a task through its primary execu
 
   const turns = runtimeSessionManager.listTurns(started.id, { limit: 10 });
   assert.equal(continued.id, started.id);
-  assert.equal(continued.execution.executionId, started.id);
+  assert.equal(continued.execution.executionId, supervisorTaskStore.get('task-beta')?.metadata?.assistantExecutionId || '');
   assert.equal(continued.execution.runtimeSessionId, started.id);
   assert.equal(turns[0]?.input, 'follow up on task beta');
 });
@@ -228,6 +296,35 @@ test('TaskExecutionService can add a secondary execution without overriding the 
   assert.equal(task.executionIds.length, 2);
   assert.equal(secondary.execution.role, 'secondary');
   assert.equal(task.metadata.latestExecutionId, secondary.id);
+});
+
+test('continueTaskExecution prefers the latest execution over the primary execution for task follow-up', async () => {
+  const { taskExecutionService, runtimeSessionManager } = createFixture();
+
+  const primary = await taskExecutionService.startTaskExecution({
+    taskId: 'task-latest-followup',
+    conversationId: 'conv-latest-followup',
+    provider: 'codex',
+    input: 'implement feature',
+    role: 'primary'
+  });
+  const secondary = await taskExecutionService.startTaskExecution({
+    taskId: 'task-latest-followup',
+    conversationId: 'conv-latest-followup',
+    provider: 'codex',
+    input: 'review feature',
+    role: 'secondary'
+  });
+
+  await taskExecutionService.continueTaskExecution({
+    taskId: 'task-latest-followup',
+    input: 'continue latest execution'
+  });
+
+  const primaryTurns = runtimeSessionManager.listTurns(primary.id, { limit: 10 });
+  const secondaryTurns = runtimeSessionManager.listTurns(secondary.id, { limit: 10 });
+  assert.notEqual(primaryTurns[0]?.input, 'continue latest execution');
+  assert.equal(secondaryTurns[0]?.input, 'continue latest execution');
 });
 
 test('AgentOrchestratorMessageService answers natural-language status through supervisor status instead of starting a new runtime', async () => {
@@ -525,18 +622,212 @@ test('AgentOrchestratorMessageService routes alternate-task phrasing through an 
   assert.equal(turns[0]?.input, '我的另外一个任务呢，执行的咋样了');
 });
 
+test('AgentOrchestratorMessageService syncs assistantDomain working set after starting a runtime task', async () => {
+  const { messageService, conversationStore, supervisorTaskStore, stateCoordinator } = createFixture();
+
+  const conversation = conversationStore.findOrCreateByExternal({
+    channel: 'chat-ui',
+    accountId: 'default',
+    externalConversationId: 'message-working-set-start',
+    externalUserId: 'local-user',
+    title: 'Chat UI / message-working-set-start'
+  });
+
+  const result = await messageService.routeUserMessage({
+    message: { text: '请分析 D:\\github\\proxypool-hub 的消息流' },
+    conversation,
+    cwd: 'D:\\github\\proxypool-hub',
+    metadata: {
+      conversationId: conversation.id
+    }
+  });
+
+  assert.equal(result.type, 'runtime_started');
+  const supervisorTask = supervisorTaskStore.findByRuntimeSessionId(result.session.id);
+  const assistantTask = stateCoordinator.taskStore.get(supervisorTask?.metadata?.assistantTaskId || '');
+  const updatedConversation = conversationStore.get(conversation.id);
+
+  assert.ok(assistantTask?.id);
+  assert.equal(updatedConversation.metadata?.assistantDomain?.workingSet?.primaryTaskId, assistantTask.id);
+  assert.equal(updatedConversation.metadata?.assistantDomain?.workingSet?.primaryProjectId, assistantTask.projectId);
+});
+
+test('AgentOrchestratorMessageService preserves assistantDomain working set when continuing a routed task', async () => {
+  const { messageService, conversationStore, supervisorTaskStore, stateCoordinator } = createFixture();
+
+  const conversation = conversationStore.findOrCreateByExternal({
+    channel: 'chat-ui',
+    accountId: 'default',
+    externalConversationId: 'message-working-set-continue',
+    externalUserId: 'local-user',
+    title: 'Chat UI / message-working-set-continue'
+  });
+
+  const started = await messageService.startRuntimeTask({
+    provider: 'codex',
+    input: 'initial analysis',
+    cwd: 'D:\\github\\proxypool-hub',
+    metadata: {
+      taskId: 'task-working-set',
+      conversationId: conversation.id
+    }
+  });
+  const supervisorTask = supervisorTaskStore.get('task-working-set');
+  messageService.syncConversationAssistantWorkingSet({
+    conversation,
+    taskId: supervisorTask?.id || '',
+    sessionId: started.id
+  });
+
+  const result = await messageService.routeUserMessage({
+    message: { text: '继续看看路由部分' },
+    conversation: conversationStore.get(conversation.id),
+    cwd: 'D:\\github\\proxypool-hub',
+    metadata: {
+      conversationId: conversation.id
+    }
+  });
+
+  assert.equal(result.type, 'runtime_continued');
+  const updatedSupervisorTask = supervisorTaskStore.get('task-working-set');
+  const assistantTask = stateCoordinator.taskStore.get(updatedSupervisorTask?.metadata?.assistantTaskId || '');
+  const updatedConversation = conversationStore.get(conversation.id);
+
+  assert.ok(assistantTask?.id);
+  assert.equal(updatedConversation.metadata?.assistantDomain?.workingSet?.primaryTaskId, assistantTask.id);
+  assert.equal(updatedConversation.metadata?.assistantDomain?.workingSet?.primaryProjectId, assistantTask.projectId);
+});
+
+test('AgentOrchestratorMessageService prefers task-space execution continuity over supervisor memory when routing follow-up', async () => {
+  const { messageService, conversationStore, runtimeSessionManager } = createFixture();
+
+  const conversation = conversationStore.findOrCreateByExternal({
+    channel: 'chat-ui',
+    accountId: 'default',
+    externalConversationId: 'phase2-task-space-routing',
+    externalUserId: 'local-user',
+    title: 'Chat UI / phase2-task-space-routing'
+  });
+
+  const started = await messageService.startRuntimeTask({
+    provider: 'codex',
+    input: 'inspect routing task',
+    cwd: 'D:\\github\\proxypool-hub',
+    metadata: {
+      taskId: 'task-phase2-routing',
+      conversationId: conversation.id
+    }
+  });
+
+  const updatedConversation = conversationStore.get(conversation.id);
+  const result = await messageService.routeUserMessage({
+    message: { text: '继续看看下一步' },
+    conversation: updatedConversation,
+    cwd: 'D:\\github\\proxypool-hub',
+    metadata: {
+      conversationId: conversation.id
+    }
+  });
+
+  const turns = runtimeSessionManager.listTurns(started.id, { limit: 10 });
+  assert.equal(result.type, 'runtime_continued');
+  assert.equal(result.session.id, started.id);
+  assert.equal(turns[0]?.input, '继续看看下一步');
+});
+
+test('AgentOrchestratorMessageService supports /continue through task-space execution continuity without supervisor memory', async () => {
+  const { messageService, conversationStore, runtimeSessionManager } = createFixture();
+
+  const conversation = conversationStore.findOrCreateByExternal({
+    channel: 'chat-ui',
+    accountId: 'default',
+    externalConversationId: 'phase2-command-continue',
+    externalUserId: 'local-user',
+    title: 'Chat UI / phase2-command-continue'
+  });
+
+  const started = await messageService.startRuntimeTask({
+    provider: 'codex',
+    input: 'inspect continue command',
+    cwd: 'D:\\github\\proxypool-hub',
+    metadata: {
+      taskId: 'task-phase2-command-continue',
+      conversationId: conversation.id
+    }
+  });
+
+  const updatedConversation = conversationStore.get(conversation.id);
+  const result = await messageService.routeUserMessage({
+    message: { text: '/continue 再看一下执行链' },
+    conversation: updatedConversation,
+    cwd: 'D:\\github\\proxypool-hub',
+    metadata: {
+      conversationId: conversation.id
+    }
+  });
+
+  const turns = runtimeSessionManager.listTurns(started.id, { limit: 10 });
+  assert.equal(result.type, 'runtime_continued');
+  assert.equal(result.session.id, started.id);
+  assert.equal(turns[0]?.input, '再看一下执行链');
+});
+
+test('AgentOrchestratorMessageService supports /status without supervisor memory when task-space runtime is available', async () => {
+  const { messageService, conversationStore } = createFixture();
+
+  const conversation = conversationStore.findOrCreateByExternal({
+    channel: 'chat-ui',
+    accountId: 'default',
+    externalConversationId: 'phase2-command-status',
+    externalUserId: 'local-user',
+    title: 'Chat UI / phase2-command-status'
+  });
+
+  const started = await messageService.startRuntimeTask({
+    provider: 'codex',
+    input: 'inspect status command',
+    cwd: 'D:\\github\\proxypool-hub',
+    metadata: {
+      taskId: 'task-phase2-command-status',
+      conversationId: conversation.id
+    }
+  });
+
+  const updatedConversation = conversationStore.get(conversation.id);
+  const result = await messageService.routeUserMessage({
+    message: { text: '/status' },
+    conversation: updatedConversation,
+    cwd: 'D:\\github\\proxypool-hub',
+    metadata: {
+      conversationId: conversation.id
+    }
+  });
+
+  assert.equal(result.type, 'runtime_status');
+  assert.equal(result.session.id, started.id);
+});
+
 test('continueTaskExecution falls back to a new session when the primary execution record is gone', async () => {
-  const { taskExecutionService, supervisorTaskStore, runtimeSessionManager } = createFixture();
+  const { taskExecutionService, supervisorTaskStore, runtimeSessionManager, conversationStore, stateCoordinator } = createFixture();
+
+  const conversation = conversationStore.findOrCreateByExternal({
+    channel: 'chat-ui',
+    accountId: 'default',
+    externalConversationId: 'cc-dual-write-fallback',
+    externalUserId: 'local-user',
+    title: 'Chat UI / cc-dual-write-fallback'
+  });
 
   const session = await taskExecutionService.startTaskExecution({
     taskId: 'task-fallback-missing',
-    conversationId: 'conv-fallback-missing',
+    conversationId: conversation.id,
     provider: 'codex',
     input: 'first round',
     cwd: 'D:\\fallback'
   });
 
   const persistedTask = supervisorTaskStore.get('task-fallback-missing');
+  const originalAssistantExecutionId = persistedTask?.metadata?.assistantExecutionId;
   // 给 task 写一个 summary 模拟"上次跑完了"
   supervisorTaskStore.save({
     ...persistedTask,
@@ -551,18 +842,32 @@ test('continueTaskExecution falls back to a new session when the primary executi
   });
 
   const updatedTask = supervisorTaskStore.get('task-fallback-missing');
+  const assistantExecution = stateCoordinator.executionStore.get(originalAssistantExecutionId);
   assert.notEqual(result.id, session.id);
   assert.equal(result.execution.role, 'fallback');
   assert.equal(result.execution.taskId, 'task-fallback-missing');
+  assert.equal(result.execution.executionId, originalAssistantExecutionId);
   // 原 primary 不变；新 session 进入 executionIds
   assert.equal(updatedTask.primaryExecutionId, persistedTask.primaryExecutionId);
-  assert.ok(updatedTask.executionIds.includes(result.id));
   // 第一轮 input 带 prior outcome 前缀
   const newTurns = runtimeSessionManager.listTurns(result.id, { limit: 5 });
   const firstInput = String(newTurns[0]?.input || '');
   assert.match(firstInput, /Resuming task/);
   assert.match(firstInput, /Current request:/);
   assert.match(firstInput, /继续看看下一个/);
+  assert.equal(updatedTask?.metadata?.assistantExecutionId, originalAssistantExecutionId);
+  assert.equal(assistantExecution?.currentRuntimeSessionId, result.id);
+  assert.ok(Array.isArray(assistantExecution?.runtimeSessionHistory) && assistantExecution.runtimeSessionHistory.includes(session.id));
+  assert.ok(Array.isArray(assistantExecution?.runtimeSessionHistory) && assistantExecution.runtimeSessionHistory.includes(result.id));
+  const swappedEpisodes = stateCoordinator.episodeLedger.listByEntity({
+    conversationId: conversation.id,
+    runtimeSessionId: result.id,
+    kind: 'execution_runtime_session_swapped',
+    limit: 10
+  });
+  assert.equal(swappedEpisodes.length, 1);
+  assert.equal(swappedEpisodes[0].payload.fromRuntimeSessionId, session.id);
+  assert.equal(swappedEpisodes[0].payload.toRuntimeSessionId, result.id);
 });
 
 test('continueTaskExecution falls back when the primary execution session is cancelled', async () => {
@@ -587,8 +892,8 @@ test('continueTaskExecution falls back when the primary execution session is can
   const updatedTask = supervisorTaskStore.get('task-fallback-cancelled');
   assert.notEqual(result.id, session.id);
   assert.equal(result.execution.role, 'fallback');
-  assert.ok(updatedTask.executionIds.includes(result.id));
   assert.ok(updatedTask.executionIds.includes(session.id));
+  assert.equal(result.execution.executionId, updatedTask?.metadata?.assistantExecutionId || '');
 });
 
 test('continueTaskExecution propagates non-fallback errors instead of silently spawning new session', async () => {
@@ -610,4 +915,57 @@ test('continueTaskExecution propagates non-fallback errors instead of silently s
     }),
     /input is required/i
   );
+});
+
+test('continueTaskExecution can resolve continuation from assistant domain records without a supervisor task', async () => {
+  const { taskExecutionService, runtimeSessionManager, stateCoordinator, supervisorTaskStore } = createFixture();
+
+  const project = stateCoordinator.projectStore.create({
+    ownerPersonId: 'person-domain-continue',
+    name: 'proxypool-hub',
+    kind: 'code_project',
+    cwd: 'D:\\github\\proxypool-hub'
+  });
+  const assistantTask = stateCoordinator.taskStore.create({
+    id: 'task-domain-continue',
+    projectId: project.id,
+    ownerPersonId: 'person-domain-continue',
+    title: 'domain continue',
+    goal: 'domain continue',
+    lastConversationId: 'conv-domain-continue',
+    activeExecutionIds: ['assistant-exec-domain-continue'],
+    allExecutionIds: ['assistant-exec-domain-continue']
+  });
+  const session = await runtimeSessionManager.createSession({
+    provider: 'codex',
+    input: 'domain continue initial',
+    cwd: 'D:\\github\\proxypool-hub',
+    metadata: {
+      conversationId: 'conv-domain-continue'
+    }
+  });
+  stateCoordinator.executionStore.create({
+    id: 'assistant-exec-domain-continue',
+    taskId: assistantTask.id,
+    ownerPersonId: 'person-domain-continue',
+    provider: 'codex',
+    role: 'primary',
+    objective: 'domain continue',
+    status: 'ready',
+    currentRuntimeSessionId: session.id,
+    runtimeSessionHistory: [session.id]
+  });
+
+  const result = await taskExecutionService.continueTaskExecution({
+    taskId: assistantTask.id,
+    input: '继续 domain-only 路由'
+  });
+
+  const turns = runtimeSessionManager.listTurns(session.id, { limit: 10 });
+  const compatTask = supervisorTaskStore.get(assistantTask.id);
+  assert.equal(result.id, session.id);
+  assert.equal(result.execution.executionId, 'assistant-exec-domain-continue');
+  assert.equal(turns[0]?.input, '继续 domain-only 路由');
+  assert.equal(compatTask?.metadata?.assistantTaskId, assistantTask.id);
+  assert.equal(compatTask?.metadata?.assistantExecutionId, 'assistant-exec-domain-continue');
 });

@@ -19,14 +19,45 @@ import { listApiKeys, getProviderById, recordUsage, recordError, recordRateLimit
 import { resolveModel } from '../model-mapping.js';
 import { getProviderModelOptions, normalizeProviderType } from '../model-options.js';
 import { logger } from '../utils/logger.js';
+// Legacy ordinary-chat assistant compatibility path only.
+// /cligate supervisor logic belongs to assistant-core + assistant-agent.
 import { prepareAssistantRequest } from '../assistant/assistant-chat-service.js';
 import { createPendingAssistantAction, executePendingAssistantAction } from '../assistant/tool-executor.js';
+import assistantPendingActionStore from '../assistant-core/pending-action-store.js';
 import chatUiConversationService from '../chat-ui/conversation-service.js';
 import chatUiConversationStore from '../chat-ui/conversation-store.js';
 
 function listPersistedUiChatMessages(conversation) {
   const messages = conversation?.metadata?.uiChatMessages;
   return Array.isArray(messages) ? messages : [];
+}
+
+function getPendingUiAssistantRunId(conversation) {
+  return String(conversation?.metadata?.uiChatPendingAssistantRunId || '').trim();
+}
+
+function hasPersistedUiAssistantMessage(conversation, {
+  assistantRunId = '',
+  runStatus = '',
+  content = ''
+} = {}) {
+  const normalizedRunId = String(assistantRunId || '').trim();
+  const normalizedRunStatus = String(runStatus || '').trim();
+  const normalizedContent = String(content || '').trim();
+  return listPersistedUiChatMessages(conversation).some((message) => (
+    String(message?.assistantRunId || '').trim() === normalizedRunId
+    && String(message?.runStatus || '').trim() === normalizedRunStatus
+    && String(message?.content || '').trim() === normalizedContent
+  ));
+}
+
+function isAffirmativeConfirmation(text = '') {
+  const normalized = String(text || '').trim();
+  if (!normalized) return false;
+  return [
+    /^(确认|同意|可以|查吧|行|好|继续|批准)\s*[.!。！]*$/i,
+    /^(confirm|approve|yes|ok|okay|go ahead|continue)\s*[.!]*$/i
+  ].some((pattern) => pattern.test(normalized));
 }
 
 export async function handleListChatSources(_req, res) {
@@ -894,7 +925,39 @@ export async function handleConfirmAssistantToolAction(req, res) {
     });
   }
 
-  const result = await executePendingAssistantAction(confirmToken.trim());
+  const normalizedToken = confirmToken.trim();
+  const assistantPendingAction = assistantPendingActionStore.consume(normalizedToken);
+  if (assistantPendingAction) {
+    const conversation = assistantPendingAction.conversationId
+      ? chatUiConversationStore.get(assistantPendingAction.conversationId)
+      : null;
+    try {
+      const routeResult = await chatUiConversationService.routeMessage({
+        sessionId: conversation?.externalConversationId || '',
+        text: String(assistantPendingAction.input?.task || assistantPendingAction.input?.message || '').trim(),
+        defaultRuntimeProvider: String(assistantPendingAction.input?.provider || 'codex').trim() || 'codex',
+        cwd: String(assistantPendingAction.input?.cwd || '').trim(),
+        model: String(assistantPendingAction.input?.model || '').trim(),
+        assistantExecutionMode: 'sync',
+        metadata: {
+          assistantMode: 'direct-runtime'
+        }
+      });
+
+      return res.json({
+        success: true,
+        result: routeResult?.message || routeResult?.assistantRun?.result || 'Confirmed and continued.',
+        routeResult
+      });
+    } catch (error) {
+      return res.status(500).json({
+        success: false,
+        error: error?.message || 'assistant confirmation execution failed'
+      });
+    }
+  }
+
+  const result = await executePendingAssistantAction(normalizedToken);
   if (!result.success) {
     return res.status(400).json(result);
   }
@@ -949,6 +1012,39 @@ export async function handleRouteChatAgentMessage(req, res) {
       return res.status(400).json({ success: false, error: 'input is required' });
     }
 
+    const existingConversation = chatUiConversationStore.getBySessionId(sessionId);
+    const latestAssistantPendingAction = existingConversation?.id
+      ? assistantPendingActionStore.findLatestByConversationId(existingConversation.id)
+      : null;
+    if (latestAssistantPendingAction && isAffirmativeConfirmation(input)) {
+      const confirmed = await handleConfirmAssistantToolAction({
+        body: {
+          confirmToken: latestAssistantPendingAction.confirmToken
+        }
+      }, {
+        status(code) {
+          this._status = code;
+          return this;
+        },
+        json(payload) {
+          this._body = payload;
+          return this;
+        },
+        _status: 200,
+        _body: null
+      });
+      return res.json({
+        success: true,
+        result: {
+          type: 'assistant_response',
+          message: confirmed?._body?.result || confirmed?._body?.routeResult?.message || 'Confirmed.',
+          assistantRun: confirmed?._body?.routeResult?.assistantRun || null,
+          pendingAction: null,
+          observability: confirmed?._body?.routeResult?.observability || null
+        }
+      });
+    }
+
     const result = await chatUiConversationService.routeMessage({
       sessionId,
       text: input,
@@ -963,20 +1059,43 @@ export async function handleRouteChatAgentMessage(req, res) {
       },
       onBackgroundResult: async (backgroundResult) => {
         const conversation = chatUiConversationStore.findOrCreateBySessionId(sessionId);
+        const backgroundRunId = String(backgroundResult?.assistantRun?.id || '').trim();
+        if (!conversation?.metadata || !backgroundRunId) {
+          return;
+        }
+        if (getPendingUiAssistantRunId(conversation) !== backgroundRunId) {
+          return;
+        }
+
+        const messageContent = String(backgroundResult?.message || '').trim();
+        if (hasPersistedUiAssistantMessage(conversation, {
+          assistantRunId: backgroundRunId,
+          runStatus: backgroundResult?.assistantRun?.status || '',
+          content: messageContent
+        })) {
+          return;
+        }
+
         const messages = Array.isArray(conversation?.metadata?.uiChatMessages)
           ? conversation.metadata.uiChatMessages
           : [];
-        conversation?.metadata && chatUiConversationStore.patch(conversation.id, {
+        const runStatus = String(backgroundResult?.assistantRun?.status || '').trim();
+        const nextPendingRunId = ['completed', 'failed', 'cancelled', 'waiting_user'].includes(runStatus)
+          ? ''
+          : backgroundRunId;
+        chatUiConversationStore.patch(conversation.id, {
           metadata: {
             ...(conversation.metadata || {}),
+            uiChatPendingAssistantRunId: nextPendingRunId,
             uiChatMessages: [
               ...messages,
               {
                 role: 'assistant',
                 kind: 'agent-message',
-                content: String(backgroundResult?.message || '').trim(),
-                assistantRunId: backgroundResult?.assistantRun?.id || '',
-                runStatus: backgroundResult?.assistantRun?.status || '',
+                content: messageContent,
+                assistantRunId: backgroundRunId,
+                runStatus,
+                pendingAction: backgroundResult?.pendingAction || null,
                 observability: backgroundResult?.observability || null,
                 createdAt: new Date().toISOString()
               }
@@ -985,6 +1104,30 @@ export async function handleRouteChatAgentMessage(req, res) {
         });
       }
     });
+
+    if (result?.type === 'assistant_run_accepted' && result?.assistantRun?.id) {
+      const conversation = result?.conversation?.id
+        ? (chatUiConversationStore.get(result.conversation.id) || chatUiConversationStore.findOrCreateBySessionId(sessionId))
+        : chatUiConversationStore.findOrCreateBySessionId(sessionId);
+      if (conversation?.metadata) {
+        chatUiConversationStore.patch(conversation.id, {
+          metadata: {
+            ...(conversation.metadata || {}),
+            uiChatPendingAssistantRunId: String(result.assistantRun.id || '').trim()
+          }
+        });
+      }
+    } else if (result?.conversation?.id) {
+      const conversation = chatUiConversationStore.get(result.conversation.id);
+      if (conversation?.metadata && getPendingUiAssistantRunId(conversation)) {
+        chatUiConversationStore.patch(conversation.id, {
+          metadata: {
+            ...(conversation.metadata || {}),
+            uiChatPendingAssistantRunId: ''
+          }
+        });
+      }
+    }
 
     return res.json({
       success: true,

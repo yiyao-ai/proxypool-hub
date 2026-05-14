@@ -6,12 +6,21 @@ import {
 import {
   buildScopeRefs,
   buildScopeCandidates,
+  listCompatibleScopes,
   normalizeScope,
   resolveWorkspaceScopeRef
 } from './scope-resolver.js';
 
 function normalizeText(value) {
   return String(value || '').trim();
+}
+
+function looksLikeWorkspacePath(value = '') {
+  const text = normalizeText(value);
+  if (!text) return false;
+  return /^[A-Za-z]:[\\/]/.test(text)
+    || text.startsWith('\\\\')
+    || text.startsWith('/');
 }
 
 function buildPolicyDecision({ allowed, reason, riskLevel = 'low', requiresConfirmation = false, scopeExpanded = false } = {}) {
@@ -42,20 +51,24 @@ export class AssistantPolicyService {
   listPolicies({ scope, scopeRef } = {}) {
     const normalizedScope = normalizeScope(scope);
     const normalizedScopeRef = normalizeText(scopeRef);
-    const records = this.approvalPolicyStore.listPolicies({
-      scope: normalizedScope,
-      scopeRef: normalizedScopeRef
-    });
-
-    if (normalizedScope !== 'runtime_session') {
-      return records;
+    const scopes = listCompatibleScopes(normalizedScope);
+    if (scopes.length === 0) {
+      return this.approvalPolicyStore.listPolicies({
+        scope: normalizedScope,
+        scopeRef: normalizedScopeRef
+      });
     }
-
-    const legacy = this.approvalPolicyStore.listPolicies({
-      scope: 'session',
+    const records = scopes.flatMap((entryScope) => this.approvalPolicyStore.listPolicies({
+      scope: entryScope,
       scopeRef: normalizedScopeRef
+    }));
+    const seen = new Set();
+    return records.filter((entry) => {
+      const key = String(entry?.id || `${entry?.scope || ''}:${entry?.scopeRef || ''}:${entry?.provider || ''}:${entry?.toolName || ''}`);
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
     });
-    return [...records, ...legacy];
   }
 
   createApprovalPolicy({
@@ -69,7 +82,7 @@ export class AssistantPolicyService {
     metadata = {}
   } = {}) {
     return this.approvalPolicyStore.createPolicy({
-      scope: normalizeScope(scope) || 'runtime_session',
+      scope: normalizeScope(scope) || 'execution',
       scopeRef: normalizeText(scopeRef),
       provider,
       toolName,
@@ -82,7 +95,7 @@ export class AssistantPolicyService {
 
   rememberApproval({
     approval,
-    scope = 'runtime_session',
+    scope = 'execution',
     scopeRef,
     options = {}
   } = {}) {
@@ -142,10 +155,8 @@ export class AssistantPolicyService {
       metadata
     });
 
-    for (const candidate of candidates) {
-      const scopesToCheck = candidate.scope === 'runtime_session'
-        ? ['runtime_session', 'session']
-        : [candidate.scope];
+      for (const candidate of candidates) {
+      const scopesToCheck = listCompatibleScopes(candidate.scope);
 
       for (const scope of scopesToCheck) {
         const records = this.approvalPolicyStore.listPolicies({
@@ -178,6 +189,11 @@ export class AssistantPolicyService {
       || input.cwd
     );
     if (!currentWorkspace || !requestedWorkspace) return false;
+    const currentIsPath = looksLikeWorkspacePath(currentWorkspace);
+    const requestedIsPath = looksLikeWorkspacePath(requestedWorkspace);
+    if (currentIsPath !== requestedIsPath) {
+      return false;
+    }
     return currentWorkspace !== requestedWorkspace;
   }
 
@@ -249,25 +265,25 @@ export class AssistantPolicyService {
 
     if (['send_runtime_input', 'cancel_runtime_session', 'resolve_runtime_approval', 'answer_runtime_question', 'cancel_pending_question'].includes(normalizedTool)) {
       return buildPolicyDecision({
-        allowed: Boolean(runtimeSession?.id || input.sessionId),
-        reason: runtimeSession?.id || input.sessionId ? 'runtime_scope_available' : 'runtime_scope_required',
+        allowed: Boolean(runtimeSession?.id || input.sessionId || input.executionId),
+        reason: runtimeSession?.id || input.sessionId || input.executionId ? 'execution_scope_available' : 'execution_scope_required',
         riskLevel: normalizedTool === 'cancel_runtime_session' ? 'medium' : 'low'
       });
     }
 
     if (['ask_user', 'resolve_clarification', 'cancel_pending_clarification'].includes(normalizedTool)) {
       return buildPolicyDecision({
-        allowed: Boolean(conversation?.id),
-        reason: conversation?.id ? 'conversation_scope_available' : 'conversation_scope_required',
+        allowed: Boolean(buildScopeRefs({ conversation, runtimeSession, cwd, metadata }).task),
+        reason: buildScopeRefs({ conversation, runtimeSession, cwd, metadata }).task ? 'task_scope_available' : 'task_scope_required',
         riskLevel: 'low'
       });
     }
 
     if (normalizedTool === 'continue_task') {
-      const allowed = Boolean(runtimeSession?.id || input.sessionId || input.taskId);
+      const allowed = Boolean(runtimeSession?.id || input.sessionId || input.executionId || input.taskId);
       return buildPolicyDecision({
         allowed,
-        reason: allowed ? 'task_or_runtime_scope_available' : 'task_or_runtime_scope_required',
+        reason: allowed ? 'task_or_execution_scope_available' : 'task_or_execution_scope_required',
         riskLevel: 'low'
       });
     }

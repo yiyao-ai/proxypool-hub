@@ -4,8 +4,27 @@ import { join } from 'path';
 
 import { CONFIG_DIR } from '../account-manager.js';
 
+const CANONICAL_SCOPE_BY_ALIAS = {
+  execution: 'execution',
+  runtime_session: 'execution',
+  session: 'execution',
+  task: 'task',
+  conversation: 'task',
+  project: 'project',
+  workspace: 'project',
+  person: 'person',
+  global_user: 'person',
+  global: 'person'
+};
+
 function nowIso() {
   return new Date().toISOString();
+}
+
+function normalizeScope(scope = '') {
+  const value = String(scope || '').trim();
+  if (!value) return '';
+  return CANONICAL_SCOPE_BY_ALIAS[value] || value;
 }
 
 export class AgentPreferenceStore {
@@ -43,22 +62,24 @@ export class AgentPreferenceStore {
   }
 
   listPreferences({ scope, scopeRef, key } = {}) {
+    const normalizedScope = normalizeScope(scope);
     return this.records.filter((entry) => (
-      (!scope || entry.scope === scope)
+      (!normalizedScope || normalizeScope(entry.scope) === normalizedScope)
       && (!scopeRef || entry.scopeRef === String(scopeRef))
       && (!key || entry.key === String(key))
     ));
   }
 
   getPreference({ scope, scopeRef, key } = {}) {
+    const normalizedScope = normalizeScope(scope);
     return this.records.find((entry) => (
-      entry.scope === String(scope || '')
+      normalizeScope(entry.scope) === normalizedScope
       && entry.scopeRef === String(scopeRef || '')
       && entry.key === String(key || '')
     )) || null;
   }
 
-  upsertPreference({ scope = 'conversation', scopeRef, key, value, metadata = {} } = {}) {
+  upsertPreference({ scope = 'task', scopeRef, key, value, metadata = {} } = {}) {
     if (!scopeRef) {
       throw new Error('scopeRef is required');
     }
@@ -66,9 +87,11 @@ export class AgentPreferenceStore {
       throw new Error('key is required');
     }
 
-    const existing = this.getPreference({ scope, scopeRef, key });
+    const normalizedScope = normalizeScope(scope) || 'task';
+    const existing = this.getPreference({ scope: normalizedScope, scopeRef, key });
     if (existing) {
       existing.value = value;
+      existing.scope = normalizedScope;
       existing.metadata = metadata && typeof metadata === 'object' ? metadata : {};
       existing.updatedAt = nowIso();
       this._save();
@@ -77,7 +100,7 @@ export class AgentPreferenceStore {
 
     const record = {
       id: crypto.randomUUID(),
-      scope: String(scope || 'conversation'),
+      scope: normalizedScope,
       scopeRef: String(scopeRef),
       key: String(key),
       value,

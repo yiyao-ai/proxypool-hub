@@ -5,6 +5,20 @@ function nowIso() {
   return new Date().toISOString();
 }
 
+function buildPolicyToolResult(tool, call, policy, summary, result = {}) {
+  const completedAt = nowIso();
+  return {
+    toolName: tool.name,
+    input: call.input || {},
+    startedAt: completedAt,
+    completedAt,
+    success: false,
+    policy,
+    summary,
+    result
+  };
+}
+
 function summarizeResult(result) {
   if (result == null) return 'No result';
   if (Array.isArray(result)) return `Returned ${result.length} items`;
@@ -48,14 +62,52 @@ export class AssistantToolExecutor {
       throw new Error(`Assistant policy blocked tool ${call.toolName}: ${policy.reason}`);
     }
     if (policy?.requiresConfirmation) {
-      throw new Error(`Assistant policy requires confirmation for tool ${call.toolName}: ${policy.reason}`);
+      return buildPolicyToolResult(
+        tool,
+        call,
+        policy,
+        `Tool ${call.toolName} requires confirmation (${policy.reason})`,
+        {
+          kind: 'policy_block',
+          requiresConfirmation: true,
+          reason: policy.reason,
+          hint: 'This tool call requires confirmation. Ask the user for confirmation or choose a non-mutating path.'
+        }
+      );
     }
 
     const startedAt = nowIso();
-    const result = await tool.execute({
-      input: call.input || {},
-      context
-    });
+    let result;
+    try {
+      result = await tool.execute({
+        input: call.input || {},
+        context
+      });
+    } catch (error) {
+      // Convert tool throws into a structured failure so the supervisor LLM
+      // can read the error and decide a recovery (e.g. delegate_to_codex
+      // with a fresh session) instead of the entire dialogue collapsing to
+      // the deterministic fallback runner. Without this, a transient runtime
+      // error like "session is already running" makes the user see the
+      // canned "fallback assistant" message.
+      const completedAt = nowIso();
+      const message = String(error?.message || error || 'tool execution failed').trim();
+      return {
+        toolName: tool.name,
+        input: call.input || {},
+        startedAt,
+        completedAt,
+        success: false,
+        policy,
+        summary: `Tool ${tool.name} failed: ${message.slice(0, 200)}`,
+        result: {
+          kind: 'tool_error',
+          error: message,
+          recoverable: true,
+          hint: 'The tool call failed. Decide whether to retry with adjusted input (e.g. start a fresh session with delegate_to_codex), to use a different tool, or to tell the user what happened.'
+        }
+      };
+    }
     const completedAt = nowIso();
 
     return {

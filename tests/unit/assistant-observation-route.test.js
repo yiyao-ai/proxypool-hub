@@ -16,6 +16,9 @@ import { AgentTaskStore } from '../../src/agent-core/task-store.js';
 import { ChatUiConversationStore } from '../../src/chat-ui/conversation-store.js';
 import { AgentChannelDeliveryStore } from '../../src/agent-channels/delivery-store.js';
 import { AssistantObservationService } from '../../src/assistant-core/observation-service.js';
+import { TaskStore as AssistantDomainTaskStore } from '../../src/assistant-core/domain/task-store.js';
+import { ExecutionStore as AssistantDomainExecutionStore } from '../../src/assistant-core/domain/execution-store.js';
+import { ProjectStore as AssistantDomainProjectStore } from '../../src/assistant-core/domain/project-store.js';
 import {
   handleGetAssistantWorkspaceContext,
   handleListAssistantRuntimeSessions,
@@ -80,17 +83,32 @@ function createObservationFixture() {
   const deliveryStore = new AgentChannelDeliveryStore({
     configDir: createTempDir('cligate-assistant-observation-delivery-')
   });
+  const assistantTaskStore = new AssistantDomainTaskStore({
+    configDir: createTempDir('cligate-assistant-observation-domain-task-')
+  });
+  const assistantExecutionStore = new AssistantDomainExecutionStore({
+    configDir: createTempDir('cligate-assistant-observation-domain-execution-')
+  });
+  const assistantProjectStore = new AssistantDomainProjectStore({
+    configDir: createTempDir('cligate-assistant-observation-domain-project-')
+  });
 
   return {
     runtimeSessionManager,
     conversationStore,
     taskStore,
     deliveryStore,
+    assistantTaskStore,
+    assistantExecutionStore,
+    assistantProjectStore,
     observationService: new AssistantObservationService({
       runtimeSessionManager,
       conversationStore,
       taskStore,
-      deliveryStore
+      deliveryStore,
+      assistantTaskStore,
+      assistantExecutionStore,
+      assistantProjectStore
     })
   };
 }
@@ -114,6 +132,7 @@ test('AssistantObservationService returns summary-first workspace and drill-down
       ...(conversation.metadata || {}),
       assistantCore: {
         ...(conversation.metadata?.assistantCore || {}),
+        controlMode: 'assistant',
         mode: 'assistant',
         assistantSessionId: 'assistant-session-1',
         lastRunId: 'assistant-run-1'
@@ -177,10 +196,64 @@ test('AssistantObservationService returns summary-first workspace and drill-down
   assert.equal(conversationDetail.deliveries.length, 1);
   assert.ok(conversationDetail.memory);
   assert.ok(conversationDetail.policy);
+  assert.ok(Array.isArray(conversationDetail.policy.task));
+  assert.ok(Array.isArray(conversationDetail.policy.execution));
+  assert.ok(Array.isArray(conversationDetail.policy.project));
 
   const search = observationService.searchProjectMemory({ query: 'inspect', limit: 5 });
   assert.equal(search.tasks.length, 1);
   assert.equal(search.conversations.length, 0);
+});
+
+test('AssistantObservationService resolves pending approval and question from pending session hints instead of only active runtime', async () => {
+  const {
+    runtimeSessionManager,
+    conversationStore,
+    observationService
+  } = createObservationFixture();
+
+  const activeSession = await runtimeSessionManager.createSession({
+    provider: 'codex',
+    input: 'active task'
+  });
+  const waitingSession = await runtimeSessionManager.createSession({
+    provider: 'codex',
+    input: 'waiting task'
+  });
+
+  const approval = runtimeSessionManager.approvalService.createApproval({
+    sessionId: waitingSession.id,
+    provider: 'codex',
+    title: 'Write file',
+    summary: 'Need permission to continue',
+    rawRequest: {
+      requestId: 'approval-waiting-1'
+    }
+  });
+  runtimeSessionManager.questionsBySession.set(waitingSession.id, [{
+    questionId: 'question-waiting-1',
+    status: 'pending',
+    text: 'Need your answer',
+    createdAt: new Date().toISOString()
+  }]);
+
+  const conversation = conversationStore.findOrCreateBySessionId('obs-chat-pending-hint-1');
+  conversationStore.bindRuntimeSession(conversation.id, activeSession.id, {
+    trackedRuntimeSessionIds: [activeSession.id, waitingSession.id],
+    lastPendingApprovalId: approval.approvalId,
+    lastPendingApprovalSessionId: waitingSession.id,
+    lastPendingQuestionId: 'question-waiting-1',
+    lastPendingQuestionSessionId: waitingSession.id
+  });
+
+  const detail = observationService.getConversationContext(conversation.id);
+  assert.equal(detail.activeRuntime.id, activeSession.id);
+  assert.equal(detail.pendingApprovals.length, 1);
+  assert.equal(detail.pendingApprovals[0].approvalId, approval.approvalId);
+  assert.equal(detail.pendingApprovals[0].sessionId, waitingSession.id);
+  assert.equal(detail.pendingQuestions.length, 1);
+  assert.equal(detail.pendingQuestions[0].questionId, 'question-waiting-1');
+  assert.equal(detail.pendingQuestions[0].sessionId, waitingSession.id);
 });
 
 test('assistant observation routes return workspace, runtime, and conversation details', async () => {
@@ -245,6 +318,7 @@ test('assistant observation routes return workspace, runtime, and conversation d
     assert.equal(workspaceRes._body.context.turnStats.turnCount, 1);
     assert.ok(workspaceRes._body.context.memory);
     assert.ok(workspaceRes._body.context.policy);
+    assert.ok(Array.isArray(workspaceRes._body.context.policy.person));
 
     const runtimeListRes = mockRes();
     handleListAssistantRuntimeSessions({ query: {} }, runtimeListRes);
@@ -299,4 +373,133 @@ test('assistant observation routes return workspace, runtime, and conversation d
     void originalConversationList;
     void originalConversationDetail;
   }
+});
+
+test('AssistantObservationService exposes assistant domain links in conversation context when dual-write metadata exists', async () => {
+  const {
+    runtimeSessionManager,
+    conversationStore,
+    taskStore,
+    assistantTaskStore,
+    assistantExecutionStore,
+    assistantProjectStore,
+    observationService
+  } = createObservationFixture();
+
+  const session = await runtimeSessionManager.createSession({
+    provider: 'codex',
+    input: 'inspect repo'
+  });
+  const conversation = conversationStore.findOrCreateBySessionId('obs-domain-link-1');
+  conversationStore.bindRuntimeSession(conversation.id, session.id);
+
+  const assistantProject = assistantProjectStore.create({
+    ownerPersonId: 'person-1',
+    name: 'repo project',
+    kind: 'misc'
+  });
+  const assistantTask = assistantTaskStore.create({
+    projectId: assistantProject.id,
+    ownerPersonId: 'person-1',
+    title: 'inspect repo',
+    goal: 'inspect repo'
+  });
+  const assistantExecution = assistantExecutionStore.create({
+    taskId: assistantTask.id,
+    ownerPersonId: 'person-1',
+    provider: 'codex',
+    role: 'primary',
+    objective: 'inspect repo',
+    currentRuntimeSessionId: session.id
+  });
+
+  taskStore.create({
+    conversationId: conversation.id,
+    runtimeSessionId: session.id,
+    provider: session.provider,
+    title: 'inspect repo',
+    status: 'completed',
+    summary: 'done:inspect repo',
+    metadata: {
+      assistantProjectId: assistantProject.id,
+      assistantTaskId: assistantTask.id,
+      assistantExecutionId: assistantExecution.id
+    }
+  });
+
+  const detail = observationService.getConversationContext(conversation.id);
+  assert.equal(detail.latestTask.assistantDomain?.task?.id, assistantTask.id);
+  assert.equal(detail.latestTask.assistantDomain?.execution?.id, assistantExecution.id);
+  assert.equal(detail.latestTask.assistantDomain?.project?.id, assistantProject.id);
+});
+
+test('AssistantObservationService resolves conversation context from assistant domain working set without supervisor task records', async () => {
+  const {
+    runtimeSessionManager,
+    conversationStore,
+    assistantTaskStore,
+    assistantExecutionStore,
+    assistantProjectStore,
+    observationService
+  } = createObservationFixture();
+
+  const session = await runtimeSessionManager.createSession({
+    provider: 'codex',
+    input: 'inspect repo from domain only',
+    cwd: 'D:\\github\\proxypool-hub'
+  });
+  const assistantProject = assistantProjectStore.create({
+    ownerPersonId: 'person-domain-only',
+    name: 'proxypool-hub',
+    kind: 'code_project',
+    cwd: 'D:\\github\\proxypool-hub'
+  });
+  const assistantTask = assistantTaskStore.create({
+    projectId: assistantProject.id,
+    ownerPersonId: 'person-domain-only',
+    title: 'inspect repo from domain only',
+    goal: 'inspect repo from domain only',
+    lastConversationId: 'conv-domain-only',
+    activeExecutionIds: ['exec-domain-only'],
+    allExecutionIds: ['exec-domain-only']
+  });
+  const assistantExecution = assistantExecutionStore.create({
+    id: 'exec-domain-only',
+    taskId: assistantTask.id,
+    ownerPersonId: 'person-domain-only',
+    provider: 'codex',
+    role: 'primary',
+    objective: 'inspect repo from domain only',
+    status: 'ready',
+    currentRuntimeSessionId: session.id
+  });
+
+  const conversation = conversationStore.findOrCreateBySessionId('conv-domain-only');
+  conversationStore.bindRuntimeSession(conversation.id, session.id, {
+    metadata: {
+      ...(conversation.metadata || {}),
+      assistantDomain: {
+        ...(conversation.metadata?.assistantDomain || {}),
+        personId: 'person-domain-only',
+        workingSet: {
+          primaryProjectId: assistantProject.id,
+          primaryTaskId: assistantTask.id,
+          recentTaskIds: [assistantTask.id],
+          mentionedProjectIds: [assistantProject.id]
+        }
+      }
+    }
+  });
+
+  const detail = observationService.getConversationContext(conversation.id);
+  assert.equal(detail.conversation.activeTaskId, assistantTask.id);
+  assert.equal(detail.latestTask.id, assistantTask.id);
+  assert.equal(detail.latestTask.runtimeSessionId, session.id);
+  assert.equal(detail.latestTask.title, assistantTask.title);
+  assert.equal(detail.latestTask.assistantDomain?.task?.id, assistantTask.id);
+  assert.equal(detail.latestTask.assistantDomain?.execution?.id, assistantExecution.id);
+  assert.equal(detail.latestTask.assistantDomain?.project?.id, assistantProject.id);
+  assert.equal(detail.policy.task.length, 0);
+  assert.equal(detail.policy.execution.length, 0);
+  assert.equal(detail.policy.project.length, 0);
 });

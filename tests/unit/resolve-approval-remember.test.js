@@ -15,6 +15,14 @@ import AgentRuntimeSessionStore from '../../src/agent-runtime/session-store.js';
 import { AgentOrchestratorMessageService } from '../../src/agent-orchestrator/message-service.js';
 import { SupervisorTaskStore } from '../../src/agent-orchestrator/supervisor-task-store.js';
 import { AssistantPolicyService } from '../../src/assistant-core/policy-service.js';
+import { StateCoordinator } from '../../src/assistant-core/domain/state-coordinator.js';
+import { AgentChannelConversationStore } from '../../src/agent-channels/conversation-store.js';
+import { PersonStore } from '../../src/assistant-core/domain/person-store.js';
+import { ProjectStore } from '../../src/assistant-core/domain/project-store.js';
+import { TaskStore } from '../../src/assistant-core/domain/task-store.js';
+import { ExecutionStore } from '../../src/assistant-core/domain/execution-store.js';
+import { ScheduledTaskStore } from '../../src/assistant-core/domain/scheduled-task-store.js';
+import { EpisodeLedger } from '../../src/assistant-core/domain/episode-ledger.js';
 
 function createTempDir(prefix) {
   return mkdtempSync(join(tmpdir(), prefix));
@@ -60,13 +68,26 @@ function createFixture() {
     policyService
   });
   const supervisorTaskStore = new SupervisorTaskStore({ configDir });
+  const conversationStore = new AgentChannelConversationStore({ configDir });
+  const stateCoordinator = new StateCoordinator({
+    conversationStore,
+    personStore: new PersonStore({ configDir }),
+    projectStore: new ProjectStore({ configDir }),
+    taskStore: new TaskStore({ configDir }),
+    executionStore: new ExecutionStore({ configDir }),
+    scheduledTaskStore: new ScheduledTaskStore({ configDir }),
+    episodeLedger: new EpisodeLedger({ configDir })
+  });
   const messageService = new AgentOrchestratorMessageService({
     runtimeSessionManager,
     approvalPolicyStore,
     supervisorTaskStore,
-    policyService
+    policyService,
+    stateCoordinator
   });
   return {
+    conversationStore,
+    stateCoordinator,
     runtimeSessionManager,
     approvalPolicyStore,
     policyService,
@@ -97,7 +118,7 @@ test('resolveApproval with remember="session" creates a wildcard policy that aut
 
   assert.equal(result.status, 'approved');
   assert.ok(result.policy, 'policy should be created');
-  assert.equal(result.policy.scope, 'runtime_session');
+  assert.equal(result.policy.scope, 'execution');
   assert.equal(result.policy.scopeRef, session.id);
   assert.equal(result.policy.toolName, 'WebFetch');
   assert.deepEqual(result.policy.pathPatterns, []);
@@ -147,6 +168,162 @@ test('resolveApproval with remember="conversation" requires conversationId', asy
 
   assert.equal(result.status, 'approved');
   assert.ok(result.policy);
-  assert.equal(result.policy.scope, 'conversation');
+  assert.equal(result.policy.scope, 'task');
   assert.equal(result.policy.scopeRef, 'conv-test-1');
+});
+
+test('resolveApproval maps remember aliases onto assistant domain scope refs when available', async () => {
+  const { runtimeSessionManager, approvalPolicyStore, messageService } = createFixture();
+
+  const session = await runtimeSessionManager.createSession({
+    provider: 'claude-code',
+    input: '查杭州天气',
+    metadata: {
+      assistantPersonId: 'person-1',
+      assistantProjectId: 'project-1',
+      assistantTaskId: 'task-1',
+      assistantExecutionId: 'execution-1'
+    }
+  });
+  const pending = runtimeSessionManager.approvalService.listPending(session.id);
+  const approvalId = pending[0].approvalId;
+
+  const taskScoped = await messageService.resolveApproval({
+    sessionId: session.id,
+    approvalId,
+    decision: 'approve',
+    remember: 'conversation',
+    metadata: {
+      taskId: 'task-1',
+      projectId: 'project-1',
+      globalUserId: 'person-1',
+      executionId: 'execution-1'
+    }
+  });
+
+  assert.equal(taskScoped.status, 'approved');
+  assert.ok(taskScoped.policy);
+  assert.equal(taskScoped.policy.scope, 'task');
+  assert.equal(taskScoped.policy.scopeRef, 'task-1');
+  assert.equal(approvalPolicyStore.listPolicies({ scope: 'task', scopeRef: 'task-1' }).length, 1);
+});
+
+test('message service records approval/question/cancel runtime episodes', async () => {
+  const { runtimeSessionManager, messageService, conversationStore, stateCoordinator } = createFixture();
+  const conversation = conversationStore.findOrCreateByExternal({
+    channel: 'telegram',
+    accountId: 'default',
+    externalConversationId: 'resolve-remember-ledger-chat-1',
+    externalUserId: 'user-1',
+    title: 'resolve remember ledger'
+  });
+
+  const session = await runtimeSessionManager.createSession({
+    provider: 'claude-code',
+    input: '查成都天气',
+    metadata: {
+      conversationId: conversation.id,
+      assistantPersonId: 'person-1',
+      assistantProjectId: 'project-1',
+      assistantTaskId: 'task-1',
+      assistantExecutionId: 'execution-1'
+    }
+  });
+
+  const pendingApproval = runtimeSessionManager.approvalService.listPending(session.id)[0];
+  const resolved = await messageService.resolveApproval({
+    sessionId: session.id,
+    approvalId: pendingApproval.approvalId,
+    decision: 'approve',
+    conversation
+  });
+  assert.equal(resolved.status, 'approved');
+
+  const approvalEpisodes = stateCoordinator.episodeLedger.listByEntity({
+    conversationId: conversation.id,
+    runtimeSessionId: session.id,
+    kind: 'runtime.approval_resolved',
+    limit: 10
+  });
+  assert.equal(approvalEpisodes.length, 1);
+  assert.equal(approvalEpisodes[0].payload.approvalId, pendingApproval.approvalId);
+  assert.equal(approvalEpisodes[0].payload.decision, 'approved');
+
+  runtimeSessionManager.questionsBySession.set(session.id, [{
+    questionId: 'question-1',
+    sessionId: session.id,
+    turnId: `${session.id}:turn:1`,
+    provider: 'claude-code',
+    status: 'pending',
+    text: 'continue?',
+    options: [],
+    rawRequest: null,
+    createdAt: new Date().toISOString(),
+    answeredAt: null
+  }]);
+  runtimeSessionManager.turnHandles.set(session.id, {
+    respondQuestion: async () => {},
+    cancel() {}
+  });
+
+  const answered = await messageService.answerQuestion({
+    sessionId: session.id,
+    questionId: 'question-1',
+    answer: 'yes'
+  });
+  assert.equal(answered.status, 'answered');
+
+  const answeredEpisodes = stateCoordinator.episodeLedger.listByEntity({
+    conversationId: '',
+    runtimeSessionId: session.id,
+    kind: 'runtime.question_answered',
+    limit: 10
+  });
+  assert.equal(answeredEpisodes.length, 1);
+  assert.equal(answeredEpisodes[0].payload.questionId, 'question-1');
+  assert.equal(answeredEpisodes[0].payload.answer, 'yes');
+
+  runtimeSessionManager.questionsBySession.set(session.id, [{
+    questionId: 'question-2',
+    sessionId: session.id,
+    turnId: `${session.id}:turn:1`,
+    provider: 'claude-code',
+    status: 'pending',
+    text: 'cancel?',
+    options: [],
+    rawRequest: null,
+    createdAt: new Date().toISOString(),
+    answeredAt: null
+  }]);
+
+  const cancelledQuestion = messageService.cancelPendingQuestion({
+    sessionId: session.id,
+    questionId: 'question-2',
+    reason: 'user switched intent'
+  });
+  assert.equal(cancelledQuestion.status, 'cancelled');
+
+  const cancelledQuestionEpisodes = stateCoordinator.episodeLedger.listByEntity({
+    runtimeSessionId: session.id,
+    kind: 'runtime.question_cancelled',
+    limit: 10
+  });
+  assert.equal(cancelledQuestionEpisodes.length, 1);
+  assert.equal(cancelledQuestionEpisodes[0].payload.questionId, 'question-2');
+  assert.equal(cancelledQuestionEpisodes[0].payload.reason, 'user switched intent');
+
+  const cancelledSession = messageService.cancelRuntimeSession({
+    sessionId: session.id,
+    conversation
+  });
+  assert.equal(cancelledSession.status, 'cancelled');
+
+  const cancelledSessionEpisodes = stateCoordinator.episodeLedger.listByEntity({
+    conversationId: conversation.id,
+    runtimeSessionId: session.id,
+    kind: 'runtime.cancelled',
+    limit: 10
+  });
+  assert.equal(cancelledSessionEpisodes.length, 1);
+  assert.equal(cancelledSessionEpisodes[0].payload.reason, 'user_cancelled');
 });

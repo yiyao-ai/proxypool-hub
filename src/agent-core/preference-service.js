@@ -74,7 +74,7 @@ export function extractPreferencesFromText(text) {
   return entries;
 }
 
-export function saveScopedPreferences({ scope = 'conversation', scopeRef, text }, {
+export function saveScopedPreferences({ scope = 'task', scopeRef, text }, {
   store = agentPreferenceStore
 } = {}) {
   const normalizedScopeRef = String(scopeRef || '').trim();
@@ -95,7 +95,7 @@ export function saveScopedPreferences({ scope = 'conversation', scopeRef, text }
   }));
 }
 
-export function resolveScopedPreferences({ scope = 'conversation', scopeRef }, {
+export function resolveScopedPreferences({ scope = 'task', scopeRef }, {
   store = agentPreferenceStore
 } = {}) {
   const normalizedScopeRef = String(scopeRef || '').trim();
@@ -116,7 +116,7 @@ export function resolveScopedPreferences({ scope = 'conversation', scopeRef }, {
 
 export function saveConversationPreferences(conversation, text, options = {}) {
   return saveScopedPreferences({
-    scope: 'conversation',
+    scope: 'task',
     scopeRef: conversation?.id,
     text
   }, options);
@@ -124,7 +124,7 @@ export function saveConversationPreferences(conversation, text, options = {}) {
 
 export function resolveConversationPreferences(conversation, options = {}) {
   return resolveScopedPreferences({
-    scope: 'conversation',
+    scope: 'task',
     scopeRef: conversation?.id
   }, options);
 }

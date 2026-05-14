@@ -223,7 +223,9 @@ test('ChatUiRuntimeObserver writes runtime approval and completion state back in
 
     const afterInteractiveEvents = conversationStore.get(started.conversation.id);
     assert.equal(afterInteractiveEvents.lastPendingApprovalId, 'approval-request-1');
+    assert.equal(afterInteractiveEvents.lastPendingApprovalSessionId, started.session.id);
     assert.equal(afterInteractiveEvents.lastPendingQuestionId, 'question-1');
+    assert.equal(afterInteractiveEvents.lastPendingQuestionSessionId, started.session.id);
     assert.equal(afterInteractiveEvents.metadata?.supervisor?.brief?.status, 'waiting_user');
 
     await observer.handleRuntimeEvent({
@@ -237,11 +239,78 @@ test('ChatUiRuntimeObserver writes runtime approval and completion state back in
 
     const afterCompleted = conversationStore.get(started.conversation.id);
     assert.equal(afterCompleted.lastPendingApprovalId, null);
+    assert.equal(afterCompleted.lastPendingApprovalSessionId, null);
     assert.equal(afterCompleted.lastPendingQuestionId, null);
+    assert.equal(afterCompleted.lastPendingQuestionSessionId, null);
     assert.equal(afterCompleted.metadata?.supervisor?.brief?.status, 'completed');
   } finally {
     observer.stop();
   }
+});
+
+test('ChatUiConversationService clears pending session hints after approval and question replies', async () => {
+  const conversationStore = new ChatUiConversationStore({
+    configDir: createTempDir('cligate-chat-ui-conv-clear-pending-session-hints-')
+  });
+  const taskStore = new AgentTaskStore({
+    configDir: createTempDir('cligate-chat-ui-task-clear-pending-session-hints-')
+  });
+  let routeCount = 0;
+  const messageService = {
+    runtimeSessionManager: null,
+    supervisorTaskStore: null,
+    async routeUserMessage() {
+      routeCount += 1;
+      if (routeCount === 1) {
+        return {
+          type: 'approval_resolved',
+          approval: { status: 'approved' }
+        };
+      }
+      return {
+        type: 'question_answered',
+        question: { status: 'answered' }
+      };
+    }
+  };
+  const service = new ChatUiConversationService({
+    conversationStore,
+    messageService,
+    taskStore,
+    assistantModeService: {
+      async maybeHandleMessage() {
+        return null;
+      }
+    }
+  });
+
+  const conversation = conversationStore.findOrCreateBySessionId('chat-ui-clear-pending-session-hints-1');
+  conversationStore.bindRuntimeSession(conversation.id, 'session_waiting', {
+    lastPendingApprovalId: 'approval-1',
+    lastPendingApprovalSessionId: 'session_waiting',
+    lastPendingQuestionId: 'question-1',
+    lastPendingQuestionSessionId: 'session_waiting'
+  });
+
+  await service.routeMessage({
+    sessionId: 'chat-ui-clear-pending-session-hints-1',
+    text: '/approve'
+  });
+
+  const afterApproval = conversationStore.get(conversation.id);
+  assert.equal(afterApproval.lastPendingApprovalId, null);
+  assert.equal(afterApproval.lastPendingApprovalSessionId, null);
+  assert.equal(afterApproval.lastPendingQuestionId, 'question-1');
+  assert.equal(afterApproval.lastPendingQuestionSessionId, 'session_waiting');
+
+  await service.routeMessage({
+    sessionId: 'chat-ui-clear-pending-session-hints-1',
+    text: 'yes'
+  });
+
+  const afterQuestion = conversationStore.get(conversation.id);
+  assert.equal(afterQuestion.lastPendingQuestionId, null);
+  assert.equal(afterQuestion.lastPendingQuestionSessionId, null);
 });
 
 test('ChatUiConversationService enters assistant mode on /cligate and exits on /runtime', async () => {
@@ -334,7 +403,7 @@ test('ChatUiConversationService returns to direct runtime handling after /runtim
   });
 
   assert.equal(runtimeResult.type, 'runtime_started');
-  assert.equal(runtimeResult.session.provider, 'claude-code');
+  assert.equal(runtimeResult.session.provider, 'codex');
 });
 
 test('ChatUiConversationService runs Phase 4 assistant tool flow to start a runtime task', async () => {

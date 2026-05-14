@@ -20,6 +20,7 @@ import { AgentChannelPairingStore } from '../../src/agent-channels/pairing-store
 import { AgentChannelRouter } from '../../src/agent-channels/router.js';
 import { AgentChannelManager } from '../../src/agent-channels/manager.js';
 import { AgentChannelOutboundDispatcher } from '../../src/agent-channels/outbound-dispatcher.js';
+import assistantPendingActionStore from '../../src/assistant-core/pending-action-store.js';
 import FeishuChannelProvider from '../../src/agent-channels/providers/feishu-provider.js';
 import DingTalkChannelProvider from '../../src/agent-channels/providers/dingtalk-provider.js';
 import TelegramChannelProvider from '../../src/agent-channels/providers/telegram-provider.js';
@@ -799,6 +800,136 @@ test('outbound dispatcher sends full completed result text to channel providers'
   assert.equal(deliveryStore.listBySession(started.session.id, { limit: 5 })[0].payload.fullText, longResult);
 });
 
+test('AgentChannelRouter treats affirmative replies as assistant pending-action confirmation', async () => {
+  const conversationStore = new AgentChannelConversationStore({
+    configDir: createTempDir('cligate-agent-channels-pending-action-conv-')
+  });
+  const deliveryStore = new AgentChannelDeliveryStore({
+    configDir: createTempDir('cligate-agent-channels-pending-action-delivery-')
+  });
+  const pairingStore = new AgentChannelPairingStore({
+    configDir: createTempDir('cligate-agent-channels-pending-action-pairing-')
+  });
+
+  const captured = [];
+  const router = new AgentChannelRouter({
+    conversationStore,
+    deliveryStore,
+    pairingStore,
+    messageService: {
+      runtimeSessionManager: {
+        getSession() {
+          return null;
+        }
+      },
+      async routeUserMessage({ message, defaultRuntimeProvider, cwd, metadata }) {
+        captured.push({
+          text: message?.text || '',
+          defaultRuntimeProvider,
+          cwd,
+          metadata
+        });
+        return {
+          type: 'runtime_started',
+          provider: defaultRuntimeProvider,
+          session: {
+            id: 'session_confirmed_1',
+            provider: defaultRuntimeProvider,
+            status: 'starting',
+            title: message?.text || ''
+          }
+        };
+      },
+      getRuntimeSession() {
+        return {
+          id: 'session_confirmed_1',
+          provider: 'codex',
+          status: 'starting',
+          title: '帮我查询一下宁波今天的天气'
+        };
+      },
+      supervisorTaskStore: {
+        get() {
+          return null;
+        },
+        listByConversationId() {
+          return [];
+        },
+        upsertForRuntime(payload) {
+          return {
+            id: payload?.taskId || 'task_confirmed_1',
+            title: payload?.title || '',
+            status: payload?.status || 'starting',
+            metadata: payload?.metadata || {},
+            primaryExecutionId: payload?.runtimeSessionId || '',
+            latestExecutionId: payload?.runtimeSessionId || '',
+            conversationId: payload?.conversationId || ''
+          };
+        },
+        save(record) {
+          return record;
+        }
+      },
+      listPendingApprovals() {
+        return [];
+      },
+      listPendingQuestions() {
+        return [];
+      }
+    },
+    assistantModeService: {
+      async maybeHandleMessage() {
+        return null;
+      }
+    }
+  });
+
+  const conversation = conversationStore.findOrCreateByExternal({
+    channel: 'dingtalk',
+    accountId: 'default',
+    externalConversationId: 'dtalk-confirm-1',
+    externalUserId: 'user-1',
+    title: 'tester / dingtalk',
+    metadata: {
+      assistantCore: {
+        mode: 'assistant'
+      }
+    }
+  });
+  assistantPendingActionStore.create({
+    conversationId: conversation.id,
+    assistantRunId: 'assistant-run-confirm-1',
+    toolName: 'delegate_to_runtime',
+    input: {
+      provider: 'codex',
+      task: '帮我查询一下宁波今天的天气',
+      cwd: 'D:\\github\\proxypool-hub'
+    },
+    title: '需要确认后继续执行',
+    summary: 'Target scope: D:\\github\\proxypool-hub'
+  });
+
+  const result = await router.routeInboundMessage({
+    channel: 'dingtalk',
+    accountId: 'default',
+    externalConversationId: 'dtalk-confirm-1',
+    externalUserId: 'user-1',
+    externalUserName: 'tester',
+    externalMessageId: 'msg-confirm-1',
+    text: '确认',
+    messageType: 'text'
+  }, {
+    defaultRuntimeProvider: 'codex'
+  });
+
+  assert.equal(captured.length, 1);
+  assert.equal(captured[0].text, '帮我查询一下宁波今天的天气');
+  assert.equal(captured[0].defaultRuntimeProvider, 'codex');
+  assert.equal(captured[0].cwd, 'D:\\github\\proxypool-hub');
+  assert.equal(result.type, 'runtime_started');
+  assert.equal(assistantPendingActionStore.findLatestByConversationId(conversation.id), null);
+});
+
 test('AgentChannelRouter stores fresh-session inbound messages under the new runtime session', async () => {
   const runtimeSessionManager = createRuntimeManager();
   const conversationStore = new AgentChannelConversationStore({
@@ -1052,7 +1183,11 @@ test('AgentOrchestratorMessageService accepts natural-language approval and can 
   assert.equal(resolved.type, 'approval_resolved');
   assert.equal(resolved.approval.status, 'approved');
   assert.ok(resolved.policy);
-  assert.equal(approvalPolicyStore.listPolicies({ scope: 'runtime_session', scopeRef: started.id }).length, 1);
+  assert.equal(resolved.policy.scope, 'execution');
+  assert.equal(
+    approvalPolicyStore.listPolicies({ scope: resolved.policy.scope, scopeRef: resolved.policy.scopeRef }).length,
+    1
+  );
 });
 
 test('AgentOrchestratorMessageService can remember approval at conversation scope', async () => {
@@ -1078,8 +1213,11 @@ test('AgentOrchestratorMessageService can remember approval at conversation scop
   });
 
   assert.equal(resolved.type, 'approval_resolved');
-  assert.equal(resolved.policy.scope, 'conversation');
-  assert.equal(approvalPolicyStore.listPolicies({ scope: 'conversation', scopeRef: 'conv_123' }).length, 1);
+  assert.equal(resolved.policy.scope, 'task');
+  assert.equal(
+    approvalPolicyStore.listPolicies({ scope: resolved.policy.scope, scopeRef: resolved.policy.scopeRef }).length,
+    1
+  );
 });
 
 test('AgentOrchestratorMessageService treats 全部同意 phrasing as remembered approval intent', async () => {
@@ -1107,7 +1245,7 @@ test('AgentOrchestratorMessageService treats 全部同意 phrasing as remembered
   assert.equal(resolved.type, 'approval_resolved');
   assert.equal(resolved.approval.status, 'approved');
   assert.ok(resolved.policy);
-  assert.equal(resolved.policy.scope, 'conversation');
+  assert.equal(resolved.policy.scope, 'task');
 });
 
 test('AgentOrchestratorMessageService returns a friendly busy message while the active session is still running', async () => {
@@ -1320,6 +1458,108 @@ test('AgentOrchestratorMessageService auto-targets the only waiting task for nat
 
   assert.equal(resolved.type, 'approval_resolved');
   assert.equal(resolved.approval.status, 'approved');
+});
+
+test('AgentOrchestratorMessageService resolves explicit /approve against task-space session when conversation active session differs', async () => {
+  const runtimeSessionManager = createInteractiveRuntimeManager();
+  const service = new AgentOrchestratorMessageService({ runtimeSessionManager });
+
+  const waiting = await service.startRuntimeTask({
+    provider: 'claude-code',
+    input: 'interactive task'
+  });
+  await service.startRuntimeTask({
+    provider: 'claude-code',
+    input: 'other interactive task'
+  });
+  const pendingApproval = runtimeSessionManager.approvalService.listPending(waiting.id)[0];
+
+  const resolved = await service.routeUserMessage({
+    message: { text: '/approve' },
+    conversation: {
+      id: 'conv_wait_explicit_1',
+      activeRuntimeSessionId: 'other-session',
+      lastPendingApprovalId: pendingApproval.approvalId,
+      metadata: {
+        supervisor: {
+          taskMemory: {
+            byTask: {
+              waiting_task: {
+                taskId: 'waiting_task',
+                sessionId: waiting.id,
+                provider: 'claude-code',
+                title: 'interactive task',
+                status: 'waiting_approval',
+                pendingApprovalTitle: pendingApproval.title
+              },
+              done_task: {
+                taskId: 'done_task',
+                sessionId: 'done-session',
+                provider: 'claude-code',
+                title: 'finished task',
+                status: 'completed'
+              }
+            }
+          }
+        }
+      }
+    }
+  });
+
+  assert.equal(resolved.type, 'approval_resolved');
+  assert.equal(resolved.approval.status, 'approved');
+  assert.equal(resolved.approval.sessionId, waiting.id);
+});
+
+test('AgentOrchestratorMessageService answers natural-language question against task-space session when conversation active session differs', async () => {
+  const runtimeSessionManager = createInteractiveRuntimeManager();
+  const service = new AgentOrchestratorMessageService({ runtimeSessionManager });
+
+  const waiting = await service.startRuntimeTask({
+    provider: 'claude-code',
+    input: 'interactive task'
+  });
+  await service.startRuntimeTask({
+    provider: 'claude-code',
+    input: 'other interactive task'
+  });
+  const pendingQuestion = runtimeSessionManager.listPendingQuestions(waiting.id)
+    .find((entry) => entry.status === 'pending');
+
+  const answered = await service.routeUserMessage({
+    message: { text: 'yes' },
+    conversation: {
+      id: 'conv_wait_question_1',
+      activeRuntimeSessionId: 'other-session',
+      lastPendingQuestionId: pendingQuestion.questionId,
+      metadata: {
+        supervisor: {
+          taskMemory: {
+            byTask: {
+              waiting_task: {
+                taskId: 'waiting_task',
+                sessionId: waiting.id,
+                provider: 'claude-code',
+                title: 'interactive task',
+                status: 'waiting_user',
+                pendingQuestion: pendingQuestion.text
+              },
+              done_task: {
+                taskId: 'done_task',
+                sessionId: 'done-session',
+                provider: 'claude-code',
+                title: 'finished task',
+                status: 'completed'
+              }
+            }
+          }
+        }
+      }
+    }
+  });
+
+  assert.equal(answered.type, 'question_answered');
+  assert.equal(answered.question.status, 'answered');
 });
 
 test('AgentOrchestratorMessageService keeps explicit /status available without starting a runtime', async () => {
@@ -1545,29 +1785,29 @@ test('AgentOrchestratorMessageService stores explicit conversation preferences f
   assert.equal(response.type, 'preference_saved');
   assert.match(String(response.message || ''), /Preference saved/i);
   assert.equal(preferenceStore.getPreference({
-    scope: 'conversation',
+    scope: 'task',
     scopeRef: 'conv_pref_1',
     key: 'reply_language'
   })?.value, 'zh-CN');
   assert.equal(preferenceStore.getPreference({
-    scope: 'conversation',
+    scope: 'task',
     scopeRef: 'conv_pref_1',
     key: 'preferred_runtime_provider'
   })?.value, 'claude-code');
   assert.equal(preferenceStore.getPreference({
-    scope: 'conversation',
+    scope: 'task',
     scopeRef: 'conv_pref_1',
     key: 'execution_style'
   })?.value, 'minimal-change');
 });
 
-test('AgentOrchestratorMessageService prefers conversation-saved provider for new tasks', async () => {
+test('AgentOrchestratorMessageService prefers task-saved provider for new tasks', async () => {
   const runtimeSessionManager = createHybridRuntimeManager();
   const preferenceStore = new AgentPreferenceStore({
     configDir: createTempDir('cligate-agent-preference-provider-')
   });
   preferenceStore.upsertPreference({
-    scope: 'conversation',
+    scope: 'task',
     scopeRef: 'conv_pref_2',
     key: 'preferred_runtime_provider',
     value: 'claude-code',
@@ -3114,6 +3354,47 @@ test('DingTalkChannelProvider splits oversized messages into multiple webhook se
   assert.ok(calls[0].body.text.content.startsWith('[1/'));
 });
 
+test('DingTalkChannelProvider appends action commands when outbound buttons are present', async () => {
+  const calls = [];
+  const provider = new DingTalkChannelProvider({
+    fetchImpl: async (url, options = {}) => {
+      calls.push({
+        url,
+        body: options.body ? JSON.parse(options.body) : null
+      });
+      return {
+        ok: true,
+        json: async () => ({
+          processQueryKey: 'process_actions_1'
+        })
+      };
+    }
+  });
+
+  const result = await provider.sendMessage({
+    conversation: {
+      externalConversationId: 'cid_actions',
+      metadata: {
+        channelContext: {
+          sessionWebhook: 'https://example.invalid/dingtalk/session-webhook',
+          sessionWebhookExpiredTime: String(Date.now() + 60_000)
+        }
+      }
+    },
+    text: 'Need your approval.',
+    buttons: [
+      { id: 'approve', text: 'Approve', action: 'approve' },
+      { id: 'deny', text: 'Deny', action: 'deny' }
+    ]
+  });
+
+  assert.equal(result.messageId, 'process_actions_1');
+  assert.equal(calls.length, 1);
+  assert.match(String(calls[0].body?.text?.content || ''), /Need your approval\./);
+  assert.match(String(calls[0].body?.text?.content || ''), /Approve \(\/approve\)/);
+  assert.match(String(calls[0].body?.text?.content || ''), /Deny \(\/deny\)/);
+});
+
 test('FeishuChannelProvider splits oversized messages into multiple sends', async () => {
   const calls = [];
   const provider = new FeishuChannelProvider({
@@ -3151,6 +3432,60 @@ test('FeishuChannelProvider splits oversized messages into multiple sends', asyn
   assert.ok(calls.length > 1);
   assert.ok(calls.every((entry) => JSON.parse(entry.body.content).text));
   assert.ok(JSON.parse(calls[0].body.content).text.startsWith('[1/'));
+});
+
+test('FeishuChannelProvider appends action commands when outbound buttons are present', async () => {
+  const calls = [];
+  const provider = new FeishuChannelProvider({
+    fetchImpl: async (url, options = {}) => {
+      if (String(url).includes('tenant_access_token')) {
+        return {
+          ok: true,
+          json: async () => ({
+            code: 0,
+            tenant_access_token: 'tenant_token',
+            expire: 7200
+          })
+        };
+      }
+      calls.push({
+        url,
+        body: options.body ? JSON.parse(options.body) : null
+      });
+      return {
+        ok: true,
+        json: async () => ({
+          code: 0,
+          data: {
+            message_id: 'msg_actions_1'
+          }
+        })
+      };
+    }
+  });
+
+  provider.settings = {
+    appId: 'app_id',
+    appSecret: 'app_secret'
+  };
+
+  const result = await provider.sendMessage({
+    conversation: {
+      externalConversationId: 'oc_feishu_actions'
+    },
+    text: 'Need your approval.',
+    buttons: [
+      { id: 'approve', text: 'Approve', action: 'approve' },
+      { id: 'deny', text: 'Deny', action: 'deny' }
+    ]
+  });
+
+  assert.equal(result.messageId, 'msg_actions_1');
+  assert.equal(calls.length, 1);
+  const messageText = JSON.parse(calls[0].body.content).text;
+  assert.match(String(messageText || ''), /Need your approval\./);
+  assert.match(String(messageText || ''), /Approve \(\/approve\)/);
+  assert.match(String(messageText || ''), /Deny \(\/deny\)/);
 });
 
 test('session records are grouped by runtime session instead of channel conversation', async () => {

@@ -175,7 +175,7 @@ test('approval governor auto-approves remembered approval policies in assistant 
 
   policyService.rememberApproval({
     approval,
-    scope: 'runtime_session',
+    scope: 'execution',
     scopeRef: session.id
   });
 
@@ -236,7 +236,7 @@ test('assistant event ingest auto-approves remembered approval requests and only
   });
   policyService.rememberApproval({
     approval: rememberedApproval,
-    scope: 'runtime_session',
+    scope: 'execution',
     scopeRef: first.session.id
   });
 

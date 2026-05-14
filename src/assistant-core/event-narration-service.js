@@ -28,7 +28,9 @@ function buildEventSummary({ conversation, session, event }) {
     eventPayload: event?.payload || {},
     supervisorBrief: conversation?.metadata?.supervisor?.brief || null,
     pendingApprovalId: conversation?.lastPendingApprovalId || '',
-    pendingQuestionId: conversation?.lastPendingQuestionId || ''
+    pendingApprovalSessionId: conversation?.lastPendingApprovalSessionId || '',
+    pendingQuestionId: conversation?.lastPendingQuestionId || '',
+    pendingQuestionSessionId: conversation?.lastPendingQuestionSessionId || ''
   };
 }
 

@@ -1,6 +1,7 @@
 import { i18n } from './i18n.js';
 import { createApiKeysPageModule } from './modules/api-keys-page.js';
 import { createAssistantTasksPageModule } from './modules/assistant-tasks-page.js';
+import { createAssistantWorkbenchPageModule } from './modules/assistant-workbench-page.js';
 import { createAccountsPageModule } from './modules/accounts-page.js';
 import { createChannelsPageModule } from './modules/channels-page.js';
 import { createChatPageModule } from './modules/chat-page.js';
@@ -32,6 +33,7 @@ function createShellModule() {
       channels: '/partials/views/channels.html',
       conversationRecords: '/partials/views/conversation-records.html',
       assistantTasks: '/partials/views/assistant-tasks.html',
+      assistantWorkbench: '/partials/views/assistant-workbench.html',
       localModels: '/partials/views/local-models.html',
       apikeys: '/partials/views/api-keys.html',
       usage: '/partials/views/usage.html',
@@ -208,7 +210,7 @@ function createShellModule() {
     },
 
     sectionForTab(tab) {
-      if (['dashboard', 'chat', 'conversationRecords', 'assistantTasks'].includes(tab)) return 'workspace';
+      if (['dashboard', 'chat', 'conversationRecords', 'assistantTasks', 'assistantWorkbench'].includes(tab)) return 'workspace';
       if (['assistantAgent'].includes(tab)) return 'assistant';
       if (['tools'].includes(tab)) return 'cliTools';
       if (['accounts', 'apikeys', 'localModels'].includes(tab)) return 'credentials';
@@ -299,6 +301,9 @@ function createShellModule() {
             this.loadAssistantTaskDetail(this.selectedAssistantTaskId, { silent: true });
           }
         });
+      }
+      if (tab === 'assistantWorkbench') {
+        this.loadAssistantWorkbench();
       }
       if (tab === 'settings') {
         this.refreshProxyStatus();
@@ -527,6 +532,7 @@ function registerApp() {
     createAccountsPageModule(),
     createChatPageModule(),
     createAssistantTasksPageModule(),
+    createAssistantWorkbenchPageModule(),
     createSettingsPageModule(),
     createLogsPageModule(),
     createUsagePricingPageModule(),

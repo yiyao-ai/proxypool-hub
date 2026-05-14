@@ -7,10 +7,13 @@ import { AGENT_SESSION_STATUS } from '../agent-runtime/models.js';
 import { buildSupervisorBrief } from './supervisor-brief.js';
 import { AssistantMemoryService } from '../assistant-core/memory-service.js';
 import { AssistantPolicyService } from '../assistant-core/policy-service.js';
+import { AssistantTaskViewService } from '../assistant-core/task-view-service.js';
 import { getAssistantControlMode } from '../assistant-core/assistant-state.js';
+import { buildScopeRefs, normalizeScope } from '../assistant-core/scope-resolver.js';
 import supervisorTaskStore from './supervisor-task-store.js';
 import taskExecutionService, { TaskExecutionService } from './task-execution-service.js';
 import { listSupervisorTaskRecords } from './supervisor-task-memory.js';
+import stateCoordinator from '../assistant-core/domain/state-coordinator.js';
 
 function parseLeadingCommand(input) {
   const text = String(input || '').trim();
@@ -435,6 +438,96 @@ function buildSupervisorStatusResponse(conversation, session = null) {
   };
 }
 
+function uniqueSessionIds(values = []) {
+  return [...new Set(
+    values
+      .map((value) => String(value || '').trim())
+      .filter(Boolean)
+  )];
+}
+
+function resolvePendingApprovalSessionId(service, {
+  pendingApprovalId = '',
+  pendingApprovalSessionId = '',
+  resolvedSessionId = '',
+  activeSessionId = '',
+  taskSessionId = '',
+  taskRoute = null,
+  conversation = null
+} = {}) {
+  const approvalId = String(pendingApprovalId || '').trim();
+  if (!approvalId) return null;
+
+  const explicitSessionId = String(pendingApprovalSessionId || '').trim();
+  if (explicitSessionId) {
+    const approval = service.runtimeSessionManager?.approvalService?.getApproval?.(explicitSessionId, approvalId);
+    if (approval?.status === 'pending') {
+      return explicitSessionId;
+    }
+  }
+
+  const candidateSessionIds = uniqueSessionIds([
+    taskRoute?.task?.sessionId,
+    taskSessionId,
+    getCurrentTaskSessionId(conversation),
+    resolvedSessionId,
+    activeSessionId,
+    conversation?.activeRuntimeSessionId,
+    ...(Array.isArray(taskRoute?.activeTasks) ? taskRoute.activeTasks.map((entry) => entry?.sessionId) : [])
+  ]);
+
+  for (const sessionId of candidateSessionIds) {
+    const approval = service.runtimeSessionManager?.approvalService?.getApproval?.(sessionId, approvalId);
+    if (approval?.status === 'pending') {
+      return sessionId;
+    }
+  }
+
+  return null;
+}
+
+function resolvePendingQuestionSessionId(service, {
+  pendingQuestionId = '',
+  pendingQuestionSessionId = '',
+  resolvedSessionId = '',
+  activeSessionId = '',
+  taskSessionId = '',
+  taskRoute = null,
+  conversation = null
+} = {}) {
+  const questionId = String(pendingQuestionId || '').trim();
+  if (!questionId) return null;
+
+  const explicitSessionId = String(pendingQuestionSessionId || '').trim();
+  if (explicitSessionId) {
+    const pendingQuestion = service.runtimeSessionManager?.listPendingQuestions?.(explicitSessionId)
+      ?.find((entry) => entry?.status === 'pending' && String(entry?.questionId || '').trim() === questionId);
+    if (pendingQuestion) {
+      return explicitSessionId;
+    }
+  }
+
+  const candidateSessionIds = uniqueSessionIds([
+    taskRoute?.task?.sessionId,
+    taskSessionId,
+    getCurrentTaskSessionId(conversation),
+    resolvedSessionId,
+    activeSessionId,
+    conversation?.activeRuntimeSessionId,
+    ...(Array.isArray(taskRoute?.activeTasks) ? taskRoute.activeTasks.map((entry) => entry?.sessionId) : [])
+  ]);
+
+  for (const sessionId of candidateSessionIds) {
+    const pendingQuestion = service.runtimeSessionManager?.listPendingQuestions?.(sessionId)
+      ?.find((entry) => entry?.status === 'pending' && String(entry?.questionId || '').trim() === questionId);
+    if (pendingQuestion) {
+      return sessionId;
+    }
+  }
+
+  return null;
+}
+
 function isNaturalLanguageStatusIntent(input) {
   const text = String(input || '').trim().toLowerCase();
   if (!text) return false;
@@ -602,6 +695,7 @@ function normalizeDecisionText(input) {
 function isApprovalAffirmative(input) {
   const text = normalizeDecisionText(input);
   return /^(同意|可以|允许|继续|行|确认)(?:\s|$|这|该|后|本|给|让|吧)/.test(text)
+    || /^(全部同意|都同意|一律同意)(?:\s|$|，|,|。|\.)/.test(text)
     || /^(approve|ok|okay|yes|y)\b/.test(text);
 }
 
@@ -616,9 +710,175 @@ function wantsRememberedApproval(input) {
   return /(后续|以后|本会话|别再问|都允许|全部允许|都同意|全部同意|一律同意|this session|from now on|remember|don'?t ask again)/i.test(text);
 }
 
+function wantsExecutionRememberedApproval(input) {
+  const text = String(input || '').trim().toLowerCase();
+  return /(这个会话|当前会话|本会话|这条会话|runtime session|this session|current session)/i.test(text);
+}
+
 function wantsConversationRememberedApproval(input) {
   const text = String(input || '').trim().toLowerCase();
-  return /(这个对话|这次对话|当前对话|这个聊天|这条会话|this conversation|this chat|以后都|后续都|别再问|后面都同意|以后都同意)/i.test(text);
+  return /(这个对话|这次对话|当前对话|这个聊天|this conversation|this chat)/i.test(text);
+}
+
+function resolveAssistantDomainBinding({
+  supervisorTaskStore: supervisorTaskStoreArg,
+  runtimeSessionManager,
+  taskId = '',
+  sessionId = ''
+} = {}) {
+  const normalizedTaskId = String(taskId || '').trim();
+  const normalizedSessionId = String(sessionId || '').trim();
+  const supervisorTask = normalizedTaskId
+    ? supervisorTaskStoreArg?.get?.(normalizedTaskId) || null
+    : (normalizedSessionId ? supervisorTaskStoreArg?.findByRuntimeSessionId?.(normalizedSessionId) || null : null);
+  const runtimeSession = normalizedSessionId
+    ? runtimeSessionManager?.getSession?.(normalizedSessionId) || null
+    : null;
+  const metadata = supervisorTask?.metadata && typeof supervisorTask.metadata === 'object'
+    ? supervisorTask.metadata
+    : {};
+
+  return {
+    supervisorTask,
+    runtimeSession,
+    assistantPersonId: String(metadata.assistantPersonId || runtimeSession?.metadata?.assistantPersonId || '').trim(),
+    assistantProjectId: String(metadata.assistantProjectId || runtimeSession?.metadata?.assistantProjectId || '').trim(),
+    assistantTaskId: String(metadata.assistantTaskId || runtimeSession?.metadata?.assistantTaskId || '').trim(),
+    assistantExecutionId: String(metadata.assistantExecutionId || runtimeSession?.metadata?.assistantExecutionId || '').trim()
+  };
+}
+
+function toText(value) {
+  return String(value || '').trim();
+}
+
+function resolveApprovalRememberScope({
+  remember = 'none',
+  conversation = null,
+  runtimeSession = null,
+  metadata = {}
+} = {}) {
+  const normalizedRemember = normalizeScope(String(remember || 'none').trim());
+  if (!normalizedRemember || normalizedRemember === 'none') {
+    return null;
+  }
+  const refs = buildScopeRefs({
+    conversation,
+    runtimeSession,
+    metadata
+  });
+  if (normalizedRemember === 'task') {
+    return refs.task
+      ? { scope: 'task', scopeRef: refs.task }
+      : null;
+  }
+  if (normalizedRemember === 'project') {
+    return refs.project
+      ? { scope: 'project', scopeRef: refs.project }
+      : null;
+  }
+  if (normalizedRemember === 'person') {
+    return refs.person
+      ? { scope: 'person', scopeRef: refs.person }
+      : null;
+  }
+  return refs.execution
+    ? { scope: 'execution', scopeRef: refs.execution }
+    : null;
+}
+
+function resolvePhase2TaskRouting(taskSpace = null, { conversation = null, runtimeSessionManager = null } = {}) {
+  if (!taskSpace && conversation) {
+    const preferredTaskId = String(conversation?.metadata?.assistantDomain?.workingSet?.primaryTaskId || '').trim();
+    const preferredRuntimeSessionId = String(conversation?.activeRuntimeSessionId || '').trim();
+    const preferredRuntimeSession = preferredRuntimeSessionId && runtimeSessionManager?.getSession
+      ? runtimeSessionManager.getSession(preferredRuntimeSessionId)
+      : null;
+    return {
+      taskSpace: null,
+      focusTask: null,
+      preferredTaskId,
+      preferredRuntimeSessionId,
+      canContinuePreferredExecution: Boolean(preferredRuntimeSessionId && preferredRuntimeSession),
+      shouldClarify: false,
+      shouldPreferStatusOverview: false,
+      preferredAction: preferredRuntimeSessionId ? 'continue_focus_task' : '',
+      activeTasks: [],
+      waitingTasks: []
+    };
+  }
+  const decisionHints = taskSpace?.decisionHints || {};
+  const focusTask = taskSpace?.focusTask || null;
+  const preferredTaskId = String(decisionHints?.preferredTaskId || focusTask?.taskId || '').trim();
+  const preferredRuntimeSessionId = String(
+    decisionHints?.focusTaskExecutionContinuity?.preferredRuntimeSessionId
+      || focusTask?.runtimeSession?.id
+      || focusTask?.task?.runtimeSessionId
+      || ''
+  ).trim();
+  const shouldClarify = decisionHints?.shouldClarify === true;
+  const shouldPreferStatusOverview = decisionHints?.shouldPreferStatusOverview === true;
+  const preferredAction = String(decisionHints?.preferredAction || '').trim();
+  return {
+    taskSpace,
+    focusTask,
+    preferredTaskId,
+    preferredRuntimeSessionId,
+    canContinuePreferredExecution: decisionHints?.focusTaskExecutionContinuity?.canContinue === true,
+    shouldClarify,
+    shouldPreferStatusOverview,
+    preferredAction,
+    activeTasks: Array.isArray(taskSpace?.activeTasks) ? taskSpace.activeTasks : [],
+    waitingTasks: Array.isArray(taskSpace?.waitingTasks) ? taskSpace.waitingTasks : []
+  };
+}
+
+function decidePhase2NaturalLanguageAction({
+  text = '',
+  parsed = null,
+  phase2Route = null,
+  taskRoute = null,
+  resolvedSessionId = '',
+  supervisorBrief = null
+} = {}) {
+  if (parsed?.command) {
+    return { action: 'none' };
+  }
+
+  if (phase2Route?.shouldPreferStatusOverview || taskRoute?.kind === 'status_overview') {
+    return { action: 'status_overview' };
+  }
+
+  if (phase2Route?.shouldClarify || taskRoute?.kind === 'needs_clarification') {
+    return { action: 'clarify_task' };
+  }
+
+  if (isNaturalLanguageStatusIntent(text)) {
+    if ((phase2Route?.activeTasks || []).length > 1 || taskRoute?.activeTasks?.length > 1) {
+      return { action: 'status_overview' };
+    }
+    return { action: 'status_single' };
+  }
+
+  if (resolvedSessionId && isNaturalLanguageTaskContinueIntent(text)) {
+    return { action: 'continue_existing' };
+  }
+
+  if (resolvedSessionId && phase2Route?.canContinuePreferredExecution) {
+    return { action: 'continue_existing' };
+  }
+
+  const rememberedIntent = !resolvedSessionId
+    ? classifyRememberedTaskIntent(text, supervisorBrief)
+    : null;
+  if (rememberedIntent) {
+    return {
+      action: 'start_fresh',
+      rememberedIntent
+    };
+  }
+
+  return { action: 'none' };
 }
 
 export class AgentOrchestratorMessageService {
@@ -628,8 +888,10 @@ export class AgentOrchestratorMessageService {
     preferenceStore = agentPreferenceStore,
     supervisorTaskStore: supervisorTaskStoreArg = supervisorTaskStore,
     taskExecutionService: taskExecutionServiceArg = null,
+    taskViewService = null,
     memoryService = null,
-    policyService = null
+    policyService = null,
+    stateCoordinator: stateCoordinatorArg = stateCoordinator
   } = {}) {
     this.runtimeSessionManager = runtimeSessionManager;
     this.approvalPolicyStore = approvalPolicyStore;
@@ -646,11 +908,83 @@ export class AgentOrchestratorMessageService {
       : new AssistantMemoryService({
           preferenceStore: this.preferenceStore
         });
+    this.taskViewService = taskViewService instanceof AssistantTaskViewService
+      ? taskViewService
+      : (taskViewService || new AssistantTaskViewService({
+          runtimeSessionManager: this.runtimeSessionManager,
+          supervisorTaskStore: this.supervisorTaskStore
+        }));
     this.policyService = policyService instanceof AssistantPolicyService
       ? policyService
       : new AssistantPolicyService({
           approvalPolicyStore: this.approvalPolicyStore
         });
+    this.stateCoordinator = stateCoordinatorArg;
+  }
+
+  syncConversationAssistantWorkingSet({
+    conversation = null,
+    taskId = '',
+    sessionId = ''
+  } = {}) {
+    if (!conversation?.id || !this.stateCoordinator) {
+      return null;
+    }
+    const binding = resolveAssistantDomainBinding({
+      supervisorTaskStore: this.supervisorTaskStore,
+      runtimeSessionManager: this.runtimeSessionManager,
+      taskId,
+      sessionId
+    });
+    if (!binding.assistantProjectId && !binding.assistantTaskId) {
+      return null;
+    }
+    try {
+      return this.stateCoordinator.updateConversationWorkingSet({
+        conversationId: conversation.id,
+        patch: {
+          primaryProjectId: binding.assistantProjectId,
+          primaryTaskId: binding.assistantTaskId,
+          recentTaskIds: binding.assistantTaskId ? [binding.assistantTaskId] : [],
+          mentionedProjectIds: binding.assistantProjectId ? [binding.assistantProjectId] : []
+        }
+      });
+    } catch {
+      return null;
+    }
+  }
+
+  recordRuntimeEpisode({
+    conversation = null,
+    sessionId = '',
+    taskId = '',
+    kind = '',
+    payload = {},
+    metadata = {}
+  } = {}) {
+    if (!this.stateCoordinator || !kind) {
+      return null;
+    }
+    const binding = resolveAssistantDomainBinding({
+      supervisorTaskStore: this.supervisorTaskStore,
+      runtimeSessionManager: this.runtimeSessionManager,
+      taskId,
+      sessionId
+    });
+    return this.stateCoordinator.recordRuntimeEpisode({
+      kind,
+      personId: binding.assistantPersonId,
+      projectId: binding.assistantProjectId,
+      taskId: binding.assistantTaskId,
+      executionId: binding.assistantExecutionId,
+      runtimeSessionId: toText(sessionId),
+      conversationId: toText(conversation?.id),
+      payload,
+      metadata: {
+        source: 'agent_orchestrator_message_service',
+        ...((metadata && typeof metadata === 'object') ? metadata : {})
+      }
+    });
   }
 
   async startRuntimeTask({ provider, input, cwd, model = '', metadata = {} } = {}) {
@@ -674,11 +1008,25 @@ export class AgentOrchestratorMessageService {
     });
   }
 
-  async resolveApproval({ sessionId, approvalId, decision, remember = 'none', conversationId = '' } = {}) {
+  async resolveApproval({
+    sessionId,
+    approvalId,
+    decision,
+    remember = 'none',
+    conversationId = '',
+    conversation = null,
+    metadata = {}
+  } = {}) {
     const normalizedSessionId = String(sessionId || '');
     const normalizedApprovalId = String(approvalId || '');
     const normalizedDecision = String(decision || '');
     const normalizedRemember = String(remember || 'none');
+    const runtimeSession = normalizedSessionId
+      ? this.runtimeSessionManager.getSession(normalizedSessionId)
+      : null;
+    const resolvedConversation = conversation && typeof conversation === 'object'
+      ? conversation
+      : (conversationId ? { id: String(conversationId || '').trim() } : null);
 
     // v2.5 Bug 3：在 resolve 之前先抓 approval 详情（resolve 后状态会变），
     // 这样 remember 路径才能拿到 rawRequest / provider 等信息建 policy。
@@ -694,43 +1042,195 @@ export class AgentOrchestratorMessageService {
 
     let policy = null;
     if (approvalSnapshot && resolved?.status === 'approved' && this.policyService?.rememberApproval) {
-      const scope = normalizedRemember === 'conversation' ? 'conversation' : 'runtime_session';
-      const scopeRef = scope === 'conversation'
-        ? String(conversationId || '').trim()
-        : normalizedSessionId;
-      if (scopeRef) {
+      const rememberScope = resolveApprovalRememberScope({
+        remember: normalizedRemember,
+        conversation: resolvedConversation,
+        runtimeSession,
+        metadata
+      });
+      if (rememberScope?.scopeRef) {
         policy = this.policyService.rememberApproval({
           approval: approvalSnapshot,
-          scope,
-          scopeRef
+          scope: rememberScope.scope,
+          scopeRef: rememberScope.scopeRef
         });
       }
     }
 
     if (policy) {
-      return { ...resolved, policy };
+      const enriched = { ...resolved, policy };
+      this.recordRuntimeEpisode({
+        conversation: resolvedConversation,
+        sessionId: normalizedSessionId,
+        taskId: metadata?.taskId || '',
+        kind: 'runtime.approval_resolved',
+        payload: {
+          approvalId: normalizedApprovalId,
+          decision: enriched.status,
+          remember: normalizedRemember,
+          policyId: toText(policy?.id)
+        }
+      });
+      return enriched;
     }
+    this.recordRuntimeEpisode({
+      conversation: resolvedConversation,
+      sessionId: normalizedSessionId,
+      taskId: metadata?.taskId || '',
+      kind: 'runtime.approval_resolved',
+      payload: {
+        approvalId: normalizedApprovalId,
+        decision: resolved?.status || normalizedDecision,
+        remember: normalizedRemember
+      }
+    });
     return resolved;
   }
 
   async answerQuestion({ sessionId, questionId, answer } = {}) {
-    return this.runtimeSessionManager.answerQuestion(
+    const result = await this.runtimeSessionManager.answerQuestion(
       String(sessionId || ''),
       String(questionId || ''),
       answer
     );
+    this.recordRuntimeEpisode({
+      sessionId,
+      kind: 'runtime.question_answered',
+      payload: {
+        questionId: toText(questionId),
+        answer: toText(answer),
+        status: toText(result?.status)
+      }
+    });
+    return result;
   }
 
   cancelPendingQuestion({ sessionId, questionId, reason = '' } = {}) {
-    return this.runtimeSessionManager.cancelPendingQuestion(
+    const result = this.runtimeSessionManager.cancelPendingQuestion(
       String(sessionId || ''),
       String(questionId || ''),
       String(reason || '')
     );
+    this.recordRuntimeEpisode({
+      sessionId,
+      kind: 'runtime.question_cancelled',
+      payload: {
+        questionId: toText(questionId),
+        reason: toText(reason),
+        status: toText(result?.status)
+      }
+    });
+    return result;
   }
 
-  cancelRuntimeSession({ sessionId } = {}) {
-    return this.runtimeSessionManager.cancelSession(String(sessionId || ''));
+  cancelRuntimeSession({ sessionId, conversation = null, taskId = '' } = {}) {
+    const result = this.runtimeSessionManager.cancelSession(String(sessionId || ''));
+    this.recordRuntimeEpisode({
+      conversation,
+      sessionId,
+      taskId,
+      kind: 'runtime.cancelled',
+      payload: {
+        status: toText(result?.status),
+        reason: 'user_cancelled'
+      }
+    });
+    return result;
+  }
+
+  createExecutionHandoff({
+    executionId,
+    fromExecutionId = '',
+    kind = 'progress',
+    title = '',
+    payload = null,
+    conversationId = ''
+  } = {}) {
+    return this.stateCoordinator?.addExecutionHandoff?.({
+      targetExecutionId: executionId,
+      fromExecutionId,
+      kind,
+      title,
+      payload,
+      conversationId
+    }) || null;
+  }
+
+  consumeExecutionHandoff({
+    executionId,
+    handoffId,
+    conversationId = ''
+  } = {}) {
+    return this.stateCoordinator?.consumeExecutionHandoff?.({
+      executionId,
+      handoffId,
+      conversationId
+    }) || null;
+  }
+
+  createScheduledTask(input = {}) {
+    return this.stateCoordinator?.createScheduledTask?.(input) || null;
+  }
+
+  async runScheduledTask(task = null) {
+    const scheduledTask = task && typeof task === 'object'
+      ? task
+      : this.stateCoordinator?.scheduledTaskStore?.get?.(String(task || '').trim()) || null;
+    if (!scheduledTask?.id) {
+      throw new Error('scheduled task not found');
+    }
+
+    const payload = scheduledTask.payload && typeof scheduledTask.payload === 'object'
+      ? scheduledTask.payload
+      : {};
+    const action = String(payload.action || 'start').trim();
+
+    if (action === 'continue') {
+      const session = await this.continueRuntimeTask({
+        taskId: String(payload.taskId || scheduledTask.taskId || '').trim(),
+        sessionId: String(payload.sessionId || '').trim(),
+        input: String(payload.input || payload.message || scheduledTask.title || '').trim()
+      });
+      return {
+        action,
+        session,
+        summary: `continued runtime session ${session.id}`
+      };
+    }
+
+    if (action === 'status') {
+      const session = this.getRuntimeSession(String(payload.sessionId || '').trim());
+      if (!session) {
+        throw new Error('runtime session not found');
+      }
+      return {
+        action,
+        session,
+        summary: `runtime session ${session.id} status: ${session.status || 'unknown'}`
+      };
+    }
+
+    const session = await this.startRuntimeTask({
+      provider: String(payload.provider || 'codex').trim() || 'codex',
+      input: String(payload.input || payload.task || scheduledTask.title || '').trim(),
+      cwd: String(payload.cwd || '').trim(),
+      model: String(payload.model || '').trim(),
+      metadata: {
+        ...(payload.metadata && typeof payload.metadata === 'object' ? payload.metadata : {}),
+        taskId: String(payload.taskId || scheduledTask.taskId || '').trim(),
+        conversationId: String(payload.conversationId || '').trim(),
+        executionRole: String(payload.executionRole || 'primary').trim() || 'primary',
+        source: {
+          kind: 'scheduled-task',
+          scheduledTaskId: scheduledTask.id
+        }
+      }
+    });
+    return {
+      action: 'start',
+      session,
+      summary: `started runtime session ${session.id}`
+    };
   }
 
   getRuntimeSession(sessionId) {
@@ -757,6 +1257,17 @@ export class AgentOrchestratorMessageService {
     if (!text) {
       throw new Error('message text is required');
     }
+    if (conversation?.id && this.stateCoordinator) {
+      try {
+        this.stateCoordinator.ingestConversationTurn({
+          conversation,
+          role: 'user',
+          text
+        });
+      } catch {
+        // dual-write should not block existing routing behavior
+      }
+    }
 
     const parsed = parseLeadingCommand(text);
     const assistantMode = String(
@@ -764,6 +1275,22 @@ export class AgentOrchestratorMessageService {
       || getAssistantControlMode(conversation)
       || ''
     ).trim().toLowerCase() === 'assistant';
+    const taskSpace = conversation?.id
+      ? this.taskViewService?.getConversationTaskSpace?.(conversation.id) || null
+      : null;
+    const phase2Route = resolvePhase2TaskRouting(taskSpace, {
+      conversation,
+      runtimeSessionManager: this.runtimeSessionManager
+    });
+    const commandFallbackTask = parsed?.command && conversation?.id
+      ? (() => {
+          const tracked = getTrackedSupervisorTasks(conversation, this.supervisorTaskStore);
+          if (tracked.length === 1) {
+            return tracked[0];
+          }
+          return tracked.find((entry) => ['waiting_approval', 'waiting_user', 'running', 'ready'].includes(String(entry?.status || '').trim())) || null;
+        })()
+      : null;
     const taskRoute = selectTaskRoute(conversation, {
       text,
       parsed,
@@ -771,16 +1298,60 @@ export class AgentOrchestratorMessageService {
         ? this.getRuntimeSession(conversation.activeRuntimeSessionId)
         : null
     }, this.supervisorTaskStore);
-    const routedTaskId = String(taskRoute?.task?.taskId || '').trim() || null;
-    const taskSessionId = String(taskRoute?.task?.sessionId || getCurrentTaskSessionId(conversation) || '').trim() || null;
+    const routedTaskId = String(
+      phase2Route.preferredTaskId
+      || commandFallbackTask?.taskId
+      || taskRoute?.task?.taskId
+      || ''
+    ).trim() || null;
+    const taskSessionId = String(
+      phase2Route.preferredRuntimeSessionId
+      || commandFallbackTask?.sessionId
+      || taskRoute?.task?.sessionId
+      || getCurrentTaskSessionId(conversation)
+      || ''
+    ).trim() || null;
     const activeSessionId = taskSessionId || conversation?.activeRuntimeSessionId || null;
     const pendingApprovalId = conversation?.lastPendingApprovalId || null;
+    const pendingApprovalSessionIdHint = conversation?.lastPendingApprovalSessionId || null;
     const pendingQuestionId = conversation?.lastPendingQuestionId || null;
+    const pendingQuestionSessionIdHint = conversation?.lastPendingQuestionSessionId || null;
     const activeSession = activeSessionId ? this.getRuntimeSession(activeSessionId) : null;
     const routedTaskSessionId = String(taskRoute?.task?.sessionId || '').trim() || null;
-    const resolvedSessionId = routedTaskSessionId || activeSessionId;
+    const resolvedSessionId = String(
+      phase2Route.preferredRuntimeSessionId
+      || routedTaskSessionId
+      || activeSessionId
+      || ''
+    ).trim() || null;
     const resolvedSession = resolvedSessionId ? this.getRuntimeSession(resolvedSessionId) : null;
+    const pendingApprovalSessionId = resolvePendingApprovalSessionId(this, {
+      pendingApprovalId,
+      pendingApprovalSessionId: pendingApprovalSessionIdHint,
+      resolvedSessionId,
+      activeSessionId,
+      taskSessionId,
+      taskRoute,
+      conversation
+    });
+    const pendingQuestionSessionId = resolvePendingQuestionSessionId(this, {
+      pendingQuestionId,
+      pendingQuestionSessionId: pendingQuestionSessionIdHint,
+      resolvedSessionId,
+      activeSessionId,
+      taskSessionId,
+      taskRoute,
+      conversation
+    });
     const supervisorBrief = getSupervisorBrief(conversation, activeSession);
+    const phase2Action = decidePhase2NaturalLanguageAction({
+      text,
+      parsed,
+      phase2Route,
+      taskRoute,
+      resolvedSessionId,
+      supervisorBrief
+    });
     const preferredProvider = selectRuntimeProvider({
       conversation,
       activeSession: resolvedSession || activeSession,
@@ -813,37 +1384,41 @@ export class AgentOrchestratorMessageService {
       }
     }
 
-    if (!assistantMode && resolvedSessionId && pendingApprovalId && !parsed?.command) {
-      const approval = this.runtimeSessionManager.approvalService.getApproval(resolvedSessionId, pendingApprovalId);
+    if (!assistantMode && pendingApprovalSessionId && pendingApprovalId && !parsed?.command) {
+      const approval = this.runtimeSessionManager.approvalService.getApproval(pendingApprovalSessionId, pendingApprovalId);
       if (approval && approval.status === 'pending') {
         if (isApprovalAffirmative(text) || isApprovalNegative(text)) {
-          let policy = null;
-          if (isApprovalAffirmative(text) && wantsRememberedApproval(text)) {
-            const scope = wantsConversationRememberedApproval(text) && conversation?.id
-              ? 'conversation'
-              : 'runtime_session';
-            const scopeRef = scope === 'conversation' ? conversation.id : resolvedSessionId;
-            policy = this.policyService.rememberApproval({
-              approval,
-              scope,
-              scopeRef
-            });
-          }
+          const remember = isApprovalAffirmative(text) && wantsRememberedApproval(text)
+            ? (wantsExecutionRememberedApproval(text)
+                ? 'session'
+                : (wantsConversationRememberedApproval(text) ? 'conversation' : 'conversation'))
+            : 'none';
 
           const resolved = await this.resolveApproval({
-            sessionId: resolvedSessionId,
+            sessionId: pendingApprovalSessionId,
             approvalId: pendingApprovalId,
-            decision: isApprovalAffirmative(text) ? 'approve' : 'deny'
+            decision: isApprovalAffirmative(text) ? 'approve' : 'deny',
+            remember,
+            conversation
+          });
+          this.syncConversationAssistantWorkingSet({
+            conversation,
+            taskId: routedTaskId || '',
+            sessionId: pendingApprovalSessionId
           });
 
           return {
             type: 'approval_resolved',
             approval: resolved,
-            policy,
-            message: policy
-              ? (policy.scope === 'conversation'
+            policy: resolved?.policy || null,
+            message: resolved?.policy
+              ? (resolved.policy.scope === 'task'
                 ? 'Approved. I will remember this permission for this conversation.'
-                : 'Approved. I will remember this permission for the current session.')
+                : resolved.policy.scope === 'project'
+                  ? 'Approved. I will remember this permission for this project.'
+                  : resolved.policy.scope === 'person'
+                    ? 'Approved. I will remember this permission for you.'
+                    : 'Approved. I will remember this permission for the current execution.')
               : (resolved.status === 'approved' ? 'Approved.' : 'Denied.')
           };
         }
@@ -867,6 +1442,11 @@ export class AgentOrchestratorMessageService {
         cwd,
         model,
         metadata
+      });
+      this.syncConversationAssistantWorkingSet({
+        conversation,
+        taskId: String(session?.metadata?.taskId || metadata?.taskId || '').trim(),
+        sessionId: session?.id || ''
       });
 
       return {
@@ -893,6 +1473,11 @@ export class AgentOrchestratorMessageService {
         cwd,
         model,
         metadata
+      });
+      this.syncConversationAssistantWorkingSet({
+        conversation,
+        taskId: String(session?.metadata?.taskId || metadata?.taskId || '').trim(),
+        sessionId: session?.id || ''
       });
 
       return {
@@ -921,6 +1506,11 @@ export class AgentOrchestratorMessageService {
         cwd,
         model,
         metadata
+      });
+      this.syncConversationAssistantWorkingSet({
+        conversation,
+        taskId: String(session?.metadata?.taskId || metadata?.taskId || '').trim(),
+        sessionId: session?.id || ''
       });
 
       return {
@@ -952,8 +1542,14 @@ export class AgentOrchestratorMessageService {
         return buildBusyResponse(resolvedSession, conversation);
       }
       const session = await this.continueRuntimeTask({
+        taskId: routedTaskId || '',
         sessionId: resolvedSessionId,
         input: parsed.args || text
+      });
+      this.syncConversationAssistantWorkingSet({
+        conversation,
+        taskId: routedTaskId || '',
+        sessionId: session?.id || resolvedSessionId
       });
       return {
         type: 'runtime_continued',
@@ -970,7 +1566,11 @@ export class AgentOrchestratorMessageService {
       }
       return {
         type: 'runtime_cancelled',
-        session: this.cancelRuntimeSession({ sessionId: resolvedSessionId })
+        session: this.cancelRuntimeSession({
+          sessionId: resolvedSessionId,
+          conversation,
+          taskId: routedTaskId || ''
+        })
       };
     }
 
@@ -985,16 +1585,21 @@ export class AgentOrchestratorMessageService {
     }
 
     if (parsed?.command === 'approve' || parsed?.command === 'deny') {
-      if (!resolvedSessionId || !pendingApprovalId) {
+      if (!pendingApprovalSessionId || !pendingApprovalId) {
         return {
           type: 'command_error',
           message: 'No pending approval request'
         };
       }
       const approval = await this.resolveApproval({
-        sessionId: resolvedSessionId,
+        sessionId: pendingApprovalSessionId,
         approvalId: pendingApprovalId,
         decision: parsed.command === 'approve' ? 'approve' : 'deny'
+      });
+      this.syncConversationAssistantWorkingSet({
+        conversation,
+        taskId: routedTaskId || '',
+        sessionId: pendingApprovalSessionId
       });
       return {
         type: 'approval_resolved',
@@ -1003,11 +1608,16 @@ export class AgentOrchestratorMessageService {
       };
     }
 
-    if (!assistantMode && resolvedSessionId && pendingQuestionId) {
+    if (!assistantMode && pendingQuestionSessionId && pendingQuestionId) {
       const question = await this.answerQuestion({
-        sessionId: resolvedSessionId,
+        sessionId: pendingQuestionSessionId,
         questionId: pendingQuestionId,
         answer: text
+      });
+      this.syncConversationAssistantWorkingSet({
+        conversation,
+        taskId: routedTaskId || '',
+        sessionId: pendingQuestionSessionId
       });
       return {
         type: 'question_answered',
@@ -1015,23 +1625,25 @@ export class AgentOrchestratorMessageService {
       };
     }
 
-    if (!parsed?.command && taskRoute.kind === 'status_overview') {
-      return buildConversationTaskStatusResponse(conversation, taskRoute.activeTasks, resolvedSession || activeSession || null);
+    if (phase2Action.action === 'status_overview') {
+      return buildConversationTaskStatusResponse(
+        conversation,
+        phase2Route.activeTasks.length > 0 ? phase2Route.activeTasks : taskRoute.activeTasks,
+        resolvedSession || activeSession || null
+      );
     }
 
-    if (!parsed?.command && taskRoute.kind === 'needs_clarification') {
-      return buildTaskClarificationResponse(taskRoute.activeTasks);
+    if (phase2Action.action === 'clarify_task') {
+      return buildTaskClarificationResponse(
+        phase2Route.activeTasks.length > 0 ? phase2Route.activeTasks : taskRoute.activeTasks
+      );
     }
 
-    if (!parsed?.command && isNaturalLanguageStatusIntent(text) && taskRoute.activeTasks?.length > 1) {
-      return buildConversationTaskStatusResponse(conversation, taskRoute.activeTasks, resolvedSession || activeSession || null);
-    }
-
-    if (!parsed?.command && isNaturalLanguageStatusIntent(text)) {
+    if (phase2Action.action === 'status_single') {
       return buildSupervisorStatusResponse(conversation, resolvedSession || activeSession || null);
     }
 
-    if (!parsed?.command && routedTaskId && resolvedSessionId && isNaturalLanguageTaskContinueIntent(text)) {
+    if (phase2Action.action === 'continue_existing' && routedTaskId && resolvedSessionId) {
       if (isSessionBusy(resolvedSession)) {
         return buildBusyResponse(resolvedSession, conversation);
       }
@@ -1039,6 +1651,11 @@ export class AgentOrchestratorMessageService {
         taskId: routedTaskId,
         sessionId: resolvedSessionId,
         input: text
+      });
+      this.syncConversationAssistantWorkingSet({
+        conversation,
+        taskId: routedTaskId || '',
+        sessionId: session?.id || resolvedSessionId
       });
       return {
         type: 'runtime_continued',
@@ -1055,15 +1672,20 @@ export class AgentOrchestratorMessageService {
         sessionId: resolvedSessionId,
         input: text
       });
+      this.syncConversationAssistantWorkingSet({
+        conversation,
+        taskId: routedTaskId || '',
+        sessionId: session?.id || resolvedSessionId
+      });
       return {
         type: 'runtime_continued',
         session
       };
     }
 
-    const rememberedIntent = !resolvedSessionId
-      ? classifyRememberedTaskIntent(text, supervisorBrief)
-      : null;
+    const rememberedIntent = phase2Action.action === 'start_fresh'
+      ? phase2Action.rememberedIntent || null
+      : (!resolvedSessionId ? classifyRememberedTaskIntent(text, supervisorBrief) : null);
     const startMetadata = rememberedIntent
       ? {
           ...metadata,
@@ -1079,6 +1701,11 @@ export class AgentOrchestratorMessageService {
       cwd,
       model,
       metadata: startMetadata
+    });
+    this.syncConversationAssistantWorkingSet({
+      conversation,
+      taskId: String(session?.metadata?.taskId || startMetadata?.taskId || '').trim(),
+      sessionId: session?.id || ''
     });
 
     if (shouldStartFreshFromRememberedContext(supervisorBrief) || rememberedIntent) {

@@ -18,6 +18,26 @@ export function normalizeApprovalPath(value) {
   return normalized;
 }
 
+// Heuristic: does the final path segment look like a file name (has a real
+// extension, not a Windows drive or just dots)? File approvals must store
+// their policy against the parent directory so the next file in the same
+// directory auto-approves — otherwise the policy degenerates into a
+// nonsensical "<file>\**" pattern that can never match sibling files.
+export function resolvePolicyBaseDirectory(value) {
+  const normalized = normalizeApprovalPath(value);
+  if (!normalized) return '';
+  if (normalized.endsWith('\\')) return normalized;
+  if (/^[A-Za-z]:$/.test(normalized)) return `${normalized}\\`;
+  const lastSep = normalized.lastIndexOf('\\');
+  if (lastSep < 0) return normalized;
+  const lastSegment = normalized.slice(lastSep + 1);
+  const hasFileExtension = /\.[A-Za-z0-9]{1,10}$/.test(lastSegment) && !/^\.+$/.test(lastSegment);
+  if (!hasFileExtension) return normalized;
+  const parent = normalized.slice(0, lastSep);
+  if (/^[A-Za-z]:$/.test(parent)) return `${parent}\\`;
+  return parent || normalized;
+}
+
 export function extractApprovalRequestPath(rawRequest = {}) {
   const blockedPath = normalizeApprovalPath(rawRequest?.blocked_path || rawRequest?.blockedPath || '');
   if (blockedPath) {
@@ -47,8 +67,12 @@ export function buildApprovalSessionPolicy(approval, options = {}) {
     return null;
   }
 
-  const normalizedBase = normalizeApprovalPath(basePath);
-  const pathPatterns = [normalizedBase.endsWith('\\') ? `${normalizedBase}**` : `${normalizedBase}\\**`];
+  // Broaden file-path approvals to their containing directory so sibling
+  // files in the same project don't each demand a fresh approval. A user
+  // who says "remember this for the session" while editing index.html
+  // clearly does not want to re-approve script.js a moment later.
+  const directoryBase = resolvePolicyBaseDirectory(basePath);
+  const pathPatterns = [directoryBase.endsWith('\\') ? `${directoryBase}**` : `${directoryBase}\\**`];
   const command = String(rawRequest?.input?.command || '').trim();
 
   return {

@@ -202,7 +202,9 @@ export function createDefaultAssistantToolRegistry({
         ? taskViewService.getTask(input.taskId)
         : null;
       const sessionId = String(
-        resolvedTask?.runtimeSession?.id
+        resolvedTask?.assistantDomain?.execution?.currentRuntimeSessionId
+        || resolvedTask?.task?.latestExecutionId
+        || resolvedTask?.runtimeSession?.id
         || resolvedTask?.task?.primaryExecutionId
         || resolvedTask?.task?.runtimeSessionId
         || input.sessionId
@@ -217,6 +219,41 @@ export function createDefaultAssistantToolRegistry({
         input: input.message
       });
     }
+  });
+
+  registry.register({
+    name: 'handoff_execution',
+    description: 'Create a structured handoff packet for another execution. Use when one execution should explicitly hand work to another instead of sharing raw transcript state.',
+    execute: async ({ input = {}, context = {} } = {}) => {
+      const conversation = context?.conversation || null;
+      return messageService.createExecutionHandoff({
+        executionId: input.executionId,
+        fromExecutionId: input.fromExecutionId,
+        kind: input.kind,
+        title: input.title,
+        payload: input.payload,
+        conversationId: input.conversationId || conversation?.id || ''
+      });
+    }
+  });
+
+  registry.register({
+    name: 'consume_execution_handoff',
+    description: 'Mark a handoff packet as consumed after the target execution has incorporated it.',
+    execute: async ({ input = {}, context = {} } = {}) => {
+      const conversation = context?.conversation || null;
+      return messageService.consumeExecutionHandoff({
+        executionId: input.executionId,
+        handoffId: input.handoffId,
+        conversationId: input.conversationId || conversation?.id || ''
+      });
+    }
+  });
+
+  registry.register({
+    name: 'create_scheduled_task',
+    description: 'Create a local scheduled task that later triggers assistant/runtime behavior.',
+    execute: async ({ input = {} } = {}) => messageService.createScheduledTask(input)
   });
 
   registry.register({
@@ -263,7 +300,9 @@ export function createDefaultAssistantToolRegistry({
       approvalId: input.approvalId,
       decision: input.decision,
       remember: input.remember,
-      conversationId: input.conversationId || context?.conversation?.id || ''
+      conversationId: input.conversationId || context?.conversation?.id || '',
+      conversation: context?.conversation || null,
+      metadata: context?.metadata || {}
     })
   });
 

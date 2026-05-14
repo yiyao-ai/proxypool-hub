@@ -146,6 +146,27 @@ function splitDingTalkText(text, maxLength = DINGTALK_SAFE_MESSAGE_LIMIT) {
   return chunks.map((chunk, index) => `[${index + 1}/${chunks.length}] ${chunk}`);
 }
 
+function buildButtonCommandText(buttons = []) {
+  const normalized = Array.isArray(buttons)
+    ? buttons
+      .map((button) => {
+        const action = String(button?.action || button?.id || '').trim();
+        if (!action) {
+          return '';
+        }
+        const label = String(button?.text || action).trim();
+        return label
+          ? `${label} (/${action})`
+          : `/${action}`;
+      })
+      .filter(Boolean)
+    : [];
+
+  return normalized.length > 0
+    ? `\n\nActions: ${normalized.join(' / ')}`
+    : '';
+}
+
 function coerceTimestamp(value) {
   const parsed = Number(value);
   if (!Number.isFinite(parsed)) return 0;
@@ -723,12 +744,13 @@ export class DingTalkChannelProvider {
     });
   }
 
-  async sendMessage({ conversation, text } = {}) {
+  async sendMessage({ conversation, text, buttons = [] } = {}) {
     const channelContext = conversation?.metadata?.channelContext || {};
     const sessionWebhook = String(channelContext.sessionWebhook || '').trim();
     const expiredAt = coerceTimestamp(channelContext.sessionWebhookExpiredTime);
     const now = Date.now();
-    const textChunks = splitDingTalkText(text);
+    const textWithActions = `${String(text || '')}${buildButtonCommandText(buttons)}`;
+    const textChunks = splitDingTalkText(textWithActions);
     let result = null;
 
     if (sessionWebhook && (!expiredAt || expiredAt > now + 15_000)) {

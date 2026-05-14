@@ -2,10 +2,9 @@ import agentRuntimeSessionManager from '../agent-runtime/session-manager.js';
 import { AGENT_EVENT_TYPE } from '../agent-runtime/models.js';
 import agentTaskStore from '../agent-core/task-store.js';
 import { syncTaskTerminalState } from '../agent-core/task-service.js';
-import { buildConversationSupervisorPatch } from '../agent-orchestrator/conversation-supervisor-state.js';
 import supervisorTaskStore from '../agent-orchestrator/supervisor-task-store.js';
-import { syncSupervisorTaskForRuntimeEvent } from '../agent-orchestrator/supervisor-task-sync.js';
 import chatUiConversationStore from './conversation-store.js';
+import { buildConversationRuntimeEventPatch } from '../assistant-core/conversation-runtime-binding.js';
 
 const OBSERVED_EVENT_TYPES = new Set([
   AGENT_EVENT_TYPE.STARTED,
@@ -62,50 +61,12 @@ export class ChatUiRuntimeObserver {
     });
 
     for (const conversation of conversations) {
-      const taskIdFromSession = String(session?.metadata?.taskId || '').trim();
-      const supervisorPatch = buildConversationSupervisorPatch({ conversation, session, event });
-      const synced = syncSupervisorTaskForRuntimeEvent({
+      const patch = buildConversationRuntimeEventPatch({
         conversation,
-        session: taskIdFromSession
-          ? {
-              ...session,
-              metadata: {
-                ...(session?.metadata || {}),
-                taskId: taskIdFromSession
-              }
-            }
-          : session,
+        session,
         event,
-        taskMemory: supervisorPatch?.metadata?.supervisor?.taskMemory || conversation?.metadata?.supervisor?.taskMemory || null,
-        store: this.supervisorTaskStore
+        supervisorTaskStore: this.supervisorTaskStore
       });
-      const patch = {
-        ...supervisorPatch,
-        metadata: {
-          ...(supervisorPatch?.metadata || {}),
-          supervisor: {
-            ...((supervisorPatch?.metadata?.supervisor && typeof supervisorPatch.metadata.supervisor === 'object')
-              ? supervisorPatch.metadata.supervisor
-              : {}),
-            taskMemory: synced.taskMemory,
-            brief: synced.brief
-          }
-        }
-      };
-
-      if (event.type === AGENT_EVENT_TYPE.APPROVAL_REQUEST) {
-        patch.lastPendingApprovalId = event?.payload?.approvalId || null;
-      }
-
-      if (event.type === AGENT_EVENT_TYPE.QUESTION) {
-        patch.lastPendingQuestionId = event?.payload?.questionId || null;
-      }
-
-      if (event.type === AGENT_EVENT_TYPE.COMPLETED || event.type === AGENT_EVENT_TYPE.FAILED) {
-        patch.lastPendingApprovalId = null;
-        patch.lastPendingQuestionId = null;
-      }
-
       this.conversationStore.patch(conversation.id, patch);
     }
   }

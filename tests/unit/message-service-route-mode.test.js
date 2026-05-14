@@ -77,7 +77,9 @@ test('assistant mode does not auto-route pending approvals or questions before t
     conversation: {
       activeRuntimeSessionId: started.id,
       lastPendingApprovalId: pendingApproval.approvalId,
+      lastPendingApprovalSessionId: started.id,
       lastPendingQuestionId: pendingQuestion.questionId,
+      lastPendingQuestionSessionId: started.id,
       metadata: {
         assistantCore: {
           mode: 'assistant'
@@ -97,7 +99,9 @@ test('assistant mode does not auto-route pending approvals or questions before t
     conversation: {
       activeRuntimeSessionId: started.id,
       lastPendingApprovalId: pendingApproval.approvalId,
+      lastPendingApprovalSessionId: started.id,
       lastPendingQuestionId: pendingQuestion.questionId,
+      lastPendingQuestionSessionId: started.id,
       metadata: {
         assistantCore: {
           mode: 'assistant'
@@ -130,7 +134,9 @@ test('direct-runtime mode keeps auto-routing pending approvals and questions', a
     conversation: {
       activeRuntimeSessionId: started.id,
       lastPendingApprovalId: pendingApproval.approvalId,
+      lastPendingApprovalSessionId: started.id,
       lastPendingQuestionId: pendingQuestion.questionId,
+      lastPendingQuestionSessionId: started.id,
       metadata: {
         assistantCore: {
           mode: 'direct-runtime'
@@ -150,7 +156,9 @@ test('direct-runtime mode keeps auto-routing pending approvals and questions', a
     conversation: {
       activeRuntimeSessionId: started.id,
       lastPendingApprovalId: null,
+      lastPendingApprovalSessionId: null,
       lastPendingQuestionId: pendingQuestion.questionId,
+      lastPendingQuestionSessionId: started.id,
       metadata: {
         assistantCore: {
           mode: 'direct-runtime'

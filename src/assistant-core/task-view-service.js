@@ -3,9 +3,16 @@ import agentRuntimeSessionManager from '../agent-runtime/session-manager.js';
 import agentTaskStore from '../agent-core/task-store.js';
 import agentChannelDeliveryStore from '../agent-channels/delivery-store.js';
 import assistantRunStore from './run-store.js';
+import assistantDomainTaskStore from './domain/task-store.js';
+import assistantDomainExecutionStore from './domain/execution-store.js';
+import assistantDomainProjectStore from './domain/project-store.js';
 import { getAssistantControlMode } from './assistant-state.js';
 import { buildTrackedSupervisorSessionIds, buildTrackedSupervisorTaskIds } from '../agent-orchestrator/supervisor-task-memory.js';
 import supervisorTaskStore from '../agent-orchestrator/supervisor-task-store.js';
+import {
+  resolvePendingApprovalSessionId,
+  resolvePendingQuestionSessionId
+} from './pending-runtime-state.js';
 
 function toText(value) {
   return String(value || '').trim();
@@ -20,13 +27,19 @@ function providerLabel(providerId) {
 function summarizeConversation(conversation = null) {
   if (!conversation?.id) return null;
   const brief = conversation?.metadata?.supervisor?.brief || {};
+  const workingSet = conversation?.metadata?.assistantDomain?.workingSet || {};
   const assistantState = conversation?.metadata?.assistantCore || {};
+  const trackedTaskIds = [...new Set([
+    ...buildTrackedSupervisorTaskIds(conversation?.metadata?.supervisor?.taskMemory || null),
+    String(workingSet?.primaryTaskId || '').trim()
+  ].filter(Boolean))];
   return {
     id: conversation.id,
     channel: conversation.channel || '',
     title: conversation.title || '',
     activeRuntimeSessionId: conversation.activeRuntimeSessionId || null,
-    activeTaskId: conversation?.metadata?.supervisor?.taskMemory?.activeTaskId || brief.taskId || null,
+    activeTaskId: conversation?.metadata?.supervisor?.taskMemory?.activeTaskId || brief.taskId || workingSet.primaryTaskId || null,
+    trackedTaskIds,
     assistantMode: getAssistantControlMode(conversation),
     assistantSessionId: assistantState.assistantSessionId || null,
     assistantLastRunId: assistantState.lastRunId || null,
@@ -130,8 +143,94 @@ function normalizeSupervisorStoreTask(task = null) {
     lastConversationId: task.lastConversationId || task.conversationId || '',
     originKind: task.metadata?.originKind || '',
     sourceTaskId: task.sourceTaskId || task.metadata?.sourceTaskId || '',
+    metadata: task.metadata && typeof task.metadata === 'object'
+      ? { ...task.metadata }
+      : {},
     updatedAt: task.updatedAt || task.lastUpdateAt || ''
   };
+}
+
+function buildAssistantRunIndex(runs = []) {
+  const latestByConversationId = new Map();
+  const runsByConversationId = new Map();
+  for (const run of runs) {
+    const conversationId = toText(run?.conversationId);
+    if (!conversationId) {
+      continue;
+    }
+    if (!latestByConversationId.has(conversationId)) {
+      latestByConversationId.set(conversationId, run);
+    }
+    if (!runsByConversationId.has(conversationId)) {
+      runsByConversationId.set(conversationId, []);
+    }
+    runsByConversationId.get(conversationId).push(run);
+  }
+  return {
+    latestByConversationId,
+    runsByConversationId
+  };
+}
+
+function buildRelatedRuntimeSessionIdSet({ task = null, runtimeSession = null } = {}) {
+  return new Set([
+    toText(task?.runtimeSessionId),
+    toText(task?.latestExecutionId),
+    toText(task?.primaryExecutionId),
+    toText(runtimeSession?.id)
+  ].filter(Boolean));
+}
+
+function resolveAssistantRunForTask({
+  conversation = null,
+  task = null,
+  runtimeSession = null,
+  assistantRunIndex = null
+} = {}) {
+  const conversationId = toText(conversation?.id);
+  if (!conversationId) {
+    return null;
+  }
+
+  const runsByConversationId = assistantRunIndex?.runsByConversationId || new Map();
+  const latestByConversationId = assistantRunIndex?.latestByConversationId || new Map();
+  const conversationRuns = runsByConversationId.get(conversationId) || [];
+  const preferredRunId = toText(conversation?.metadata?.assistantCore?.lastRunId);
+  const preferredRun = preferredRunId
+    ? conversationRuns.find((entry) => entry.id === preferredRunId) || null
+    : null;
+  const relatedRuntimeSessionIds = buildRelatedRuntimeSessionIdSet({ task, runtimeSession });
+
+  if (relatedRuntimeSessionIds.size > 0) {
+    if (preferredRun) {
+      const preferredRelated = Array.isArray(preferredRun.relatedRuntimeSessionIds)
+        ? preferredRun.relatedRuntimeSessionIds.some((sessionId) => relatedRuntimeSessionIds.has(toText(sessionId)))
+        : false;
+      if (preferredRelated) {
+        return preferredRun;
+      }
+    }
+
+    const matchedRun = conversationRuns.find((entry) => (
+      Array.isArray(entry?.relatedRuntimeSessionIds)
+      && entry.relatedRuntimeSessionIds.some((sessionId) => relatedRuntimeSessionIds.has(toText(sessionId)))
+    ));
+    if (matchedRun) {
+      return matchedRun;
+    }
+    return null;
+  }
+
+  if (!task && preferredRun) {
+    return preferredRun;
+  }
+  if (!task && conversationRuns.length === 1) {
+    return conversationRuns[0];
+  }
+  if (!task) {
+    return latestByConversationId.get(conversationId) || null;
+  }
+  return null;
 }
 
 function chooseTaskFromSupervisorMemory(taskMemory = null, persistedTasks = []) {
@@ -159,6 +258,40 @@ function chooseTaskFromSupervisorMemory(taskMemory = null, persistedTasks = []) 
   return chooseLatestByUpdatedAt(persistedTasks);
 }
 
+function buildAssistantDomainTaskRecord({
+  assistantTask = null,
+  assistantExecution = null,
+  assistantProject = null,
+  runtimeSession = null
+} = {}) {
+  if (!assistantTask?.id) return null;
+  return {
+    id: assistantTask.id,
+    conversationId: assistantTask.lastConversationId || '',
+    runtimeSessionId: assistantExecution?.currentRuntimeSessionId || runtimeSession?.id || '',
+    primaryExecutionId: assistantExecution?.currentRuntimeSessionId || runtimeSession?.id || '',
+    latestExecutionId: assistantExecution?.currentRuntimeSessionId || runtimeSession?.id || '',
+    provider: assistantExecution?.provider || runtimeSession?.provider || '',
+    title: assistantTask.title || '',
+    status: runtimeSession?.status || assistantExecution?.status || assistantTask.lifecycleState || '',
+    input: assistantTask.goal || '',
+    summary: assistantTask.summary || assistantExecution?.lastTurnSummary || runtimeSession?.summary || '',
+    result: '',
+    error: runtimeSession?.error || '',
+    cwd: assistantProject?.cwd || runtimeSession?.cwd || '',
+    cwdBasename: '',
+    lastConversationId: assistantTask.lastConversationId || '',
+    originKind: '',
+    sourceTaskId: '',
+    metadata: {
+      assistantProjectId: assistantProject?.id || assistantTask.projectId || '',
+      assistantTaskId: assistantTask.id,
+      assistantExecutionId: assistantExecution?.id || ''
+    },
+    updatedAt: runtimeSession?.updatedAt || assistantExecution?.updatedAt || assistantTask.updatedAt || ''
+  };
+}
+
 function summarizeTask(task = null) {
   if (!task?.id) return null;
   return {
@@ -179,7 +312,57 @@ function summarizeTask(task = null) {
     lastConversationId: task.lastConversationId || task.conversationId || '',
     originKind: task.originKind || '',
     sourceTaskId: task.sourceTaskId || '',
+    metadata: task.metadata && typeof task.metadata === 'object'
+      ? { ...task.metadata }
+      : {},
     updatedAt: task.updatedAt || ''
+  };
+}
+
+function summarizeAssistantDomainTask(task = null) {
+  if (!task?.id) return null;
+  return {
+    id: task.id,
+    projectId: task.projectId || '',
+    ownerPersonId: task.ownerPersonId || '',
+    title: task.title || '',
+    goal: task.goal || '',
+    summary: task.summary || '',
+    lifecycleState: task.lifecycleState || '',
+    activeExecutionIds: Array.isArray(task.activeExecutionIds) ? task.activeExecutionIds : [],
+    allExecutionIds: Array.isArray(task.allExecutionIds) ? task.allExecutionIds : [],
+    lastConversationId: task.lastConversationId || '',
+    updatedAt: task.updatedAt || ''
+  };
+}
+
+function summarizeAssistantDomainExecution(execution = null) {
+  if (!execution?.id) return null;
+  return {
+    id: execution.id,
+    taskId: execution.taskId || '',
+    provider: execution.provider || '',
+    role: execution.role || '',
+    status: execution.status || '',
+    objective: execution.objective || '',
+    currentRuntimeSessionId: execution.currentRuntimeSessionId || '',
+    providerSessionId: execution.providerSessionId || '',
+    lastTurnSummary: execution.lastTurnSummary || '',
+    lastInputPreview: execution.lastInputPreview || '',
+    updatedAt: execution.updatedAt || ''
+  };
+}
+
+function summarizeAssistantDomainProject(project = null) {
+  if (!project?.id) return null;
+  return {
+    id: project.id,
+    ownerPersonId: project.ownerPersonId || '',
+    name: project.name || '',
+    kind: project.kind || '',
+    cwd: project.cwd || '',
+    summary: project.summary || '',
+    updatedAt: project.updatedAt || ''
   };
 }
 
@@ -294,9 +477,95 @@ function buildFocusTaskReason({
     return 'This task is focused because it is the most relevant active task.';
   }
   if (['completed', 'failed', 'cancelled'].includes(String(focusTask.state || '').trim())) {
-    return 'This task is focused because no active task is available and it is the most relevant recent task.';
+    return 'This task is focused because no active task is available and it is the most relevant recent task. Recent completed tasks can still be the default follow-up target when the user is continuing the same workflow with different parameters.';
   }
   return 'This task is the current best candidate for follow-up.';
+}
+
+function buildExecutionContinuity(record = null) {
+  if (!record) {
+    return {
+      preferredRuntimeSessionId: '',
+      preferredAssistantExecutionId: '',
+      preferredTaskExecutionId: '',
+      source: 'none',
+      canContinue: false,
+      reason: 'No execution target is available for continuation.'
+    };
+  }
+
+  const assistantExecution = record?.assistantDomain?.execution || null;
+  const latestExecutionId = String(record?.task?.latestExecutionId || '').trim();
+  const primaryExecutionId = String(record?.task?.primaryExecutionId || '').trim();
+  const runtimeSessionId = String(record?.runtimeSession?.id || record?.task?.runtimeSessionId || '').trim();
+  const assistantRuntimeSessionId = String(assistantExecution?.currentRuntimeSessionId || '').trim();
+  const assistantExecutionId = String(assistantExecution?.id || '').trim();
+
+  if (assistantRuntimeSessionId) {
+    return {
+      preferredRuntimeSessionId: assistantRuntimeSessionId,
+      preferredAssistantExecutionId: assistantExecutionId,
+      preferredTaskExecutionId: assistantExecutionId,
+      source: 'assistant_execution_runtime',
+      canContinue: true,
+      reason: 'Assistant domain execution points to the latest runtime session for this task.'
+    };
+  }
+
+  if (latestExecutionId) {
+    return {
+      preferredRuntimeSessionId: latestExecutionId,
+      preferredAssistantExecutionId: assistantExecutionId,
+      preferredTaskExecutionId: assistantExecutionId,
+      source: 'task_latest_execution',
+      canContinue: true,
+      reason: primaryExecutionId && primaryExecutionId !== latestExecutionId
+        ? 'Task metadata exposes a newer execution than the primary execution, so continue the latest execution.'
+        : 'Task metadata exposes a latest execution target for continuation.'
+    };
+  }
+
+  if (runtimeSessionId) {
+    return {
+      preferredRuntimeSessionId: runtimeSessionId,
+      preferredAssistantExecutionId: assistantExecutionId,
+      preferredTaskExecutionId: assistantExecutionId,
+      source: 'runtime_session',
+      canContinue: true,
+      reason: 'The runtime session linked to this task is the best continuation target.'
+    };
+  }
+
+  if (primaryExecutionId) {
+    return {
+      preferredRuntimeSessionId: primaryExecutionId,
+      preferredAssistantExecutionId: assistantExecutionId,
+      preferredTaskExecutionId: assistantExecutionId,
+      source: 'task_primary_execution',
+      canContinue: true,
+      reason: 'Only the primary execution is available, so use it as the continuation target.'
+    };
+  }
+
+  if (assistantExecutionId) {
+    return {
+      preferredRuntimeSessionId: '',
+      preferredAssistantExecutionId: assistantExecutionId,
+      preferredTaskExecutionId: '',
+      source: 'assistant_execution_only',
+      canContinue: false,
+      reason: 'Assistant domain execution exists, but it is not linked to a live runtime session.'
+    };
+  }
+
+  return {
+    preferredRuntimeSessionId: '',
+    preferredAssistantExecutionId: '',
+    preferredTaskExecutionId: '',
+    source: 'none',
+    canContinue: false,
+    reason: 'No execution target is available for continuation.'
+  };
 }
 
 function buildDecisionHints({ focusTask = null, waitingTasks = [], activeTasks = [] } = {}) {
@@ -304,6 +573,9 @@ function buildDecisionHints({ focusTask = null, waitingTasks = [], activeTasks =
   let preferredAction = 'inspect_task_space';
   let reason = 'Inspect task space before choosing a task.';
   let preferredTaskId = '';
+  const focusTaskExecutionContinuity = buildExecutionContinuity(focusTask);
+  const focusTaskState = String(focusTask?.state || '').trim();
+  const focusTaskIsRecentCompleted = ['completed', 'failed', 'cancelled'].includes(focusTaskState);
 
   if (waitingTasks.length === 1) {
     preferredAction = 'continue_waiting_task';
@@ -312,7 +584,9 @@ function buildDecisionHints({ focusTask = null, waitingTasks = [], activeTasks =
   } else if (focusTask) {
     preferredAction = 'continue_focus_task';
     preferredTaskId = focusTask.taskId || '';
-    reason = 'A focus task is available and is the best default task for follow-up.';
+    reason = focusTaskIsRecentCompleted
+      ? 'No active task is available, so the most relevant recent task should still be reused by default for follow-up, including same-workflow requests with different parameters.'
+      : 'A focus task is available and is the best default task for follow-up.';
   } else if (activeTasks.length > 1) {
     preferredAction = 'clarify_task';
     reason = 'There are multiple active tasks and no single clear task to continue safely.';
@@ -330,10 +604,12 @@ function buildDecisionHints({ focusTask = null, waitingTasks = [], activeTasks =
     shouldPreferStatusOverview: activeTasks.length > 1,
     shouldPreferWaitingTask: waitingTasks.length === 1,
     shouldReuseFocusTask: Boolean(focusTask?.taskId),
+    shouldReuseRecentCompletedTask: focusTaskIsRecentCompleted,
     waitingTaskCount: waitingTasks.length,
     activeTaskCount: activeTasks.length,
     focusTaskRelationship: buildTaskRelationshipSummary(focusTask),
-    focusTaskExecutionTarget: focusTask?.task?.latestExecutionId || focusTask?.runtimeSession?.id || ''
+    focusTaskExecutionTarget: focusTaskExecutionContinuity.preferredRuntimeSessionId,
+    focusTaskExecutionContinuity
   };
 }
 
@@ -344,7 +620,10 @@ export class AssistantTaskViewService {
     taskStore = agentTaskStore,
     supervisorTaskStore: supervisorTaskStoreArg = supervisorTaskStore,
     deliveryStore = agentChannelDeliveryStore,
-    assistantRunStore: runStore = assistantRunStore
+    assistantRunStore: runStore = assistantRunStore,
+    assistantTaskStore = assistantDomainTaskStore,
+    assistantExecutionStore = assistantDomainExecutionStore,
+    assistantProjectStore = assistantDomainProjectStore
   } = {}) {
     this.conversationStore = conversationStore;
     this.runtimeSessionManager = runtimeSessionManager;
@@ -352,24 +631,46 @@ export class AssistantTaskViewService {
     this.supervisorTaskStore = supervisorTaskStoreArg;
     this.deliveryStore = deliveryStore;
     this.assistantRunStore = runStore;
+    this.assistantTaskStore = assistantTaskStore;
+    this.assistantExecutionStore = assistantExecutionStore;
+    this.assistantProjectStore = assistantProjectStore;
+  }
+
+  _buildAssistantDomainLink(task = null) {
+    const metadata = task?.metadata && typeof task.metadata === 'object'
+      ? task.metadata
+      : {};
+    const assistantTask = metadata.assistantTaskId
+      ? this.assistantTaskStore?.get?.(metadata.assistantTaskId) || null
+      : null;
+    const assistantExecution = metadata.assistantExecutionId
+      ? this.assistantExecutionStore?.get?.(metadata.assistantExecutionId) || null
+      : null;
+    const assistantProject = metadata.assistantProjectId
+      ? this.assistantProjectStore?.get?.(metadata.assistantProjectId) || null
+      : null;
+
+    if (!assistantTask && !assistantExecution && !assistantProject) {
+      return null;
+    }
+
+    return {
+      task: summarizeAssistantDomainTask(assistantTask),
+      execution: summarizeAssistantDomainExecution(assistantExecution),
+      project: summarizeAssistantDomainProject(assistantProject)
+    };
   }
 
   _buildLatestAssistantRunMap() {
     const runs = this.assistantRunStore.list({ limit: 500 });
-    const latestByConversationId = new Map();
-    for (const run of runs) {
-      const conversationId = String(run?.conversationId || '');
-      if (!conversationId || latestByConversationId.has(conversationId)) {
-        continue;
-      }
-      latestByConversationId.set(conversationId, run);
-    }
-    return latestByConversationId;
+    return buildAssistantRunIndex(runs);
   }
 
   _buildRuntimeCandidateMap(conversation = null) {
     const trackedSessionIds = [...new Set([
       conversation?.activeRuntimeSessionId || '',
+      resolvePendingApprovalSessionId(conversation, this.runtimeSessionManager),
+      resolvePendingQuestionSessionId(conversation, this.runtimeSessionManager),
       ...buildTrackedSupervisorSessionIds(conversation?.metadata?.supervisor?.taskMemory || null)
     ].filter(Boolean))];
     return new Map(trackedSessionIds
@@ -395,8 +696,45 @@ export class AssistantTaskViewService {
     const persistedTasks = supervisorTasks.length > 0
       ? supervisorTasks
       : this.taskStore.list({ conversationId: conversation.id, limit: 50 }).map(summarizeTask).filter(Boolean);
+    const workingSet = conversation?.metadata?.assistantDomain?.workingSet || {};
+    if (persistedTasks.length === 0 && String(workingSet?.primaryTaskId || '').trim()) {
+      const assistantTask = this.assistantTaskStore?.get?.(workingSet.primaryTaskId) || null;
+      const executionFromRuntime = conversation?.activeRuntimeSessionId
+        ? this.assistantExecutionStore?.findByRuntimeSessionId?.(conversation.activeRuntimeSessionId) || null
+        : null;
+      const preferredExecutionId = String(
+        executionFromRuntime?.id
+          || assistantTask?.activeExecutionIds?.[assistantTask.activeExecutionIds.length - 1]
+          || assistantTask?.allExecutionIds?.[assistantTask.allExecutionIds.length - 1]
+          || ''
+      ).trim();
+      const assistantExecution = preferredExecutionId
+        ? this.assistantExecutionStore?.get?.(preferredExecutionId) || executionFromRuntime || null
+        : executionFromRuntime;
+      const resolvedAssistantTask = assistantTask
+        || (assistantExecution?.taskId ? this.assistantTaskStore?.get?.(assistantExecution.taskId) || null : null);
+      const assistantProject = resolvedAssistantTask?.projectId
+        ? this.assistantProjectStore?.get?.(resolvedAssistantTask.projectId) || null
+        : null;
+      const runtimeSessionId = String(
+        conversation?.activeRuntimeSessionId
+          || assistantExecution?.currentRuntimeSessionId
+          || ''
+      ).trim();
+      const runtimeSession = runtimeSessionId
+        ? this.runtimeSessionManager.getSession(runtimeSessionId)
+        : null;
+      const fallbackTask = buildAssistantDomainTaskRecord({
+        assistantTask: resolvedAssistantTask,
+        assistantExecution,
+        assistantProject,
+        runtimeSession
+      });
+      if (fallbackTask) {
+        persistedTasks.push(fallbackTask);
+      }
+    }
     const runtimeCandidateMap = this._buildRuntimeCandidateMap(conversation);
-    const assistantRun = latestAssistantRunMap?.get(conversation.id) || this.assistantRunStore.listByConversationId(conversation.id, { limit: 1 })[0] || null;
     const deliveries = this.deliveryStore.listByConversation(conversation.id, { limit: 50 });
     const latestDelivery = deriveLastUserVisibleMessage(deliveries);
     const supervisorBrief = conversation?.metadata?.supervisor?.brief || null;
@@ -414,6 +752,12 @@ export class AssistantTaskViewService {
               pendingQuestions: runtimeCandidate.pendingQuestions
             }
           : { pendingApprovals: [], pendingQuestions: [] };
+        const assistantRun = resolveAssistantRunForTask({
+          conversation,
+          task,
+          runtimeSession,
+          assistantRunIndex: latestAssistantRunMap
+        });
 
         return {
           id: String(task.id),
@@ -454,6 +798,7 @@ export class AssistantTaskViewService {
           runtimeSession: summarizeRuntimeSession(runtimeSession, latestTurn),
           latestTurn: summarizeTurn(latestTurn),
           task: summarizeTask(task),
+          assistantDomain: this._buildAssistantDomainLink(task),
           pending: {
             approvalCount: Number(runtimeDetail.pendingApprovals.length || 0),
             questionCount: Number(runtimeDetail.pendingQuestions.length || 0)
@@ -465,15 +810,60 @@ export class AssistantTaskViewService {
 
   _buildTaskRecord(conversation, { latestAssistantRunMap = null } = {}) {
     const taskMemory = conversation?.metadata?.supervisor?.taskMemory || null;
-    const trackedTaskIds = buildTrackedSupervisorTaskIds(conversation?.metadata?.supervisor?.taskMemory || null);
+    const trackedTaskIds = [...new Set([
+      ...buildTrackedSupervisorTaskIds(conversation?.metadata?.supervisor?.taskMemory || null),
+      String(conversation?.metadata?.assistantDomain?.workingSet?.primaryTaskId || '').trim()
+    ].filter(Boolean))];
     const trackedSessionIds = [...new Set([
       conversation?.activeRuntimeSessionId || '',
+      resolvePendingApprovalSessionId(conversation, this.runtimeSessionManager),
+      resolvePendingQuestionSessionId(conversation, this.runtimeSessionManager),
       ...buildTrackedSupervisorSessionIds(conversation?.metadata?.supervisor?.taskMemory || null)
     ].filter(Boolean))];
     const supervisorTasks = this.supervisorTaskStore.listByConversationId(conversation.id, { limit: 50 }).map(normalizeSupervisorStoreTask).filter(Boolean);
     const persistedTasks = supervisorTasks.length > 0
       ? supervisorTasks
       : this.taskStore.list({ conversationId: conversation.id, limit: 50 });
+    if (persistedTasks.length === 0) {
+      const workingSet = conversation?.metadata?.assistantDomain?.workingSet || {};
+      const assistantTask = String(workingSet?.primaryTaskId || '').trim()
+        ? this.assistantTaskStore?.get?.(workingSet.primaryTaskId) || null
+        : null;
+      const executionFromRuntime = conversation?.activeRuntimeSessionId
+        ? this.assistantExecutionStore?.findByRuntimeSessionId?.(conversation.activeRuntimeSessionId) || null
+        : null;
+      const preferredExecutionId = String(
+        executionFromRuntime?.id
+          || assistantTask?.activeExecutionIds?.[assistantTask.activeExecutionIds.length - 1]
+          || assistantTask?.allExecutionIds?.[assistantTask.allExecutionIds.length - 1]
+          || ''
+      ).trim();
+      const assistantExecution = preferredExecutionId
+        ? this.assistantExecutionStore?.get?.(preferredExecutionId) || executionFromRuntime || null
+        : executionFromRuntime;
+      const resolvedAssistantTask = assistantTask
+        || (assistantExecution?.taskId ? this.assistantTaskStore?.get?.(assistantExecution.taskId) || null : null);
+      const assistantProject = resolvedAssistantTask?.projectId
+        ? this.assistantProjectStore?.get?.(resolvedAssistantTask.projectId) || null
+        : null;
+      const runtimeSessionId = String(
+        conversation?.activeRuntimeSessionId
+          || assistantExecution?.currentRuntimeSessionId
+          || ''
+      ).trim();
+      const runtimeSession = runtimeSessionId
+        ? this.runtimeSessionManager.getSession(runtimeSessionId)
+        : null;
+      const fallbackTask = buildAssistantDomainTaskRecord({
+        assistantTask: resolvedAssistantTask,
+        assistantExecution,
+        assistantProject,
+        runtimeSession
+      });
+      if (fallbackTask) {
+        persistedTasks.push(fallbackTask);
+      }
+    }
     const selectedTask = chooseTaskFromSupervisorMemory(taskMemory, persistedTasks);
     const runtimeCandidates = trackedSessionIds
       .map((sessionId) => {
@@ -507,7 +897,12 @@ export class AssistantTaskViewService {
         }
       : { pendingApprovals: [], pendingQuestions: [] };
     const task = selectedTask;
-    const assistantRun = latestAssistantRunMap?.get(conversation.id) || this.assistantRunStore.listByConversationId(conversation.id, { limit: 1 })[0] || null;
+    const assistantRun = resolveAssistantRunForTask({
+      conversation,
+      task,
+      runtimeSession,
+      assistantRunIndex: latestAssistantRunMap
+    });
     const deliveries = this.deliveryStore.listByConversation(conversation.id, { limit: 50 });
     const latestDelivery = deriveLastUserVisibleMessage(deliveries);
     const supervisorBrief = conversation?.metadata?.supervisor?.brief || null;
@@ -555,6 +950,7 @@ export class AssistantTaskViewService {
       runtimeSession: summarizeRuntimeSession(runtimeSession, latestTurn),
       latestTurn: summarizeTurn(latestTurn),
       task: summarizeTask(task),
+      assistantDomain: this._buildAssistantDomainLink(task),
       supervisorBrief,
       pending: {
         approvalCount: Number(runtimeDetail.pendingApprovals.length || 0),
@@ -600,7 +996,17 @@ export class AssistantTaskViewService {
       || conversation?.metadata?.supervisor?.taskMemory?.current?.taskId
       || ''
     ).trim();
+    const pendingApprovalSessionId = resolvePendingApprovalSessionId(conversation, this.runtimeSessionManager);
+    const pendingQuestionSessionId = resolvePendingQuestionSessionId(conversation, this.runtimeSessionManager);
     const focusTask = records.find((record) => record.taskId === currentTaskId)
+      || records.find((record) => (
+        record.runtimeSession?.id
+        && record.runtimeSession.id === pendingApprovalSessionId
+      ))
+      || records.find((record) => (
+        record.runtimeSession?.id
+        && record.runtimeSession.id === pendingQuestionSessionId
+      ))
       || records.find((record) => record.runtimeSession?.id && record.runtimeSession.id === conversation.activeRuntimeSessionId)
       || (waitingTasks.length === 1 ? waitingTasks[0] : null)
       || activeTasks[0]

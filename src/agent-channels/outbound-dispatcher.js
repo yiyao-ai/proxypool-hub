@@ -2,9 +2,8 @@ import agentRuntimeSessionManager from '../agent-runtime/session-manager.js';
 import { AGENT_EVENT_TYPE } from '../agent-runtime/models.js';
 import agentTaskStore from '../agent-core/task-store.js';
 import { syncTaskTerminalState } from '../agent-core/task-service.js';
-import { buildConversationSupervisorPatch } from '../agent-orchestrator/conversation-supervisor-state.js';
 import supervisorTaskStore from '../agent-orchestrator/supervisor-task-store.js';
-import { syncSupervisorTaskForRuntimeEvent } from '../agent-orchestrator/supervisor-task-sync.js';
+import { buildConversationRuntimeEventPatch } from '../assistant-core/conversation-runtime-binding.js';
 import agentChannelConversationStore from './conversation-store.js';
 import agentChannelDeliveryStore from './delivery-store.js';
 import { formatAgentRuntimeEventForChannel } from './formatter.js';
@@ -20,6 +19,7 @@ const NOTIFIABLE_EVENT_TYPES = new Set([
   AGENT_EVENT_TYPE.STARTED,
   AGENT_EVENT_TYPE.APPROVAL_REQUEST,
   AGENT_EVENT_TYPE.QUESTION,
+  AGENT_EVENT_TYPE.APPROVAL_RESOLVED,
   AGENT_EVENT_TYPE.COMPLETED,
   AGENT_EVENT_TYPE.FAILED
 ]);
@@ -152,56 +152,18 @@ export class AgentChannelOutboundDispatcher {
           });
         }
 
-        if (event.type === AGENT_EVENT_TYPE.APPROVAL_REQUEST) {
-          this.conversationStore.patch(conversation.id, {
-            lastPendingApprovalId: event?.payload?.approvalId || null
-          });
-        }
-
-        if (event.type === AGENT_EVENT_TYPE.QUESTION) {
-          this.conversationStore.patch(conversation.id, {
-            lastPendingQuestionId: event?.payload?.questionId || null
-          });
-        }
-
-        if (event.type === AGENT_EVENT_TYPE.COMPLETED || event.type === AGENT_EVENT_TYPE.FAILED) {
-          this.conversationStore.patch(conversation.id, {
-            lastPendingApprovalId: null,
-            lastPendingQuestionId: null
-          });
-        }
-
-        const supervisorPatch = buildConversationSupervisorPatch({ conversation, session, event });
-        const taskIdFromSession = String(session?.metadata?.taskId || '').trim();
-        const synced = syncSupervisorTaskForRuntimeEvent({
+        this.conversationStore.patch(conversation.id, buildConversationRuntimeEventPatch({
           conversation,
-          session: taskIdFromSession
-            ? {
-                ...session,
-                metadata: {
-                  ...(session?.metadata || {}),
-                  taskId: taskIdFromSession
-                }
-              }
-            : session,
+          session,
           event,
-          taskMemory: supervisorPatch?.metadata?.supervisor?.taskMemory || conversation?.metadata?.supervisor?.taskMemory || null,
-          store: this.supervisorTaskStore
-        });
-        this.conversationStore.patch(conversation.id, {
-          ...supervisorPatch,
-          metadata: {
-            ...(supervisorPatch?.metadata || {}),
-            supervisor: {
-              ...((supervisorPatch?.metadata?.supervisor && typeof supervisorPatch.metadata.supervisor === 'object')
-                ? supervisorPatch.metadata.supervisor
-                : {}),
-              taskMemory: synced.taskMemory,
-              brief: synced.brief
-            }
-          }
-        });
+          supervisorTaskStore: this.supervisorTaskStore
+        }));
         const postPatchConversation = this.conversationStore.get(conversation.id) || latestConversation;
+        const assistantNotification = await this.eventIngestService?.ingestRuntimeEvent?.({
+          conversation: postPatchConversation,
+          session,
+          event
+        }) || null;
         if (!formatted?.text && decision.action === 'send_now') {
           this.deliverySender.suppress({
             conversation: postPatchConversation,
@@ -215,11 +177,6 @@ export class AgentChannelOutboundDispatcher {
           });
         }
         if (decision.action === 'forward_to_assistant') {
-          const assistantNotification = await this.eventIngestService?.ingestRuntimeEvent?.({
-            conversation: postPatchConversation,
-            session,
-            event
-          }) || null;
           if (assistantNotification?.notified && assistantNotification.message) {
             await this.deliverySender.send({
               conversation: postPatchConversation,
@@ -234,7 +191,10 @@ export class AgentChannelOutboundDispatcher {
                 eventType: event?.type || ''
               },
               message: {
-                text: assistantNotification.message
+                text: assistantNotification.message,
+                buttons: formatted?.buttons || [],
+                session,
+                event
               }
             });
           }

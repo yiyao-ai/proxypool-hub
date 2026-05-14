@@ -109,6 +109,27 @@ function splitFeishuText(text, maxLength = FEISHU_SAFE_MESSAGE_LIMIT) {
   return chunks.map((chunk, index) => `[${index + 1}/${chunks.length}] ${chunk}`);
 }
 
+function buildButtonCommandText(buttons = []) {
+  const normalized = Array.isArray(buttons)
+    ? buttons
+      .map((button) => {
+        const action = String(button?.action || button?.id || '').trim();
+        if (!action) {
+          return '';
+        }
+        const label = String(button?.text || action).trim();
+        return label
+          ? `${label} (/${action})`
+          : `/${action}`;
+      })
+      .filter(Boolean)
+    : [];
+
+  return normalized.length > 0
+    ? `\n\nActions: ${normalized.join(' / ')}`
+    : '';
+}
+
 export class FeishuChannelProvider {
   constructor({ fetchImpl = globalThis.fetch } = {}) {
     this.id = 'feishu';
@@ -328,9 +349,7 @@ export class FeishuChannelProvider {
   }
 
   async sendMessage({ conversation, text, buttons = [] } = {}) {
-    const tail = buttons.length > 0
-      ? `\n\nActions: ${buttons.map((button) => `/${button.action || button.id}`).join(' / ')}`
-      : '';
+    const tail = buildButtonCommandText(buttons);
     const textChunks = splitFeishuText(`${String(text || '')}${tail}`);
     let result = null;
 

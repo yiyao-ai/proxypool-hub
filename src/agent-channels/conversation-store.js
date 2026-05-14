@@ -274,7 +274,9 @@ export class AgentChannelConversationStore {
       activeRuntimeSessionId: null,
       trackedRuntimeSessionIds: normalizeTrackedRuntimeSessionIds(current?.trackedRuntimeSessionIds),
       lastPendingApprovalId: null,
+      lastPendingApprovalSessionId: null,
       lastPendingQuestionId: null,
+      lastPendingQuestionSessionId: null,
       lastPendingClarificationId: null
     });
   }

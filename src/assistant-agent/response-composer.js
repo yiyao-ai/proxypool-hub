@@ -40,6 +40,22 @@ function collectPendingContext(toolResults = []) {
   return null;
 }
 
+function collectPolicyBlockContext(toolResults = []) {
+  for (const entry of [...toolResults].reverse()) {
+    const result = entry?.result;
+    if (!result || typeof result !== 'object') continue;
+    if (result.kind !== 'policy_block' || result.requiresConfirmation !== true) continue;
+    return {
+      toolName: String(entry?.toolName || '').trim(),
+      summary: String(entry?.summary || '').trim(),
+      hint: String(result?.hint || '').trim(),
+      reason: String(result?.reason || '').trim(),
+      requestedPath: String(entry?.input?.cwd || entry?.input?.workspaceRef || entry?.input?.workspaceId || '').trim()
+    };
+  }
+  return null;
+}
+
 export function composeAssistantReply({
   language = 'en',
   assistantText = '',
@@ -48,6 +64,32 @@ export function composeAssistantReply({
   stopReason = ''
 } = {}) {
   const text = String(assistantText || '').trim();
+  const policyBlock = collectPolicyBlockContext(toolResults);
+  if (stopReason === 'assistant_confirmation_required' && policyBlock) {
+    if (language === 'zh-CN') {
+      const detail = policyBlock.requestedPath
+        ? `目标范围：${policyBlock.requestedPath}`
+        : (policyBlock.summary || policyBlock.hint || '');
+      return {
+        message: [
+          '这一步需要你确认后我才能继续。',
+          detail ? `\n${detail}` : ''
+        ].join(''),
+        summary: '等待确认'
+      };
+    }
+    const detail = policyBlock.requestedPath
+      ? `Requested scope: ${policyBlock.requestedPath}`
+      : (policyBlock.summary || policyBlock.hint || '');
+    return {
+      message: [
+        'I need your confirmation before I can continue with this action.',
+        detail ? `\n\n${detail}` : ''
+      ].join(''),
+      summary: 'Waiting for confirmation'
+    };
+  }
+
   if (text) {
     return {
       message: text,

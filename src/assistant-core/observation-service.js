@@ -6,11 +6,15 @@ import assistantMemoryService from './memory-service.js';
 import assistantPolicyService from './policy-service.js';
 import assistantWorkspaceStore from './workspace-store.js';
 import assistantClarificationStore from './clarification-store.js';
+import assistantDomainTaskStore from './domain/task-store.js';
+import assistantDomainExecutionStore from './domain/execution-store.js';
+import assistantDomainProjectStore from './domain/project-store.js';
 import { getAssistantControlMode } from './assistant-state.js';
-import { resolveWorkspaceScopeRef, buildWorkspaceMetadata } from './scope-resolver.js';
+import { resolveWorkspaceScopeRef, buildWorkspaceMetadata, buildScopeRefs } from './scope-resolver.js';
 import { buildTrackedSupervisorSessionIds, buildTrackedSupervisorTaskIds } from '../agent-orchestrator/supervisor-task-memory.js';
 import supervisorTaskStore from '../agent-orchestrator/supervisor-task-store.js';
 import { normalizeWorkspaceRef } from './workspace-store.js';
+import { getConversationPendingRuntimeState } from './pending-runtime-state.js';
 
 function providerLabel(providerId) {
   if (providerId === 'claude-code') return 'Claude Code';
@@ -72,15 +76,19 @@ function aggregateTurnStats(turns = []) {
 
 function summarizeConversation(conversation = {}) {
   const brief = conversation?.metadata?.supervisor?.brief || {};
+  const workingSet = conversation?.metadata?.assistantDomain?.workingSet || {};
   const assistantState = conversation?.metadata?.assistantCore || {};
   const trackedRuntimeSessionIds = buildTrackedSupervisorSessionIds(conversation?.metadata?.supervisor?.taskMemory || null);
-  const trackedTaskIds = buildTrackedSupervisorTaskIds(conversation?.metadata?.supervisor?.taskMemory || null);
+  const trackedTaskIds = [...new Set([
+    ...buildTrackedSupervisorTaskIds(conversation?.metadata?.supervisor?.taskMemory || null),
+    String(workingSet?.primaryTaskId || '').trim()
+  ].filter(Boolean))];
   return {
     id: conversation.id,
     channel: conversation.channel || '',
     title: conversation.title || '',
     activeRuntimeSessionId: conversation.activeRuntimeSessionId || null,
-    activeTaskId: conversation?.metadata?.supervisor?.taskMemory?.activeTaskId || brief.taskId || null,
+    activeTaskId: conversation?.metadata?.supervisor?.taskMemory?.activeTaskId || brief.taskId || workingSet.primaryTaskId || null,
     trackedRuntimeSessionIds,
     trackedTaskIds,
     assistantMode: getAssistantControlMode(conversation),
@@ -111,11 +119,95 @@ function projectTaskRecord(task = null) {
     cwd: task.cwd || task.metadata?.cwd || '',
     cwdBasename: task.cwdBasename || task.metadata?.cwdBasename || '',
     lastConversationId: task.lastConversationId || task.metadata?.lastConversationId || task.conversationId || '',
+    metadata: task.metadata && typeof task.metadata === 'object'
+      ? { ...task.metadata }
+      : {},
     updatedAt: task.updatedAt || task.lastUpdateAt || ''
   };
 }
 
-function chooseTaskFromConversation(conversation = null, taskStore = null, supervisorTaskStoreArg = null) {
+function summarizeAssistantDomainTask(task = null) {
+  if (!task?.id) return null;
+  return {
+    id: task.id,
+    projectId: task.projectId || '',
+    ownerPersonId: task.ownerPersonId || '',
+    title: task.title || '',
+    goal: task.goal || '',
+    summary: task.summary || '',
+    lifecycleState: task.lifecycleState || '',
+    updatedAt: task.updatedAt || ''
+  };
+}
+
+function summarizeAssistantDomainExecution(execution = null) {
+  if (!execution?.id) return null;
+  return {
+    id: execution.id,
+    taskId: execution.taskId || '',
+    provider: execution.provider || '',
+    role: execution.role || '',
+    status: execution.status || '',
+    objective: execution.objective || '',
+    currentRuntimeSessionId: execution.currentRuntimeSessionId || '',
+    providerSessionId: execution.providerSessionId || '',
+    updatedAt: execution.updatedAt || ''
+  };
+}
+
+function summarizeAssistantDomainProject(project = null) {
+  if (!project?.id) return null;
+  return {
+    id: project.id,
+    ownerPersonId: project.ownerPersonId || '',
+    name: project.name || '',
+    kind: project.kind || '',
+    cwd: project.cwd || '',
+    summary: project.summary || '',
+    updatedAt: project.updatedAt || ''
+  };
+}
+
+function buildAssistantDomainTaskRecord({
+  assistantTask = null,
+  assistantExecution = null,
+  assistantProject = null,
+  runtimeSession = null
+} = {}) {
+  if (!assistantTask?.id) return null;
+  return {
+    id: assistantTask.id,
+    conversationId: assistantTask.lastConversationId || '',
+    runtimeSessionId: assistantExecution?.currentRuntimeSessionId || runtimeSession?.id || '',
+    provider: assistantExecution?.provider || runtimeSession?.provider || '',
+    title: assistantTask.title || '',
+    status: runtimeSession?.status || assistantExecution?.status || assistantTask.lifecycleState || '',
+    summary: assistantTask.summary || assistantExecution?.lastTurnSummary || runtimeSession?.summary || '',
+    result: '',
+    error: runtimeSession?.error || '',
+    cwd: assistantProject?.cwd || runtimeSession?.cwd || '',
+    cwdBasename: '',
+    lastConversationId: assistantTask.lastConversationId || '',
+    metadata: {
+      assistantProjectId: assistantProject?.id || assistantTask.projectId || '',
+      assistantTaskId: assistantTask.id,
+      assistantExecutionId: assistantExecution?.id || ''
+    },
+    updatedAt: runtimeSession?.updatedAt || assistantExecution?.updatedAt || assistantTask.updatedAt || ''
+  };
+}
+
+function chooseTaskFromConversation(
+  conversation = null,
+  taskStore = null,
+  supervisorTaskStoreArg = null,
+  {
+    assistantTaskStore = null,
+    assistantExecutionStore = null,
+    assistantProjectStore = null,
+    runtimeSessionManager = null
+  } = {}
+) {
   if (!conversation?.id) return null;
   const supervisorTasks = supervisorTaskStoreArg?.listByConversationId?.(conversation.id, { limit: 50 }) || [];
   const tasks = supervisorTasks.length > 0
@@ -141,7 +233,48 @@ function chooseTaskFromConversation(conversation = null, taskStore = null, super
       updatedAt: currentTask.lastUpdateAt || ''
     };
   }
-  return tasks[0] || null;
+  if (tasks[0]) {
+    return tasks[0];
+  }
+
+  const workingSet = conversation?.metadata?.assistantDomain?.workingSet || {};
+  const assistantTaskId = String(workingSet?.primaryTaskId || '').trim();
+  const assistantTask = assistantTaskId
+    ? assistantTaskStore?.get?.(assistantTaskId) || null
+    : null;
+  const activeRuntimeSessionId = String(conversation?.activeRuntimeSessionId || '').trim();
+  const executionFromRuntime = activeRuntimeSessionId
+    ? assistantExecutionStore?.findByRuntimeSessionId?.(activeRuntimeSessionId) || null
+    : null;
+  const preferredExecutionId = String(
+    executionFromRuntime?.id
+      || assistantTask?.activeExecutionIds?.[assistantTask.activeExecutionIds.length - 1]
+      || assistantTask?.allExecutionIds?.[assistantTask.allExecutionIds.length - 1]
+      || ''
+  ).trim();
+  const assistantExecution = preferredExecutionId
+    ? assistantExecutionStore?.get?.(preferredExecutionId) || executionFromRuntime || null
+    : executionFromRuntime;
+  const resolvedAssistantTask = assistantTask
+    || (assistantExecution?.taskId ? assistantTaskStore?.get?.(assistantExecution.taskId) || null : null);
+  const assistantProject = resolvedAssistantTask?.projectId
+    ? assistantProjectStore?.get?.(resolvedAssistantTask.projectId) || null
+    : null;
+  const runtimeSessionId = String(
+    activeRuntimeSessionId
+      || assistantExecution?.currentRuntimeSessionId
+      || ''
+  ).trim();
+  const runtimeSession = runtimeSessionId
+    ? runtimeSessionManager?.getSession?.(runtimeSessionId) || null
+    : null;
+
+  return buildAssistantDomainTaskRecord({
+    assistantTask: resolvedAssistantTask,
+    assistantExecution,
+    assistantProject,
+    runtimeSession
+  });
 }
 
 export class AssistantObservationService {
@@ -153,7 +286,10 @@ export class AssistantObservationService {
     deliveryStore = agentChannelDeliveryStore,
     memoryService = assistantMemoryService,
     policyService = assistantPolicyService,
-    workspaceStore = assistantWorkspaceStore
+    workspaceStore = assistantWorkspaceStore,
+    assistantTaskStore = assistantDomainTaskStore,
+    assistantExecutionStore = assistantDomainExecutionStore,
+    assistantProjectStore = assistantDomainProjectStore
   } = {}) {
     this.conversationStore = conversationStore;
     this.runtimeSessionManager = runtimeSessionManager;
@@ -164,13 +300,46 @@ export class AssistantObservationService {
     this.policyService = policyService;
     this.workspaceStore = workspaceStore;
     this.clarificationStore = assistantClarificationStore;
+    this.assistantTaskStore = assistantTaskStore;
+    this.assistantExecutionStore = assistantExecutionStore;
+    this.assistantProjectStore = assistantProjectStore;
+  }
+
+  buildAssistantDomainLink(task = null) {
+    const metadata = task?.metadata && typeof task.metadata === 'object'
+      ? task.metadata
+      : {};
+    const assistantTask = metadata.assistantTaskId
+      ? this.assistantTaskStore?.get?.(metadata.assistantTaskId) || null
+      : null;
+    const assistantExecution = metadata.assistantExecutionId
+      ? this.assistantExecutionStore?.get?.(metadata.assistantExecutionId) || null
+      : null;
+    const assistantProject = metadata.assistantProjectId
+      ? this.assistantProjectStore?.get?.(metadata.assistantProjectId) || null
+      : null;
+
+    if (!assistantTask && !assistantExecution && !assistantProject) {
+      return null;
+    }
+
+    return {
+      task: summarizeAssistantDomainTask(assistantTask),
+      execution: summarizeAssistantDomainExecution(assistantExecution),
+      project: summarizeAssistantDomainProject(assistantProject)
+    };
   }
 
   buildConversationObservation(conversation) {
     const activeRuntime = conversation?.activeRuntimeSessionId
       ? this.runtimeSessionManager.getSession(conversation.activeRuntimeSessionId)
       : null;
-    const latestTask = chooseTaskFromConversation(conversation, this.taskStore, this.supervisorTaskStore);
+    const latestTask = chooseTaskFromConversation(conversation, this.taskStore, this.supervisorTaskStore, {
+      assistantTaskStore: this.assistantTaskStore,
+      assistantExecutionStore: this.assistantExecutionStore,
+      assistantProjectStore: this.assistantProjectStore,
+      runtimeSessionManager: this.runtimeSessionManager
+    });
     const sessions = this.runtimeSessionManager.listSessions({ limit: 10 });
     const conversations = this.conversationStore.list({ limit: 10 });
 
@@ -191,6 +360,7 @@ export class AssistantObservationService {
             summary: latestTask.summary || '',
             result: latestTask.result || '',
             error: latestTask.error || '',
+            assistantDomain: this.buildAssistantDomainLink(latestTask),
             updatedAt: latestTask.updatedAt || ''
           }
         : null,
@@ -362,17 +532,20 @@ export class AssistantObservationService {
     const conversation = this.conversationStore.get(String(conversationId || ''));
     if (!conversation) return null;
 
-    const activeRuntime = conversation.activeRuntimeSessionId
-      ? this.runtimeSessionManager.getSession(conversation.activeRuntimeSessionId)
-      : null;
-    const pendingApprovals = activeRuntime?.id
-      ? this.runtimeSessionManager.approvalService.listPending(activeRuntime.id)
+    const pendingRuntimeState = getConversationPendingRuntimeState(conversation, this.runtimeSessionManager);
+    const activeRuntime = pendingRuntimeState.activeRuntime;
+    const pendingApprovals = pendingRuntimeState.pendingApproval
+      ? [pendingRuntimeState.pendingApproval]
       : [];
-    const pendingQuestions = activeRuntime?.id
-      ? this.runtimeSessionManager.listPendingQuestions(activeRuntime.id)
-        .filter((entry) => String(entry?.status || '').trim() === 'pending')
+    const pendingQuestions = pendingRuntimeState.pendingQuestion
+      ? [pendingRuntimeState.pendingQuestion]
       : [];
-    const latestTask = chooseTaskFromConversation(conversation, this.taskStore, this.supervisorTaskStore);
+    const latestTask = chooseTaskFromConversation(conversation, this.taskStore, this.supervisorTaskStore, {
+      assistantTaskStore: this.assistantTaskStore,
+      assistantExecutionStore: this.assistantExecutionStore,
+      assistantProjectStore: this.assistantProjectStore,
+      runtimeSessionManager: this.runtimeSessionManager
+    });
     const pendingClarification = conversation?.lastPendingClarificationId
       ? this.clarificationStore.get(conversation.lastPendingClarificationId)
       : this.clarificationStore.getPendingByConversationId(conversation.id);
@@ -398,26 +571,33 @@ export class AssistantObservationService {
         })
       : null;
 
+    const scopeRefs = buildScopeRefs({
+      conversation,
+      runtimeSession: activeRuntime,
+      cwd: activeRuntime?.cwd || ''
+    });
     const memory = this.memoryService.resolvePreferences({
       conversation,
       runtimeSession: activeRuntime,
       cwd: activeRuntime?.cwd || ''
     });
     const policy = {
-      conversation: this.policyService.listPolicies({
-        scope: 'conversation',
-        scopeRef: conversation.id
-      }),
-      runtimeSession: activeRuntime?.id
+      task: scopeRefs.task
         ? this.policyService.listPolicies({
-            scope: 'runtime_session',
-            scopeRef: activeRuntime.id
+            scope: 'task',
+            scopeRef: scopeRefs.task
           })
         : [],
-      workspace: activeRuntime?.cwd
+      execution: scopeRefs.execution
         ? this.policyService.listPolicies({
-            scope: 'workspace',
-            scopeRef: activeRuntime.cwd
+            scope: 'execution',
+            scopeRef: scopeRefs.execution
+          })
+        : [],
+      project: scopeRefs.project
+        ? this.policyService.listPolicies({
+            scope: 'project',
+            scopeRef: scopeRefs.project
           })
         : []
     };
@@ -444,12 +624,14 @@ export class AssistantObservationService {
             summary: latestTask.summary || '',
             result: latestTask.result || '',
             error: latestTask.error || '',
+            assistantDomain: this.buildAssistantDomainLink(latestTask),
             updatedAt: latestTask.updatedAt || ''
           }
         : null,
       pendingApprovals: pendingApprovals.map((entry) => ({
         approvalId: entry.approvalId,
         turnId: entry.turnId || '',
+        sessionId: pendingRuntimeState.pendingApprovalSessionId || '',
         title: entry.title || '',
         summary: entry.summary || '',
         createdAt: entry.createdAt || '',
@@ -458,6 +640,7 @@ export class AssistantObservationService {
       pendingQuestions: pendingQuestions.map((entry) => ({
         questionId: entry.questionId,
         turnId: entry.turnId || '',
+        sessionId: pendingRuntimeState.pendingQuestionSessionId || '',
         text: entry.text || '',
         options: entry.options || [],
         createdAt: entry.createdAt || '',
@@ -506,8 +689,8 @@ export class AssistantObservationService {
       lastTouchedAt: String(entry?.lastTouchedAt || entry?.updatedAt || '').trim()
     }));
     const policy = {
-      globalUser: this.policyService.listPolicies({
-        scope: 'global_user',
+      person: this.policyService.listPolicies({
+        scope: 'person',
         scopeRef: 'default-user'
       })
     };

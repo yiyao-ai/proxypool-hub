@@ -412,7 +412,7 @@ export function createChatPageModule() {
 
       const { ok, data } = await this.api(`/api/assistant/runs/${encodeURIComponent(runId)}`);
       const run = ok ? data?.run : null;
-      const terminal = ['completed', 'failed', 'cancelled'];
+      const terminal = ['completed', 'failed', 'cancelled', 'waiting_user'];
 
       if (run && terminal.includes(String(run.status || ''))) {
         session.pendingAssistantRunId = '';
@@ -492,6 +492,7 @@ export function createChatPageModule() {
           content: String(message.content || ''),
           assistantRunId: String(message.assistantRunId || ''),
           runStatus: String(message.runStatus || ''),
+          pendingAction: message.pendingAction || null,
           observability: message.observability || null,
           createdAt: message.createdAt || ''
         }))
@@ -977,6 +978,8 @@ export function createChatPageModule() {
             kind: 'agent-status',
             content: result.message || this.t('requestFailed'),
             isError: result.type === 'command_error',
+            pendingAction: result.pendingAction || null,
+            assistantRunId: result.assistantRun?.id || '',
             observability: result.observability || null,
             runStatus: result.assistantRun?.status || ''
           });
@@ -1392,7 +1395,8 @@ export function createChatPageModule() {
 
       if (ok && data?.success) {
         const suffix = data.configPath ? `\n${data.configPath}` : '';
-        message.content = `${message.content}\n\n${data.result || ''}${suffix}`.trim();
+        const resultText = data.result || data.routeResult?.message || 'Confirmed.';
+        message.content = `${message.content}\n\n${resultText}${suffix}`.trim();
         message.pendingAction = null;
         this.chatMessages = [...this.chatMessages];
         this.syncActiveChatSession();
