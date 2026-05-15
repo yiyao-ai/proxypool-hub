@@ -39,13 +39,13 @@ export function createScheduledTasksPageModule() {
     },
 
     scheduledTaskWeekdayLabels: [
-      { value: 'mon', short: 'Mon' },
-      { value: 'tue', short: 'Tue' },
-      { value: 'wed', short: 'Wed' },
-      { value: 'thu', short: 'Thu' },
-      { value: 'fri', short: 'Fri' },
-      { value: 'sat', short: 'Sat' },
-      { value: 'sun', short: 'Sun' }
+      { value: 'mon' },
+      { value: 'tue' },
+      { value: 'wed' },
+      { value: 'thu' },
+      { value: 'fri' },
+      { value: 'sat' },
+      { value: 'sun' }
     ],
 
     get filteredScheduledTasks() {
@@ -189,8 +189,29 @@ export function createScheduledTasksPageModule() {
     },
 
     scheduledTaskWeekdayShortFromNumber(n) {
-      const map = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-      return map[n] || String(n);
+      const map = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
+      const key = map[n];
+      if (!key) return String(n);
+      return this.scheduledTaskWeekdayShortLabel(key);
+    },
+
+    scheduledTaskWeekdayShortLabel(value) {
+      const key = String(value || '').trim().toLowerCase();
+      if (!key) return '';
+      const localized = this.t(`scheduledTaskWeekdayShort_${key}`);
+      return localized || key;
+    },
+
+    scheduledTaskLocaleTag() {
+      return String(this.lang || 'en').toLowerCase().startsWith('zh') ? 'zh-CN' : 'en-US';
+    },
+
+    scheduledTaskRunStateLabel(run) {
+      const state = String(run?.state || '');
+      if (!state) return '';
+      const key = `scheduledTaskRunState_${state}`;
+      const localized = this.t(key);
+      return localized && localized !== key ? localized : state;
     },
 
     scheduledTaskWhenDescription(task) {
@@ -210,8 +231,8 @@ export function createScheduledTasksPageModule() {
           : '';
         return `${this.t('scheduledTaskRecurrence_weekly')} • ${dows} • ${localTime} (${tz})`;
       }
-      if (rec === 'monthly') return `${this.t('scheduledTaskRecurrence_monthly')} • day ${s.dayOfMonth} • ${localTime} (${tz})`;
-      if (rec === 'yearly') return `${this.t('scheduledTaskRecurrence_yearly')} • ${s.month}/${s.dayOfMonth} • ${localTime} (${tz})`;
+      if (rec === 'monthly') return `${this.t('scheduledTaskRecurrence_monthly')} • ${this.t('scheduledTaskDayOfMonthShort', s.dayOfMonth)} • ${localTime} (${tz})`;
+      if (rec === 'yearly') return `${this.t('scheduledTaskRecurrence_yearly')} • ${this.t('scheduledTaskMonthDayShort', s.month, s.dayOfMonth)} • ${localTime} (${tz})`;
       return rec;
     },
 
@@ -313,14 +334,19 @@ export function createScheduledTasksPageModule() {
           return '?';
         }
         if (f.recurrence === 'daily') return `${f.localTime} (${f.timezone})`;
-        if (f.recurrence === 'weekly') return `${(f.dayOfWeek || []).join('/')} ${f.localTime} (${f.timezone})`;
-        if (f.recurrence === 'monthly') return `day ${f.dayOfMonth} ${f.localTime} (${f.timezone})`;
-        if (f.recurrence === 'yearly') return `${f.month}/${f.dayOfMonth} ${f.localTime} (${f.timezone})`;
+        if (f.recurrence === 'weekly') {
+          const dows = Array.isArray(f.dayOfWeek)
+            ? f.dayOfWeek.map((value) => this.scheduledTaskWeekdayShortLabel(value)).join('/')
+            : '';
+          return `${dows} ${f.localTime} (${f.timezone})`;
+        }
+        if (f.recurrence === 'monthly') return `${this.t('scheduledTaskDayOfMonthShort', f.dayOfMonth)} ${f.localTime} (${f.timezone})`;
+        if (f.recurrence === 'yearly') return `${this.t('scheduledTaskMonthDayShort', f.month, f.dayOfMonth)} ${f.localTime} (${f.timezone})`;
         return '?';
       })();
       const targets = f.notifyConversationIds.length === 0
         ? this.t('scheduledTaskBackgroundOnly')
-        : `${f.notifyConversationIds.length} target(s)`;
+        : this.t('scheduledTaskFormNotifyTargetsHint', f.notifyConversationIds.length);
       return `[${action}] ${rec} • ${when} → ${targets}`;
     },
 
@@ -334,33 +360,33 @@ export function createScheduledTasksPageModule() {
         if (f.useDelay) {
           const m = Number(f.delayMinutes);
           if (!Number.isFinite(m) || m <= 0) {
-            throw new Error(this.t('scheduledTaskFormErrorDelayMinutes') || 'delayMinutes must be > 0');
+            throw new Error(this.t('scheduledTaskFormErrorDelayMinutes'));
           }
           schedule.delayMinutes = m;
         } else {
-          if (!f.localTime) throw new Error(this.t('scheduledTaskFormErrorLocalTime') || 'localTime is required');
+          if (!f.localTime) throw new Error(this.t('scheduledTaskFormErrorLocalTime'));
           schedule.localTime = f.localTime;
           if (f.date) schedule.date = f.date;
         }
       } else {
-        if (!f.localTime) throw new Error(this.t('scheduledTaskFormErrorLocalTime') || 'localTime is required');
+        if (!f.localTime) throw new Error(this.t('scheduledTaskFormErrorLocalTime'));
         schedule.localTime = f.localTime;
         if (f.recurrence === 'weekly') {
           if (!Array.isArray(f.dayOfWeek) || f.dayOfWeek.length === 0) {
-            throw new Error(this.t('scheduledTaskFormErrorDayOfWeek') || 'pick at least one weekday');
+            throw new Error(this.t('scheduledTaskFormErrorDayOfWeek'));
           }
           schedule.dayOfWeek = f.dayOfWeek;
         } else if (f.recurrence === 'monthly') {
           const d = Number(f.dayOfMonth);
           if (!Number.isInteger(d) || d < 1 || d > 31) {
-            throw new Error(this.t('scheduledTaskFormErrorDayOfMonth') || 'dayOfMonth must be 1..31');
+            throw new Error(this.t('scheduledTaskFormErrorDayOfMonth'));
           }
           schedule.dayOfMonth = d;
         } else if (f.recurrence === 'yearly') {
           const d = Number(f.dayOfMonth);
           const mo = Number(f.month);
-          if (!Number.isInteger(d) || d < 1 || d > 31) throw new Error(this.t('scheduledTaskFormErrorDayOfMonth') || 'dayOfMonth must be 1..31');
-          if (!Number.isInteger(mo) || mo < 1 || mo > 12) throw new Error(this.t('scheduledTaskFormErrorMonth') || 'month must be 1..12');
+          if (!Number.isInteger(d) || d < 1 || d > 31) throw new Error(this.t('scheduledTaskFormErrorDayOfMonth'));
+          if (!Number.isInteger(mo) || mo < 1 || mo > 12) throw new Error(this.t('scheduledTaskFormErrorMonth'));
           schedule.dayOfMonth = d;
           schedule.month = mo;
         }
@@ -368,13 +394,13 @@ export function createScheduledTasksPageModule() {
       const title = String(f.title || '').trim();
       const message = String(f.message || '').trim();
       if (!title && !message) {
-        throw new Error(this.t('scheduledTaskFormErrorTitleOrMessage') || 'title or message is required');
+        throw new Error(this.t('scheduledTaskFormErrorTitleOrMessage'));
       }
       if (f.action === 'invoke_assistant' && !message) {
-        throw new Error(this.t('scheduledTaskFormErrorInstruction') || 'instruction message is required');
+        throw new Error(this.t('scheduledTaskFormErrorInstruction'));
       }
       if (f.action === 'notify_user' && f.notifyConversationIds.length === 0) {
-        throw new Error(this.t('scheduledTaskFormErrorNotifyRequired') || 'pick at least one notify target for notify_user');
+        throw new Error(this.t('scheduledTaskFormErrorNotifyRequired'));
       }
       return {
         title: title || message.slice(0, 80),
@@ -435,7 +461,7 @@ export function createScheduledTasksPageModule() {
         this.showToast?.(this.t('scheduledTaskCancelled'), 'success');
         await this.loadScheduledTasks();
       } else {
-        this.showToast?.(data?.error || 'cancel failed', 'error');
+        this.showToast?.(data?.error || this.t('scheduledTaskCancelFailed'), 'error');
       }
     },
 
@@ -449,7 +475,7 @@ export function createScheduledTasksPageModule() {
         await this.loadScheduledTasks();
         if (this.selectedScheduledTask?.id) await this.loadScheduledTaskRuns(this.selectedScheduledTask.id);
       } else {
-        this.showToast?.(data?.error || 'run failed', 'error');
+        this.showToast?.(data?.error || this.t('scheduledTaskRunFailed'), 'error');
       }
     }
   };

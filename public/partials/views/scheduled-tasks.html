@@ -101,7 +101,7 @@
                     <button class="btn btn-xs btn-surface"
                         @click="openScheduledTaskEdit(selectedScheduledTask)"
                         :disabled="selectedScheduledTask.state === 'cancelled' || selectedScheduledTask.state === 'completed'"
-                        x-text="t('edit')"></button>
+                        x-text="t('scheduledTaskEdit')"></button>
                     <button class="btn btn-xs btn-danger"
                         @click="confirmCancelScheduledTask(selectedScheduledTask)"
                         :disabled="selectedScheduledTask.state === 'cancelled' || selectedScheduledTask.state === 'completed'"
@@ -132,7 +132,7 @@
                     <span class="text-gray-200 break-words" x-text="selectedScheduledTask?.payload?.message"></span>
                 </div>
                 <div class="flex items-baseline gap-3" x-show="selectedScheduledTask?.cwd">
-                    <span class="text-[11px] uppercase tracking-wider text-gray-500 w-24 shrink-0">cwd</span>
+                    <span class="text-[11px] uppercase tracking-wider text-gray-500 w-24 shrink-0" x-text="t('scheduledTaskCwdShort')"></span>
                     <span class="text-gray-200 font-mono text-[11px] break-all" x-text="selectedScheduledTask?.cwd"></span>
                 </div>
                 <div class="flex items-baseline gap-3" x-show="selectedScheduledTask?.lastError">
@@ -158,7 +158,7 @@
                                 <span class="text-[12px] font-mono text-gray-200" x-text="scheduledTaskFireDescriptionForIso(run.firedAt)"></span>
                                 <span class="inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-mono"
                                     :class="scheduledTaskRunStatePillClass(run)"
-                                    x-text="run.state"></span>
+                                    x-text="scheduledTaskRunStateLabel(run)"></span>
                             </div>
                             <div class="text-[11px] text-gray-300 mt-2 break-words" x-show="run.summary" x-text="run.summary"></div>
                             <div class="text-[11px] text-red-300 mt-2 break-words" x-show="run.error" x-text="run.error"></div>
@@ -277,7 +277,7 @@
             <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <label class="block" x-show="scheduledTaskForm.recurrence !== 'once' || !scheduledTaskForm.useDelay">
                     <span class="session-field-label text-[11px] font-mono text-gray-500 uppercase tracking-wider block mb-1" x-text="t('scheduledTaskFormLocalTimeLabel')"></span>
-                    <input type="time" class="input input-sm w-full" x-model="scheduledTaskForm.localTime">
+                    <input type="time" class="input input-sm w-full" x-model="scheduledTaskForm.localTime" :lang="scheduledTaskLocaleTag()">
                 </label>
                 <label class="block">
                     <span class="session-field-label text-[11px] font-mono text-gray-500 uppercase tracking-wider block mb-1" x-text="t('scheduledTaskFormTimezoneLabel')"></span>
@@ -301,7 +301,7 @@
                         <label class="flex items-center justify-center rounded-lg border py-1.5 cursor-pointer text-xs"
                             :class="scheduledTaskForm.dayOfWeek.includes(label.value) ? 'border-neon-purple/40 bg-neon-purple/10 text-white' : 'border-space-border/30 bg-space-900/40 text-gray-400'">
                             <input type="checkbox" :value="label.value" x-model="scheduledTaskForm.dayOfWeek" class="hidden">
-                            <span x-text="label.short"></span>
+                            <span x-text="t('scheduledTaskWeekdayShort_' + label.value)"></span>
                         </label>
                     </template>
                 </div>
@@ -318,7 +318,7 @@
                     <span class="session-field-label text-[11px] font-mono text-gray-500 uppercase tracking-wider block mb-1" x-text="t('scheduledTaskFormMonthLabel')"></span>
                     <select class="select select-sm w-full" x-model.number="scheduledTaskForm.month">
                         <template x-for="m in 12" :key="m">
-                            <option :value="m" x-text="m + ' ' + t('scheduledTaskMonthSuffix')"></option>
+                            <option :value="m" x-text="(m + ' ' + t('scheduledTaskMonthSuffix')).trim()"></option>
                         </template>
                     </select>
                 </label>
@@ -339,7 +339,7 @@
                 </label>
                 <label class="block" x-show="!scheduledTaskForm.useDelay">
                     <span class="session-field-label text-[11px] font-mono text-gray-500 uppercase tracking-wider block mb-1" x-text="t('scheduledTaskFormDateLabel')"></span>
-                    <input type="date" class="input input-sm w-full" x-model="scheduledTaskForm.date">
+                    <input type="date" class="input input-sm w-full" x-model="scheduledTaskForm.date" :lang="scheduledTaskLocaleTag()">
                     <span class="text-[11px] text-gray-500 block mt-1" x-text="t('scheduledTaskFormDateHint')"></span>
                 </label>
             </div>
