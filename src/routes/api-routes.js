@@ -101,6 +101,9 @@ import {
   handleGetAssistantExecutionTranscript,
   handleListAssistantScheduledTasks,
   handleCreateAssistantScheduledTask,
+  handleUpdateAssistantScheduledTask,
+  handleCancelAssistantScheduledTask,
+  handleListAssistantScheduledTaskRuns,
   handleUpdateAssistantAutonomy,
   handleRunAssistantScheduledTask
 } from './assistant-entities-route.js';
@@ -430,6 +433,9 @@ export function registerApiRoutes(app, { port }) {
   app.get('/api/assistant/executions/:id/transcript', handleGetAssistantExecutionTranscript);
   app.get('/api/assistant/scheduled-tasks', handleListAssistantScheduledTasks);
   app.post('/api/assistant/scheduled-tasks', handleCreateAssistantScheduledTask);
+  app.patch('/api/assistant/scheduled-tasks/:id', handleUpdateAssistantScheduledTask);
+  app.delete('/api/assistant/scheduled-tasks/:id', handleCancelAssistantScheduledTask);
+  app.get('/api/assistant/scheduled-tasks/:id/runs', handleListAssistantScheduledTaskRuns);
   app.post('/api/assistant/scheduled-tasks/:id/run', handleRunAssistantScheduledTask);
   app.get('/api/assistant/episodes', handleListAssistantEpisodes);
   app.get('/api/assistant/episodes/:id', handleGetAssistantEpisode);

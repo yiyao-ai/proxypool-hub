@@ -334,11 +334,29 @@ const TOOL_SCHEMAS = Object.freeze({
       date: { type: 'string', description: '仅 recurrence=once 且需要指定具体某一天时使用，格式 "YYYY-MM-DD"（按 timezone 解读）。配合 localTime。例如 "明天早上 8 点" → date: "<明天日期>" + localTime: "08:00"。"今晚 8 点" 不要传 date，直接 localTime: "20:00" 即可，工具会自动选今天或明天。' },
       delayMinutes: { type: 'integer', minimum: 1, description: '仅 recurrence=once 使用。"N 分钟后" → delayMinutes: N。绝对禁止跟 daily/weekly/monthly/yearly 组合（旧 bug 源头）。' },
       delaySeconds: { type: 'integer', minimum: 1, description: '仅 recurrence=once 使用（一般只在调试/极短延迟时用）。同样禁止与循环 recurrence 组合。' },
+      action: {
+        type: 'string',
+        enum: ['notify_user', 'invoke_assistant'],
+        description: '到点做什么。notify_user=只推一段静态提醒文本（默认）；invoke_assistant=唤起助手，把 message 作为指令交给助手处理，结果再以摘要 ping 给 notifyTargets。'
+      },
+      notifyConversationIds: {
+        type: 'array',
+        items: { type: 'string' },
+        description: '到点把通知推到哪些 conversation。空数组 = 静默后台执行（只记 run 历史）。不传时会自动绑定到当前会话（如果在会话里调用）。invoke_assistant 类型即使空也合法（任务在自己的 scope conversation 内运行，结果按此列表 ping）。'
+      },
+      sharedContext: {
+        type: 'boolean',
+        description: '仅 invoke_assistant 时有意义。默认 false：每次 run 都是 fresh 上下文（推荐，避免上下文越来越大）。true：所有 run 共享同一个 runtime 会话（适合"每日记账"类需要连续记忆的场景）。'
+      },
+      cwd: {
+        type: 'string',
+        description: '仅 invoke_assistant 时有意义。可选工作目录路径（让助手在这个项目里跑）。'
+      },
       payload: {
         type: 'object',
-        description: '可选。普通用户提醒只需要 message。这里留作后续扩展（例如到点跑某个 runtime 任务）。',
+        description: '可选。一般情况下用 top-level 的 message/action 即可，不需要单独传 payload。',
         properties: {
-          action: { type: 'string', enum: ['notify_user', 'start', 'continue', 'status'] },
+          action: { type: 'string', enum: ['notify_user', 'invoke_assistant', 'start', 'continue', 'status'] },
           message: { type: 'string' },
           provider: { type: 'string' },
           input: { type: 'string' },
@@ -356,14 +374,18 @@ const TOOL_SCHEMAS = Object.freeze({
     properties: {
       scheduledTaskId: { type: 'string' },
       title: { type: 'string' },
-      message: { type: 'string', description: '新的提醒文案。' },
+      message: { type: 'string', description: '新的提醒文案/指令。' },
+      action: { type: 'string', enum: ['notify_user', 'invoke_assistant'] },
       recurrence: { type: 'string', enum: ['once', 'daily', 'weekly', 'monthly', 'yearly'] },
       timezone: { type: 'string' },
       localTime: { type: 'string' },
       dayOfWeek: { description: '同 create_scheduled_task.dayOfWeek。' },
       dayOfMonth: { type: 'integer', minimum: 1, maximum: 31 },
       month: { type: 'integer', minimum: 1, maximum: 12 },
-      date: { type: 'string' }
+      date: { type: 'string' },
+      notifyConversationIds: { type: 'array', items: { type: 'string' }, description: '完整替换通知目标列表。空数组 = 改为后台静默。' },
+      sharedContext: { type: 'boolean' },
+      cwd: { type: 'string' }
     },
     required: ['scheduledTaskId']
   },
@@ -382,6 +404,22 @@ const TOOL_SCHEMAS = Object.freeze({
     properties: {
       includeCompleted: { type: 'boolean', description: '默认 false（只看还在生效的）。true 时也返回 completed/cancelled/failed 的历史记录。' },
       limit: { type: 'integer', minimum: 1, maximum: 200 }
+    }
+  },
+  list_scheduled_task_runs: {
+    type: 'object',
+    description: '查看某个定时任务的运行历史（每次到点触发都是一个 run）。',
+    properties: {
+      scheduledTaskId: { type: 'string' },
+      limit: { type: 'integer', minimum: 1, maximum: 100 }
+    },
+    required: ['scheduledTaskId']
+  },
+  find_recent_scheduled_task_notifications: {
+    type: 'object',
+    description: '查询最近 N 分钟内（默认 30）向当前会话推送过的定时任务通知。用户说"刚才那个/继续上面那个"时用它定位是哪个任务。',
+    properties: {
+      withinMinutes: { type: 'integer', minimum: 1, maximum: 1440, description: '默认 30 分钟。' }
     }
   },
   handoff_execution: {

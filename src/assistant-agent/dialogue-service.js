@@ -6,6 +6,7 @@ import assistantObservationService from '../assistant-core/observation-service.j
 import assistantLlmClient, { AssistantLlmClient } from './llm-client.js';
 import AssistantReactEngine from './react-engine.js';
 import { resolveReferenceContext } from './reference-resolver.js';
+import { filterMainContextDeliveries } from './prompt-builder.js';
 
 // CliGate Assistant mainline dialogue path.
 // When available, /cligate should prefer this agent path; runner fallback is only a safety rail.
@@ -49,9 +50,9 @@ export class AssistantDialogueService {
   }
 
   buildRecentIntentTimeline({ conversationContext = null, taskSpace = null } = {}) {
-    const deliveries = Array.isArray(conversationContext?.deliveries)
-      ? conversationContext.deliveries
-      : [];
+    // Filter out scheduled-task notifications so the supervisor LLM does
+    // not treat those pings as part of the user's recent intent.
+    const deliveries = filterMainContextDeliveries(conversationContext?.deliveries);
     const workspaceContext = this.observationService.getWorkspaceContext({
       runtimeLimit: 4,
       conversationLimit: 4

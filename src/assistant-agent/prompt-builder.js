@@ -401,6 +401,27 @@ function summarizeThisTurnActions(actions = []) {
   };
 }
 
+/**
+ * Exclude deliveries that originated from scheduled-task notifications so
+ * they don't pollute the main conversation's LLM context. The user can
+ * see those pings in the IM thread, but to the supervisor LLM they're
+ * NOT part of "what the user and I were just talking about". The assistant
+ * fetches scheduled-task context via dedicated tools instead.
+ */
+export function isMainContextDelivery(entry = {}) {
+  const kind = String(entry?.payload?.kind || '').trim();
+  const sourceType = String(entry?.payload?.sourceType || '').trim();
+  if (kind === 'scheduled_task_notification') return false;
+  if (kind === 'scheduled_reminder') return false; // legacy tag from old code
+  if (kind === 'scheduled_invoke_result') return false; // legacy tag from old code
+  if (sourceType === 'scheduled_task') return false;
+  return true;
+}
+
+export function filterMainContextDeliveries(deliveries) {
+  return (Array.isArray(deliveries) ? deliveries : []).filter(isMainContextDelivery);
+}
+
 function describeWallClock(timezone = 'Asia/Shanghai') {
   const now = new Date();
   const nowUtc = now.toISOString();
@@ -551,13 +572,13 @@ function buildContextBlock({
       assistantState: conversationContext?.assistantState || null,
       memory: conversationContext?.memory || {},
       policy: conversationContext?.policy || {},
-      recentDeliveries: Array.isArray(conversationContext?.deliveries)
-        ? conversationContext.deliveries.slice(0, 6).map((entry) => ({
-            direction: entry.direction,
-            text: truncate(entry?.payload?.text || entry?.payload?.content || '', 200),
-            createdAt: entry.createdAt
-          }))
-        : []
+      recentDeliveries: filterMainContextDeliveries(conversationContext?.deliveries)
+        .slice(0, 6)
+        .map((entry) => ({
+          direction: entry.direction,
+          text: truncate(entry?.payload?.text || entry?.payload?.content || '', 200),
+          createdAt: entry.createdAt
+        }))
     }),
     '</conversation_summary>',
     '<user_profile>',

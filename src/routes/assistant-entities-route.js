@@ -511,13 +511,24 @@ export function handleGetAssistantExecutionTranscript(req, res) {
 }
 
 export function handleListAssistantScheduledTasks(req, res) {
+  const conversationId = toText(req.query.conversationId);
+  const state = toText(req.query.state);
+  const stateList = state && state !== 'all'
+    ? state.split(',').map((entry) => entry.trim()).filter(Boolean)
+    : null;
   const tasks = stateCoordinator.scheduledTaskStore.list({
-    limit: parseLimit(req.query.limit, 50, 200),
-    predicate: (entry) => (
-      (!toText(req.query.personId) || entry.personId === toText(req.query.personId))
-      && (!toText(req.query.taskId) || entry.taskId === toText(req.query.taskId))
-      && (!toText(req.query.state) || entry.state === toText(req.query.state))
-    )
+    limit: parseLimit(req.query.limit, 200, 500),
+    predicate: (entry) => {
+      if (toText(req.query.personId) && entry.personId !== toText(req.query.personId)) return false;
+      if (toText(req.query.taskId) && entry.taskId !== toText(req.query.taskId)) return false;
+      if (stateList && !stateList.includes(toText(entry.state))) return false;
+      if (conversationId) {
+        const cid = toText(entry?.payload?.conversationId)
+          || toText(entry?.metadata?.conversationId);
+        if (cid !== conversationId) return false;
+      }
+      return true;
+    }
   });
   return res.json({
     success: true,
@@ -525,19 +536,62 @@ export function handleListAssistantScheduledTasks(req, res) {
   });
 }
 
+function normalizeNotifyTargetsInput(body = {}) {
+  const out = [];
+  const seen = new Set();
+  const push = (cid) => {
+    const id = toText(cid);
+    if (!id || seen.has(id)) return;
+    seen.add(id);
+    out.push({ kind: 'conversation', conversationId: id });
+  };
+  if (Array.isArray(body.notifyTargets)) {
+    for (const t of body.notifyTargets) push(t?.conversationId);
+  }
+  if (Array.isArray(body.notifyConversationIds)) {
+    for (const cid of body.notifyConversationIds) push(cid);
+  }
+  return out;
+}
+
 export function handleCreateAssistantScheduledTask(req, res) {
   try {
+    const body = req.body || {};
+    const payload = body.payload && typeof body.payload === 'object'
+      ? { ...body.payload }
+      : {};
+    if (!payload.message && toText(body.message)) {
+      payload.message = toText(body.message);
+    }
+    if (!payload.action && toText(body.action)) {
+      payload.action = toText(body.action);
+    }
+    if (!payload.action) {
+      payload.action = 'notify_user';
+    }
+    if (!['notify_user', 'invoke_assistant'].includes(toText(payload.action))) {
+      return res.status(400).json({
+        success: false,
+        error: `action must be one of notify_user / invoke_assistant`
+      });
+    }
+
+    const notifyTargets = normalizeNotifyTargetsInput(body);
+
     const scheduledTask = stateCoordinator.createScheduledTask({
-      personId: toText(req.body?.personId),
-      projectId: toText(req.body?.projectId),
-      taskId: toText(req.body?.taskId),
-      executionId: toText(req.body?.executionId),
-      kind: toText(req.body?.kind) || 'check_in',
-      title: toText(req.body?.title),
-      schedule: req.body?.schedule && typeof req.body.schedule === 'object' ? req.body.schedule : {},
-      payload: req.body?.payload && typeof req.body.payload === 'object' ? req.body.payload : null,
-      source: toText(req.body?.source) || 'system',
-      metadata: req.body?.metadata && typeof req.body.metadata === 'object' ? req.body.metadata : {}
+      personId: toText(body.personId),
+      projectId: toText(body.projectId),
+      taskId: toText(body.taskId),
+      executionId: toText(body.executionId),
+      kind: toText(body.kind) || 'reminder',
+      title: toText(body.title),
+      schedule: body.schedule && typeof body.schedule === 'object' ? body.schedule : {},
+      payload,
+      notifyTargets,
+      sharedContext: Boolean(body.sharedContext),
+      cwd: toText(body.cwd),
+      source: toText(body.source) || 'manual_ui',
+      metadata: body.metadata && typeof body.metadata === 'object' ? body.metadata : {}
     });
     return res.json({
       success: true,
@@ -548,6 +602,60 @@ export function handleCreateAssistantScheduledTask(req, res) {
       success: false,
       error: error.message
     });
+  }
+}
+
+export function handleUpdateAssistantScheduledTask(req, res) {
+  try {
+    const id = toText(req.params.id);
+    if (!id) {
+      return res.status(400).json({ success: false, error: 'id is required' });
+    }
+    const body = req.body || {};
+    const patch = {
+      id,
+      title: body.title != null ? toText(body.title) : undefined
+    };
+    if (body.schedule && typeof body.schedule === 'object') {
+      patch.schedule = body.schedule;
+    }
+    if (body.payload && typeof body.payload === 'object') {
+      patch.payload = { ...body.payload };
+    } else if (body.message != null || body.action != null) {
+      patch.payload = {
+        ...(body.message != null ? { message: toText(body.message) } : {}),
+        ...(body.action != null ? { action: toText(body.action) } : {})
+      };
+    }
+    if (Array.isArray(body.notifyTargets) || Array.isArray(body.notifyConversationIds)) {
+      patch.notifyTargets = normalizeNotifyTargetsInput(body);
+    }
+    if (typeof body.sharedContext === 'boolean') {
+      patch.sharedContext = body.sharedContext;
+    }
+    if (body.cwd != null) {
+      patch.cwd = toText(body.cwd);
+    }
+    const updated = stateCoordinator.updateScheduledTask(patch);
+    return res.json({ success: true, scheduledTask: updated });
+  } catch (error) {
+    return res.status(400).json({ success: false, error: error.message });
+  }
+}
+
+export function handleCancelAssistantScheduledTask(req, res) {
+  try {
+    const id = toText(req.params.id);
+    if (!id) {
+      return res.status(400).json({ success: false, error: 'id is required' });
+    }
+    const cancelled = stateCoordinator.cancelScheduledTask({
+      id,
+      reason: toText(req.body?.reason) || 'manual_ui_cancel'
+    });
+    return res.json({ success: true, scheduledTask: cancelled });
+  } catch (error) {
+    return res.status(404).json({ success: false, error: error.message });
   }
 }
 
@@ -568,6 +676,64 @@ export function handleUpdateAssistantAutonomy(req, res) {
       error: error.message
     });
   }
+}
+
+export function handleListAssistantScheduledTaskRuns(req, res) {
+  const id = toText(req.params.id);
+  if (!id) {
+    return res.status(400).json({ success: false, error: 'id is required' });
+  }
+  const limit = parseLimit(req.query.limit, 20, 100);
+  const ledger = stateCoordinator.episodeLedger;
+  const task = stateCoordinator.scheduledTaskStore.get(id);
+  if (!task?.id) {
+    return res.status(404).json({ success: false, error: 'scheduled task not found' });
+  }
+  const episodes = ledger.list({
+    limit: limit * 4,
+    sortBy: 'createdAt',
+    predicate: (entry) => {
+      if (toText(entry?.payload?.scheduledTaskId) !== id) return false;
+      return [
+        'scheduled_task.triggered',
+        'scheduled_task.completed',
+        'scheduled_task.failed',
+        'scheduled_task.compute_next_failed'
+      ].includes(toText(entry?.kind));
+    }
+  });
+  const runs = [];
+  const seenTriggers = new Set();
+  for (const ep of episodes) {
+    if (ep.kind === 'scheduled_task.triggered') {
+      if (seenTriggers.has(ep.createdAt)) continue;
+      seenTriggers.add(ep.createdAt);
+      const triggeredMs = Date.parse(ep.createdAt);
+      const outcome = episodes.find((other) => (
+        other !== ep
+        && Date.parse(other.createdAt) >= triggeredMs
+        && Date.parse(other.createdAt) - triggeredMs < 10 * 60 * 1000
+        && ['scheduled_task.completed', 'scheduled_task.failed', 'scheduled_task.compute_next_failed'].includes(other.kind)
+      ));
+      runs.push({
+        firedAt: ep.createdAt,
+        completedAt: outcome?.createdAt || '',
+        state: outcome?.kind === 'scheduled_task.completed' ? 'completed'
+          : outcome?.kind === 'scheduled_task.failed' ? 'failed'
+          : outcome?.kind === 'scheduled_task.compute_next_failed' ? 'failed_compute_next'
+          : 'unknown',
+        summary: String(outcome?.payload?.lastResultPreview || '').slice(0, 1000),
+        error: String(outcome?.payload?.lastError || '').slice(0, 1000)
+      });
+      if (runs.length >= limit) break;
+    }
+  }
+  return res.json({
+    success: true,
+    scheduledTaskId: id,
+    title: task.title,
+    runs
+  });
 }
 
 export async function handleRunAssistantScheduledTask(req, res) {
@@ -610,6 +776,9 @@ export default {
   handleGetAssistantExecutionTranscript,
   handleListAssistantScheduledTasks,
   handleCreateAssistantScheduledTask,
+  handleUpdateAssistantScheduledTask,
+  handleCancelAssistantScheduledTask,
+  handleListAssistantScheduledTaskRuns,
   handleUpdateAssistantAutonomy,
   handleRunAssistantScheduledTask
 };

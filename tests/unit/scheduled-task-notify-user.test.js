@@ -78,7 +78,7 @@ test('runScheduledTask with action=notify_user delivers the reminder text to the
   assert.equal(sentMessages[0].conversation.id, conversation.id);
   assert.equal(sentMessages[0].channel, 'dingtalk');
   assert.match(String(sentMessages[0].message.text || ''), /该吃晚饭啦/);
-  assert.match(String(sentMessages[0].message.text || ''), /定时提醒/);
+  assert.match(String(sentMessages[0].message.text || ''), /定时任务|定时提醒/);
 });
 
 test('runScheduledTask with kind=reminder defaults to notify_user even without explicit action', async () => {
@@ -134,18 +134,19 @@ test('runScheduledTask refuses an empty/malformed reminder instead of spawning a
   assert.equal(sentMessages.length, 0);
 });
 
-test('runScheduledTask notify_user fails fast when conversationId is missing', async () => {
+test('runScheduledTask notify_user fails fast when there are no notify targets', async () => {
   const { coordinator, messageService, sentMessages } = createFixture();
   const scheduledTask = coordinator.createScheduledTask({
     title: '提醒任意',
     kind: 'reminder',
     schedule: { recurrence: 'once', delayMinutes: 1 },
-    payload: { action: 'notify_user', message: '到点了' }
+    payload: { action: 'notify_user', message: '到点了' },
+    notifyTargets: []
   });
 
   await assert.rejects(
     () => messageService.runScheduledTask(scheduledTask),
-    /requires payload\.conversationId/i
+    /no notifyTargets/i
   );
   assert.equal(sentMessages.length, 0);
 });

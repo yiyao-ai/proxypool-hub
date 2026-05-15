@@ -2,6 +2,7 @@ import { i18n } from './i18n.js';
 import { createApiKeysPageModule } from './modules/api-keys-page.js';
 import { createAssistantTasksPageModule } from './modules/assistant-tasks-page.js';
 import { createAssistantWorkbenchPageModule } from './modules/assistant-workbench-page.js';
+import { createScheduledTasksPageModule } from './modules/scheduled-tasks-page.js';
 import { createAccountsPageModule } from './modules/accounts-page.js';
 import { createChannelsPageModule } from './modules/channels-page.js';
 import { createChatPageModule } from './modules/chat-page.js';
@@ -34,6 +35,7 @@ function createShellModule() {
       conversationRecords: '/partials/views/conversation-records.html',
       assistantTasks: '/partials/views/assistant-tasks.html',
       assistantWorkbench: '/partials/views/assistant-workbench.html',
+      scheduledTasks: '/partials/views/scheduled-tasks.html',
       localModels: '/partials/views/local-models.html',
       apikeys: '/partials/views/api-keys.html',
       usage: '/partials/views/usage.html',
@@ -305,6 +307,9 @@ function createShellModule() {
       if (tab === 'assistantWorkbench') {
         this.loadAssistantWorkbench();
       }
+      if (tab === 'scheduledTasks') {
+        this.loadScheduledTasks();
+      }
       if (tab === 'settings') {
         this.refreshProxyStatus();
       }
@@ -533,6 +538,7 @@ function registerApp() {
     createChatPageModule(),
     createAssistantTasksPageModule(),
     createAssistantWorkbenchPageModule(),
+    createScheduledTasksPageModule(),
     createSettingsPageModule(),
     createLogsPageModule(),
     createUsagePricingPageModule(),

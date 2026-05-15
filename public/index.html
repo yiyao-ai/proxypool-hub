@@ -190,6 +190,13 @@
                                 </svg>
                                 <span class="sidebar-label" x-text="t('conversationRecords')"></span>
                             </button>
+                            <button class="nav-item"
+                                :class="{'active': activeTab === 'scheduledTasks'}" @click="setActiveTab('scheduledTasks')" :title="sidebarCollapsed ? t('scheduledTasks') : ''">
+                                <svg class="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                </svg>
+                                <span class="sidebar-label" x-text="t('scheduledTasks')"></span>
+                            </button>
                         </nav>
                     </div>
 
@@ -429,6 +436,8 @@
                     <div x-show="activeTab === 'assistantTasks'" x-transition class="view-container session-workspace-view" data-partial-view="assistantTasks"></div>
 
                     <div x-show="activeTab === 'assistantWorkbench'" x-transition class="view-container session-workspace-view" data-partial-view="assistantWorkbench"></div>
+
+                    <div x-show="activeTab === 'scheduledTasks'" x-transition class="view-container session-workspace-view" data-partial-view="scheduledTasks"></div>
 
                     <div x-show="activeTab === 'localModels'" x-transition class="view-container workspace-view" data-partial-view="localModels"></div>
 

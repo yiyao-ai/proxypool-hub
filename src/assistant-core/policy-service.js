@@ -236,8 +236,10 @@ export class AssistantPolicyService {
       'list_known_cwds',
       'get_cwd_info',
       'resolve_reference',
-      // Conversation-scoped read-only listing of scheduled tasks.
-      'list_scheduled_tasks'
+      // Conversation-scoped read-only listing of scheduled tasks + runs.
+      'list_scheduled_tasks',
+      'list_scheduled_task_runs',
+      'find_recent_scheduled_task_notifications'
     ]);
     if (safeTools.has(normalizedTool)) {
       return buildPolicyDecision({

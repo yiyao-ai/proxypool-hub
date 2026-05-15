@@ -260,6 +260,7 @@ export function createDefaultAssistantToolRegistry({
     if (!scheduledTask?.id) return null;
     const tz = String(scheduledTask?.schedule?.timezone || 'Asia/Shanghai').trim() || 'Asia/Shanghai';
     const nextFireDescription = describeFireMoment(scheduledTask.nextRunAt, tz);
+    const targets = Array.isArray(scheduledTask.notifyTargets) ? scheduledTask.notifyTargets : [];
     return {
       scheduledTaskId: scheduledTask.id,
       title: scheduledTask.title,
@@ -271,12 +272,20 @@ export function createDefaultAssistantToolRegistry({
       month: scheduledTask.schedule?.month || null,
       date: scheduledTask.schedule?.date || '',
       message: scheduledTask.payload?.message || '',
+      action: scheduledTask.payload?.action || 'notify_user',
+      sharedContext: Boolean(scheduledTask.sharedContext),
+      cwd: scheduledTask.cwd || '',
+      notifyTargets: targets,
+      notifyTargetCount: targets.length,
+      scopeConversationId: scheduledTask.scopeConversationId || '',
       state: scheduledTask.state,
       nextRunAtUtc: scheduledTask.nextRunAt,
       nextFireDescription,
       humanReadable: override
         || (nextFireDescription
-          ? `下次触发：${nextFireDescription}`
+          ? (targets.length === 0
+              ? `下次触发：${nextFireDescription}（后台静默执行，不推送通知）`
+              : `下次触发：${nextFireDescription}（${targets.length} 个通知目标）`)
           : '已记录定时任务')
     };
   }
@@ -458,18 +467,59 @@ export function createDefaultAssistantToolRegistry({
         };
       }
 
-      const conversationId = String(
-        input?.conversationId
-        || payload?.conversationId
-        || context?.conversation?.id
-        || ''
-      ).trim();
+      // Build notifyTargets[]:
+      //   - LLM may pass `notifyTargets: [{kind:'conversation', conversationId}]`
+      //   - LLM may pass `notifyConversationIds: [...]`
+      //   - LLM may pass legacy `conversationId` (single)
+      //   - We auto-append the current conversation when the LLM didn't say
+      //     otherwise (most reminders should land where the user is right now)
+      const currentConvId = String(context?.conversation?.id || '').trim();
+      const notifyTargets = [];
+      const seenTargets = new Set();
+      const pushTarget = (cid) => {
+        const id = String(cid || '').trim();
+        if (!id || seenTargets.has(id)) return;
+        seenTargets.add(id);
+        notifyTargets.push({ kind: 'conversation', conversationId: id });
+      };
+      if (Array.isArray(input?.notifyTargets)) {
+        for (const t of input.notifyTargets) pushTarget(t?.conversationId);
+      }
+      if (Array.isArray(input?.notifyConversationIds)) {
+        for (const cid of input.notifyConversationIds) pushTarget(cid);
+      }
+      if (input?.conversationId) pushTarget(input.conversationId);
+      const llmPassedAnyTarget = notifyTargets.length > 0;
+      if (!llmPassedAnyTarget && currentConvId) {
+        // Auto-bind to the current conversation only if the LLM didn't
+        // explicitly say otherwise. Setting `notifyTargets: []` explicitly
+        // means "background-only" — respect that.
+        const explicitEmpty = Array.isArray(input?.notifyTargets) && input.notifyTargets.length === 0;
+        if (!explicitEmpty) pushTarget(currentConvId);
+      }
+
+      const action = String(input?.action || payload?.action || 'notify_user').trim();
+      if (!['notify_user', 'invoke_assistant'].includes(action)) {
+        return {
+          kind: 'tool_error',
+          error: `action must be "notify_user" or "invoke_assistant", got "${action}"`,
+          recoverable: true,
+          hint: 'For static reminders use action="notify_user". For "wake the assistant" use action="invoke_assistant" (the message becomes the instruction).'
+        };
+      }
+      if (action === 'notify_user' && notifyTargets.length === 0) {
+        return {
+          kind: 'tool_error',
+          error: 'notify_user requires at least one notify target',
+          recoverable: true,
+          hint: 'Add notifyConversationIds: ["<conversation-id>"] or call from inside a conversation context.'
+        };
+      }
 
       const resolvedPayload = {
-        action: 'notify_user',
+        action,
         ...(payload || {}),
-        ...(payloadMessage ? { message: payloadMessage } : {}),
-        ...(conversationId ? { conversationId } : {})
+        ...(payloadMessage ? { message: payloadMessage } : {})
       };
 
       const cleanedSchedule = {
@@ -487,6 +537,9 @@ export function createDefaultAssistantToolRegistry({
         kind: 'reminder',
         schedule: cleanedSchedule,
         payload: resolvedPayload,
+        notifyTargets,
+        sharedContext: Boolean(input?.sharedContext),
+        cwd: String(input?.cwd || '').trim(),
         personId: input?.personId,
         projectId: input?.projectId,
         taskId: input?.taskId,
@@ -580,10 +633,31 @@ export function createDefaultAssistantToolRegistry({
         ? String(input.message).trim()
         : (input.payload && typeof input.payload === 'object' ? String(input.payload.message || '').trim() : '');
       if (messageText) payloadPatch.message = messageText;
+      if (input.action != null) payloadPatch.action = String(input.action).trim();
       if (input.payload && typeof input.payload === 'object') {
         for (const key of Object.keys(input.payload)) {
           if (key === 'message') continue;
           payloadPatch[key] = input.payload[key];
+        }
+      }
+
+      // Allow notifyTargets / sharedContext / cwd patching.
+      const wantsNotifyTargets = Array.isArray(input?.notifyTargets) || Array.isArray(input?.notifyConversationIds);
+      let notifyTargets;
+      if (wantsNotifyTargets) {
+        notifyTargets = [];
+        const seen = new Set();
+        const push = (cid) => {
+          const id = String(cid || '').trim();
+          if (!id || seen.has(id)) return;
+          seen.add(id);
+          notifyTargets.push({ kind: 'conversation', conversationId: id });
+        };
+        if (Array.isArray(input?.notifyTargets)) {
+          for (const t of input.notifyTargets) push(t?.conversationId);
+        }
+        if (Array.isArray(input?.notifyConversationIds)) {
+          for (const cid of input.notifyConversationIds) push(cid);
         }
       }
 
@@ -592,7 +666,10 @@ export function createDefaultAssistantToolRegistry({
           id,
           title: input.title,
           schedule: schedulePatch,
-          payload: Object.keys(payloadPatch).length > 0 ? payloadPatch : undefined
+          payload: Object.keys(payloadPatch).length > 0 ? payloadPatch : undefined,
+          notifyTargets,
+          sharedContext: typeof input?.sharedContext === 'boolean' ? input.sharedContext : undefined,
+          cwd: input?.cwd != null ? String(input.cwd).trim() : undefined
         });
         return buildScheduledTaskReply(updated, { override: '已更新定时任务' });
       } catch (err) {
@@ -657,6 +734,119 @@ export function createDefaultAssistantToolRegistry({
       return {
         count: list.length,
         items: list.map((entry) => buildScheduledTaskReply(entry))
+      };
+    }
+  });
+
+  registry.register({
+    name: 'list_scheduled_task_runs',
+    description: '查看某个定时任务的运行历史。每次到点触发都是一个 run。返回最近 N 次的触发时间、最终状态（completed/failed）、摘要、错误信息。用户问"上次那个任务跑得怎么样/有没有失败"时使用。',
+    execute: async ({ input = {} } = {}) => {
+      const scheduledTaskId = String(input?.scheduledTaskId || input?.taskId || '').trim();
+      if (!scheduledTaskId) {
+        return {
+          kind: 'tool_error',
+          error: 'list_scheduled_task_runs requires scheduledTaskId',
+          recoverable: true,
+          hint: 'Use list_scheduled_tasks first to find the id.'
+        };
+      }
+      const limit = Math.min(Math.max(Number(input?.limit || 10), 1), 100);
+      const ledger = messageService.stateCoordinator?.episodeLedger;
+      if (!ledger?.list) {
+        return { scheduledTaskId, runs: [], count: 0 };
+      }
+      const episodes = ledger.list({
+        limit: limit * 4,
+        sortBy: 'createdAt',
+        predicate: (entry) => {
+          if (String(entry?.payload?.scheduledTaskId || '').trim() !== scheduledTaskId) return false;
+          return [
+            'scheduled_task.triggered',
+            'scheduled_task.completed',
+            'scheduled_task.failed',
+            'scheduled_task.compute_next_failed'
+          ].includes(String(entry?.kind || ''));
+        }
+      });
+      // Group triggered → success/fail by createdAt proximity (latest fire wins).
+      const runs = [];
+      const seenTriggers = new Set();
+      for (const ep of episodes) {
+        if (ep.kind === 'scheduled_task.triggered') {
+          if (seenTriggers.has(ep.createdAt)) continue;
+          seenTriggers.add(ep.createdAt);
+          const outcome = episodes.find((other) => (
+            other !== ep
+            && Date.parse(other.createdAt) >= Date.parse(ep.createdAt)
+            && Date.parse(other.createdAt) - Date.parse(ep.createdAt) < 10 * 60 * 1000
+            && ['scheduled_task.completed', 'scheduled_task.failed', 'scheduled_task.compute_next_failed'].includes(other.kind)
+          ));
+          runs.push({
+            firedAt: ep.createdAt,
+            state: outcome?.kind === 'scheduled_task.completed' ? 'completed'
+              : outcome?.kind === 'scheduled_task.failed' ? 'failed'
+              : outcome?.kind === 'scheduled_task.compute_next_failed' ? 'failed_compute_next'
+              : 'unknown',
+            summary: String(outcome?.payload?.lastResultPreview || '').slice(0, 300),
+            error: String(outcome?.payload?.lastError || '').slice(0, 300)
+          });
+          if (runs.length >= limit) break;
+        }
+      }
+      return { scheduledTaskId, count: runs.length, runs };
+    }
+  });
+
+  registry.register({
+    name: 'find_recent_scheduled_task_notifications',
+    description: '查询最近一段时间内（默认 30 分钟）向当前会话推送过的定时任务通知。当用户说"刚才那个/继续上面的/重新跑一下刚才那个任务"等指代型语句时，用这个工具定位他在说的是哪个定时任务。conversationId 由系统自动注入。',
+    execute: async ({ input = {}, context = {} } = {}) => {
+      const conversationId = String(
+        input?.conversationId
+        || context?.conversation?.id
+        || ''
+      ).trim();
+      if (!conversationId) {
+        return {
+          kind: 'tool_error',
+          error: 'find_recent_scheduled_task_notifications requires conversationId',
+          recoverable: true,
+          hint: 'This tool only works inside a conversation context.'
+        };
+      }
+      const withinMinutes = Math.min(Math.max(Number(input?.withinMinutes || 30), 1), 24 * 60);
+      const sinceMs = Date.now() - withinMinutes * 60 * 1000;
+      const deliveryStore = observationService?.deliveryStore;
+      if (!deliveryStore?.listByConversation) {
+        return { conversationId, notifications: [], count: 0 };
+      }
+      const all = deliveryStore.listByConversation(conversationId, { limit: 200 });
+      const notifications = all.filter((entry) => {
+        const ts = Date.parse(entry?.createdAt || '');
+        if (!Number.isFinite(ts) || ts < sinceMs) return false;
+        const kind = String(entry?.payload?.kind || '');
+        return kind === 'scheduled_task_notification' || kind === 'scheduled_reminder' || kind === 'scheduled_invoke_result';
+      }).slice(0, 10);
+      const taskStore = messageService.stateCoordinator?.scheduledTaskStore;
+      const enriched = notifications.map((entry) => {
+        const stid = String(entry?.payload?.scheduledTaskId || '').trim();
+        const task = stid && taskStore?.get ? taskStore.get(stid) : null;
+        return {
+          notifiedAt: entry.createdAt,
+          scheduledTaskId: stid,
+          scheduledTaskRunId: String(entry?.payload?.scheduledTaskRunId || ''),
+          title: task?.title || '',
+          recurrence: task?.schedule?.recurrence || '',
+          textPreview: String(entry?.payload?.text || '').slice(0, 200),
+          isFailure: Boolean(entry?.payload?.isFailure)
+        };
+      });
+      return {
+        conversationId,
+        withinMinutes,
+        count: enriched.length,
+        notifications: enriched
       };
     }
   });

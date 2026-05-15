@@ -1,0 +1,362 @@
+<div class="session-workspace-header flex items-center justify-between gap-4 mb-6">
+    <div class="session-workspace-title flex flex-wrap items-center gap-4">
+        <div>
+            <div class="session-workspace-eyebrow text-[11px] font-mono uppercase tracking-[0.18em] text-gray-500" x-text="t('scheduledTasksEyebrow')"></div>
+            <h1 class="text-2xl font-bold text-white tracking-tight mt-2" x-text="t('scheduledTasks')"></h1>
+        </div>
+        <div class="session-workspace-badge flex items-center h-6 px-3 rounded-full bg-space-800/80 border border-space-border/50 shadow-sm backdrop-blur-sm">
+            <span class="text-[10px] font-mono text-gray-400 uppercase tracking-wider" x-text="t('scheduledTasksBadge')"></span>
+        </div>
+    </div>
+    <div class="flex items-center gap-2">
+        <button class="btn btn-sm btn-surface"
+            @click="loadScheduledTasks()"
+            :disabled="scheduledTasksLoading">
+            <span x-text="scheduledTasksLoading ? t('loading') : t('refresh')"></span>
+        </button>
+        <button class="btn btn-sm btn-primary" @click="openScheduledTaskCreate()">
+            + <span x-text="t('scheduledTaskNew')"></span>
+        </button>
+    </div>
+</div>
+
+<div class="session-filter-card grid grid-cols-1 md:grid-cols-3 gap-3 mb-4">
+    <label class="block">
+        <span class="session-field-label text-[11px] font-mono text-gray-500 uppercase tracking-wider block mb-1" x-text="t('scheduledTaskFilterState')"></span>
+        <select class="select select-sm w-full session-filter-select" x-model="scheduledTaskStateFilter" @change="loadScheduledTasks()">
+            <option value="active" x-text="t('scheduledTaskStateActive')"></option>
+            <option value="scheduled" x-text="t('scheduledTaskStateScheduled')"></option>
+            <option value="completed" x-text="t('scheduledTaskStateCompleted')"></option>
+            <option value="cancelled" x-text="t('scheduledTaskStateCancelled')"></option>
+            <option value="failed" x-text="t('scheduledTaskStateFailed')"></option>
+            <option value="all" x-text="t('scheduledTaskStateAll')"></option>
+        </select>
+    </label>
+    <label class="block">
+        <span class="session-field-label text-[11px] font-mono text-gray-500 uppercase tracking-wider block mb-1" x-text="t('scheduledTaskFilterConversation')"></span>
+        <select class="select select-sm w-full" x-model="scheduledTaskConversationFilter" @change="loadScheduledTasks()">
+            <option value="" x-text="t('scheduledTaskFilterConversationAll')"></option>
+            <template x-for="conv in scheduledTaskUserConversations" :key="conv.id">
+                <option :value="conv.id" x-text="scheduledTaskConversationLabel(conv)"></option>
+            </template>
+        </select>
+    </label>
+    <div class="flex items-end">
+        <input type="text" class="input input-sm w-full" x-model="scheduledTaskQuery" :placeholder="t('scheduledTaskSearch')">
+    </div>
+</div>
+
+<div class="conversation-records-layout">
+    <!-- Left: task list -->
+    <div class="view-card conversation-thread-panel session-panel">
+        <div class="session-panel-head flex items-center justify-between gap-3 mb-4">
+            <h3 class="text-xs font-mono text-gray-400 uppercase tracking-widest" x-text="t('scheduledTaskListTitle')"></h3>
+            <div class="session-panel-count text-[11px] font-mono text-gray-500" x-text="filteredScheduledTasks.length + ' / ' + scheduledTasks.length"></div>
+        </div>
+        <div class="space-y-3 conversation-thread-list overflow-y-auto custom-scrollbar pr-1">
+            <div class="text-xs text-gray-500 font-mono" x-show="scheduledTasksLoading" x-text="t('loading')"></div>
+            <div class="text-xs text-gray-500 font-mono" x-show="!scheduledTasksLoading && filteredScheduledTasks.length === 0" x-text="t('scheduledTasksEmpty')"></div>
+            <template x-for="task in filteredScheduledTasks" :key="task.id">
+                <button type="button" class="session-list-card w-full text-left rounded-2xl border p-4 transition-all"
+                    :class="scheduledTaskCardClass(task)"
+                    @click="selectScheduledTask(task)">
+                    <div class="flex items-start justify-between gap-3">
+                        <div class="min-w-0 flex-1">
+                            <div class="text-sm font-medium text-white truncate" x-text="task.title || t('scheduledTaskUntitled')"></div>
+                            <div class="text-[11px] text-gray-500 font-mono mt-1" x-text="scheduledTaskWhenDescription(task)"></div>
+                        </div>
+                        <div class="flex flex-col items-end gap-1">
+                            <span class="inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-mono"
+                                :class="scheduledTaskStatePillClass(task)"
+                                x-text="scheduledTaskStateLabel(task)"></span>
+                            <span class="inline-flex items-center rounded-full border border-space-border/30 bg-space-800/60 px-2 py-0.5 text-[10px] font-mono"
+                                :class="task.payload?.action === 'invoke_assistant' ? 'text-neon-purple' : 'text-gray-400'"
+                                x-text="scheduledTaskActionLabel(task)"></span>
+                        </div>
+                    </div>
+                    <div class="text-[11px] text-gray-400 mt-2 truncate" x-show="task.payload?.message" x-text="task.payload?.message"></div>
+                    <div class="flex items-center gap-2 mt-2">
+                        <span class="text-[10px] font-mono text-gray-500" x-text="scheduledTaskNotifyTargetsSummary(task)"></span>
+                    </div>
+                </button>
+            </template>
+        </div>
+    </div>
+
+    <!-- Right: task detail with run history -->
+    <div class="view-card conversation-detail-panel session-panel">
+        <div x-show="!selectedScheduledTask" class="text-sm text-gray-500 text-center py-8" x-text="t('scheduledTaskDetailEmpty')"></div>
+        <div x-show="selectedScheduledTask" class="space-y-4">
+            <div class="flex items-start justify-between gap-3">
+                <div class="min-w-0 flex-1">
+                    <div class="text-xs font-mono text-gray-400 uppercase tracking-widest" x-text="t('scheduledTaskDetailTitle')"></div>
+                    <h3 class="text-lg font-semibold text-white mt-1" x-text="selectedScheduledTask?.title"></h3>
+                    <div class="text-[11px] text-gray-500 font-mono mt-1" x-text="selectedScheduledTask?.id"></div>
+                </div>
+                <div class="flex flex-col gap-1.5 shrink-0">
+                    <button class="btn btn-xs btn-surface"
+                        @click="runScheduledTaskNow(selectedScheduledTask.id)"
+                        :disabled="selectedScheduledTask.state === 'cancelled' || selectedScheduledTask.state === 'running'"
+                        x-text="t('scheduledTaskRunNow')"></button>
+                    <button class="btn btn-xs btn-surface"
+                        @click="openScheduledTaskEdit(selectedScheduledTask)"
+                        :disabled="selectedScheduledTask.state === 'cancelled' || selectedScheduledTask.state === 'completed'"
+                        x-text="t('edit')"></button>
+                    <button class="btn btn-xs btn-danger"
+                        @click="confirmCancelScheduledTask(selectedScheduledTask)"
+                        :disabled="selectedScheduledTask.state === 'cancelled' || selectedScheduledTask.state === 'completed'"
+                        x-text="t('cancel')"></button>
+                </div>
+            </div>
+
+            <!-- Metadata block -->
+            <div class="rounded-xl border border-space-border/30 bg-space-900/40 p-3 space-y-1.5 text-[12px]">
+                <div class="flex items-baseline gap-3">
+                    <span class="text-[11px] uppercase tracking-wider text-gray-500 w-24 shrink-0" x-text="t('scheduledTaskActionLabel')"></span>
+                    <span class="text-gray-200" x-text="scheduledTaskActionLabel(selectedScheduledTask)"></span>
+                </div>
+                <div class="flex items-baseline gap-3">
+                    <span class="text-[11px] uppercase tracking-wider text-gray-500 w-24 shrink-0" x-text="t('scheduledTaskWhen')"></span>
+                    <span class="text-gray-200" x-text="scheduledTaskWhenDescription(selectedScheduledTask)"></span>
+                </div>
+                <div class="flex items-baseline gap-3" x-show="selectedScheduledTask?.nextRunAt">
+                    <span class="text-[11px] uppercase tracking-wider text-gray-500 w-24 shrink-0" x-text="t('scheduledTaskNextFire')"></span>
+                    <span class="text-gray-200" x-text="scheduledTaskFireDescription(selectedScheduledTask)"></span>
+                </div>
+                <div class="flex items-baseline gap-3">
+                    <span class="text-[11px] uppercase tracking-wider text-gray-500 w-24 shrink-0" x-text="t('scheduledTaskNotifyTargets')"></span>
+                    <span class="text-gray-200" x-text="scheduledTaskNotifyTargetsSummary(selectedScheduledTask) || t('scheduledTaskBackgroundOnly')"></span>
+                </div>
+                <div class="flex items-baseline gap-3" x-show="selectedScheduledTask?.payload?.message">
+                    <span class="text-[11px] uppercase tracking-wider text-gray-500 w-24 shrink-0" x-text="t('scheduledTaskContent')"></span>
+                    <span class="text-gray-200 break-words" x-text="selectedScheduledTask?.payload?.message"></span>
+                </div>
+                <div class="flex items-baseline gap-3" x-show="selectedScheduledTask?.cwd">
+                    <span class="text-[11px] uppercase tracking-wider text-gray-500 w-24 shrink-0">cwd</span>
+                    <span class="text-gray-200 font-mono text-[11px] break-all" x-text="selectedScheduledTask?.cwd"></span>
+                </div>
+                <div class="flex items-baseline gap-3" x-show="selectedScheduledTask?.lastError">
+                    <span class="text-[11px] uppercase tracking-wider text-red-400 w-24 shrink-0" x-text="t('scheduledTaskLastError')"></span>
+                    <span class="text-red-300 break-words" x-text="selectedScheduledTask?.lastError"></span>
+                </div>
+            </div>
+
+            <!-- Run history -->
+            <div>
+                <div class="flex items-center justify-between mb-2">
+                    <h4 class="text-xs font-mono text-gray-400 uppercase tracking-widest" x-text="t('scheduledTaskRunsTitle')"></h4>
+                    <button class="btn btn-xs btn-surface" @click="loadScheduledTaskRuns(selectedScheduledTask.id)" :disabled="scheduledTaskRunsLoading">
+                        <span x-text="scheduledTaskRunsLoading ? t('loading') : t('refresh')"></span>
+                    </button>
+                </div>
+                <div class="space-y-2 max-h-[400px] overflow-y-auto custom-scrollbar pr-1">
+                    <div class="text-xs text-gray-500 font-mono" x-show="scheduledTaskRunsLoading" x-text="t('loading')"></div>
+                    <div class="text-xs text-gray-500 font-mono" x-show="!scheduledTaskRunsLoading && scheduledTaskRuns.length === 0" x-text="t('scheduledTaskRunsEmpty')"></div>
+                    <template x-for="(run, idx) in scheduledTaskRuns" :key="run.firedAt + '-' + idx">
+                        <div class="rounded-xl border border-space-border/30 bg-space-900/40 p-3">
+                            <div class="flex items-center justify-between gap-2">
+                                <span class="text-[12px] font-mono text-gray-200" x-text="scheduledTaskFireDescriptionForIso(run.firedAt)"></span>
+                                <span class="inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-mono"
+                                    :class="scheduledTaskRunStatePillClass(run)"
+                                    x-text="run.state"></span>
+                            </div>
+                            <div class="text-[11px] text-gray-300 mt-2 break-words" x-show="run.summary" x-text="run.summary"></div>
+                            <div class="text-[11px] text-red-300 mt-2 break-words" x-show="run.error" x-text="run.error"></div>
+                        </div>
+                    </template>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Create / edit modal -->
+<div x-show="scheduledTaskFormOpen"
+    x-transition.opacity
+    class="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4"
+    style="display: none;"
+    @keydown.escape.window="closeScheduledTaskForm()">
+    <div class="view-card w-full max-w-2xl max-h-[90vh] overflow-y-auto p-6"
+        @click.outside="closeScheduledTaskForm()">
+        <div class="flex items-center justify-between mb-4">
+            <h2 class="text-lg font-semibold text-white"
+                x-text="scheduledTaskForm.id ? t('scheduledTaskFormEditTitle') : t('scheduledTaskFormCreateTitle')"></h2>
+            <button class="btn btn-xs btn-surface" @click="closeScheduledTaskForm()">×</button>
+        </div>
+
+        <div class="space-y-4">
+            <!-- Title -->
+            <label class="block">
+                <span class="session-field-label text-[11px] font-mono text-gray-500 uppercase tracking-wider block mb-1" x-text="t('scheduledTaskFormTitleLabel')"></span>
+                <input type="text" class="input input-sm w-full" x-model="scheduledTaskForm.title" :placeholder="t('scheduledTaskFormTitlePlaceholder')">
+            </label>
+
+            <!-- Action -->
+            <div>
+                <span class="session-field-label text-[11px] font-mono text-gray-500 uppercase tracking-wider block mb-2" x-text="t('scheduledTaskFormActionLabel')"></span>
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    <label class="flex items-start gap-2 rounded-xl border p-3 cursor-pointer"
+                        :class="scheduledTaskForm.action === 'notify_user' ? 'border-neon-purple/40 bg-neon-purple/10' : 'border-space-border/30 bg-space-900/40'">
+                        <input type="radio" value="notify_user" x-model="scheduledTaskForm.action" class="mt-1">
+                        <span>
+                            <span class="text-sm text-white block" x-text="t('scheduledTaskActionNotifyUser')"></span>
+                            <span class="text-[11px] text-gray-400 block" x-text="t('scheduledTaskActionNotifyUserHint')"></span>
+                        </span>
+                    </label>
+                    <label class="flex items-start gap-2 rounded-xl border p-3 cursor-pointer"
+                        :class="scheduledTaskForm.action === 'invoke_assistant' ? 'border-neon-purple/40 bg-neon-purple/10' : 'border-space-border/30 bg-space-900/40'">
+                        <input type="radio" value="invoke_assistant" x-model="scheduledTaskForm.action" class="mt-1">
+                        <span>
+                            <span class="text-sm text-white block" x-text="t('scheduledTaskActionInvokeAssistant')"></span>
+                            <span class="text-[11px] text-gray-400 block" x-text="t('scheduledTaskActionInvokeAssistantHint')"></span>
+                        </span>
+                    </label>
+                </div>
+            </div>
+
+            <!-- Message / instruction -->
+            <label class="block">
+                <span class="session-field-label text-[11px] font-mono text-gray-500 uppercase tracking-wider block mb-1">
+                    <span x-show="scheduledTaskForm.action === 'invoke_assistant'" x-text="t('scheduledTaskFormInstructionLabel')"></span>
+                    <span x-show="scheduledTaskForm.action !== 'invoke_assistant'" x-text="t('scheduledTaskFormMessageLabel')"></span>
+                </span>
+                <textarea class="textarea textarea-sm w-full" rows="3"
+                    x-model="scheduledTaskForm.message"
+                    :placeholder="scheduledTaskForm.action === 'invoke_assistant' ? t('scheduledTaskFormInstructionPlaceholder') : t('scheduledTaskFormMessagePlaceholder')"></textarea>
+            </label>
+
+            <!-- cwd for assistant tasks -->
+            <label class="block" x-show="scheduledTaskForm.action === 'invoke_assistant'">
+                <span class="session-field-label text-[11px] font-mono text-gray-500 uppercase tracking-wider block mb-1" x-text="t('scheduledTaskFormCwdLabel')"></span>
+                <input type="text" class="input input-sm w-full font-mono" x-model="scheduledTaskForm.cwd" :placeholder="t('scheduledTaskFormCwdPlaceholder')">
+                <span class="text-[11px] text-gray-500 block mt-1" x-text="t('scheduledTaskFormCwdHint')"></span>
+            </label>
+
+            <!-- shared context for assistant tasks -->
+            <label class="flex items-start gap-2 cursor-pointer" x-show="scheduledTaskForm.action === 'invoke_assistant'">
+                <input type="checkbox" x-model="scheduledTaskForm.sharedContext" class="mt-1">
+                <span>
+                    <span class="text-sm text-white block" x-text="t('scheduledTaskFormSharedContextLabel')"></span>
+                    <span class="text-[11px] text-gray-400 block" x-text="t('scheduledTaskFormSharedContextHint')"></span>
+                </span>
+            </label>
+
+            <!-- Notify targets (multi) -->
+            <div>
+                <span class="session-field-label text-[11px] font-mono text-gray-500 uppercase tracking-wider block mb-2" x-text="t('scheduledTaskFormNotifyTargetsLabel')"></span>
+                <div class="rounded-xl border border-space-border/30 bg-space-900/40 p-3 space-y-2 max-h-[200px] overflow-y-auto">
+                    <div class="text-xs text-gray-500 font-mono" x-show="scheduledTaskUserConversations.length === 0" x-text="t('scheduledTaskFormNoConversations')"></div>
+                    <template x-for="conv in scheduledTaskUserConversations" :key="conv.id">
+                        <label class="flex items-center gap-2 cursor-pointer">
+                            <input type="checkbox" :value="conv.id" x-model="scheduledTaskForm.notifyConversationIds">
+                            <span class="text-sm text-gray-200 truncate" x-text="scheduledTaskConversationLabel(conv)"></span>
+                        </label>
+                    </template>
+                </div>
+                <span class="text-[11px] text-gray-500 block mt-1">
+                    <span x-show="scheduledTaskForm.notifyConversationIds.length === 0 && scheduledTaskForm.action === 'invoke_assistant'" class="text-yellow-400" x-text="t('scheduledTaskFormBackgroundWarning')"></span>
+                    <span x-show="scheduledTaskForm.notifyConversationIds.length === 0 && scheduledTaskForm.action !== 'invoke_assistant'" class="text-red-400" x-text="t('scheduledTaskFormNotifyRequired')"></span>
+                    <span x-show="scheduledTaskForm.notifyConversationIds.length > 0" x-text="t('scheduledTaskFormNotifyTargetsHint', scheduledTaskForm.notifyConversationIds.length)"></span>
+                </span>
+            </div>
+
+            <!-- Recurrence -->
+            <div>
+                <span class="session-field-label text-[11px] font-mono text-gray-500 uppercase tracking-wider block mb-2" x-text="t('scheduledTaskFormRecurrenceLabel')"></span>
+                <div class="grid grid-cols-2 sm:grid-cols-5 gap-2">
+                    <template x-for="opt in ['once','daily','weekly','monthly','yearly']" :key="opt">
+                        <label class="flex items-center justify-center gap-1 rounded-xl border py-2 px-2 cursor-pointer text-xs"
+                            :class="scheduledTaskForm.recurrence === opt ? 'border-neon-purple/40 bg-neon-purple/10 text-white' : 'border-space-border/30 bg-space-900/40 text-gray-400'">
+                            <input type="radio" :value="opt" x-model="scheduledTaskForm.recurrence" class="hidden">
+                            <span x-text="t('scheduledTaskRecurrence_' + opt)"></span>
+                        </label>
+                    </template>
+                </div>
+            </div>
+
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <label class="block" x-show="scheduledTaskForm.recurrence !== 'once' || !scheduledTaskForm.useDelay">
+                    <span class="session-field-label text-[11px] font-mono text-gray-500 uppercase tracking-wider block mb-1" x-text="t('scheduledTaskFormLocalTimeLabel')"></span>
+                    <input type="time" class="input input-sm w-full" x-model="scheduledTaskForm.localTime">
+                </label>
+                <label class="block">
+                    <span class="session-field-label text-[11px] font-mono text-gray-500 uppercase tracking-wider block mb-1" x-text="t('scheduledTaskFormTimezoneLabel')"></span>
+                    <select class="select select-sm w-full" x-model="scheduledTaskForm.timezone">
+                        <option value="Asia/Shanghai">Asia/Shanghai (UTC+8)</option>
+                        <option value="Asia/Tokyo">Asia/Tokyo (UTC+9)</option>
+                        <option value="Asia/Singapore">Asia/Singapore (UTC+8)</option>
+                        <option value="UTC">UTC</option>
+                        <option value="Europe/London">Europe/London</option>
+                        <option value="Europe/Paris">Europe/Paris</option>
+                        <option value="America/New_York">America/New_York</option>
+                        <option value="America/Los_Angeles">America/Los_Angeles</option>
+                    </select>
+                </label>
+            </div>
+
+            <div x-show="scheduledTaskForm.recurrence === 'weekly'">
+                <span class="session-field-label text-[11px] font-mono text-gray-500 uppercase tracking-wider block mb-2" x-text="t('scheduledTaskFormDayOfWeekLabel')"></span>
+                <div class="grid grid-cols-7 gap-1">
+                    <template x-for="(label, idx) in scheduledTaskWeekdayLabels" :key="idx">
+                        <label class="flex items-center justify-center rounded-lg border py-1.5 cursor-pointer text-xs"
+                            :class="scheduledTaskForm.dayOfWeek.includes(label.value) ? 'border-neon-purple/40 bg-neon-purple/10 text-white' : 'border-space-border/30 bg-space-900/40 text-gray-400'">
+                            <input type="checkbox" :value="label.value" x-model="scheduledTaskForm.dayOfWeek" class="hidden">
+                            <span x-text="label.short"></span>
+                        </label>
+                    </template>
+                </div>
+            </div>
+
+            <label class="block" x-show="scheduledTaskForm.recurrence === 'monthly'">
+                <span class="session-field-label text-[11px] font-mono text-gray-500 uppercase tracking-wider block mb-1" x-text="t('scheduledTaskFormDayOfMonthLabel')"></span>
+                <input type="number" min="1" max="31" class="input input-sm w-full" x-model.number="scheduledTaskForm.dayOfMonth">
+                <span class="text-[11px] text-gray-500 block mt-1" x-text="t('scheduledTaskFormDayOfMonthHint')"></span>
+            </label>
+
+            <div class="grid grid-cols-2 gap-3" x-show="scheduledTaskForm.recurrence === 'yearly'">
+                <label class="block">
+                    <span class="session-field-label text-[11px] font-mono text-gray-500 uppercase tracking-wider block mb-1" x-text="t('scheduledTaskFormMonthLabel')"></span>
+                    <select class="select select-sm w-full" x-model.number="scheduledTaskForm.month">
+                        <template x-for="m in 12" :key="m">
+                            <option :value="m" x-text="m + ' ' + t('scheduledTaskMonthSuffix')"></option>
+                        </template>
+                    </select>
+                </label>
+                <label class="block">
+                    <span class="session-field-label text-[11px] font-mono text-gray-500 uppercase tracking-wider block mb-1" x-text="t('scheduledTaskFormDayOfMonthLabel')"></span>
+                    <input type="number" min="1" max="31" class="input input-sm w-full" x-model.number="scheduledTaskForm.dayOfMonth">
+                </label>
+            </div>
+
+            <div x-show="scheduledTaskForm.recurrence === 'once'" class="space-y-2">
+                <label class="flex items-center gap-1 text-xs text-gray-300">
+                    <input type="checkbox" x-model="scheduledTaskForm.useDelay">
+                    <span x-text="t('scheduledTaskFormUseDelay')"></span>
+                </label>
+                <label class="block" x-show="scheduledTaskForm.useDelay">
+                    <span class="session-field-label text-[11px] font-mono text-gray-500 uppercase tracking-wider block mb-1" x-text="t('scheduledTaskFormDelayMinutesLabel')"></span>
+                    <input type="number" min="1" class="input input-sm w-full" x-model.number="scheduledTaskForm.delayMinutes">
+                </label>
+                <label class="block" x-show="!scheduledTaskForm.useDelay">
+                    <span class="session-field-label text-[11px] font-mono text-gray-500 uppercase tracking-wider block mb-1" x-text="t('scheduledTaskFormDateLabel')"></span>
+                    <input type="date" class="input input-sm w-full" x-model="scheduledTaskForm.date">
+                    <span class="text-[11px] text-gray-500 block mt-1" x-text="t('scheduledTaskFormDateHint')"></span>
+                </label>
+            </div>
+
+            <div class="rounded-xl border border-space-border/30 bg-space-900/40 p-3 text-[12px] text-gray-300 font-mono">
+                <div class="text-[11px] uppercase tracking-wider text-gray-500 mb-1" x-text="t('scheduledTaskFormPreviewLabel')"></div>
+                <div x-text="scheduledTaskFormPreview()"></div>
+            </div>
+
+            <div class="rounded-xl border border-red-500/40 bg-red-500/10 p-3 text-sm text-red-300" x-show="scheduledTaskFormError" x-text="scheduledTaskFormError"></div>
+        </div>
+
+        <div class="flex justify-end gap-2 mt-5">
+            <button class="btn btn-sm btn-surface" @click="closeScheduledTaskForm()" x-text="t('cancel')"></button>
+            <button class="btn btn-sm btn-primary" @click="submitScheduledTaskForm()"
+                :disabled="scheduledTaskFormSubmitting"
+                x-text="scheduledTaskFormSubmitting ? t('loading') : t('save')"></button>
+        </div>
+    </div>
+</div>

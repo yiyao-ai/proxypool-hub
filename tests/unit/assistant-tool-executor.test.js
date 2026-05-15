@@ -284,9 +284,12 @@ test('create_scheduled_task daily: happy path computes UTC nextRunAt server-side
   assert.equal(storedSchedule.recurrence, 'daily');
   assert.equal(storedSchedule.localTime, '20:10');
   assert.equal(storedSchedule.timezone, 'Asia/Shanghai');
-  assert.equal(calls[0].input.payload.conversationId, 'conv-x');
+  // conversationId is auto-promoted into notifyTargets[] (no longer in payload).
   assert.equal(calls[0].input.payload.message, '提醒你吃营养健康餐');
   assert.equal(calls[0].input.payload.action, 'notify_user');
+  assert.ok(Array.isArray(calls[0].input.notifyTargets));
+  assert.equal(calls[0].input.notifyTargets.length, 1);
+  assert.equal(calls[0].input.notifyTargets[0].conversationId, 'conv-x');
 });
 
 test('create_scheduled_task weekly: rejects bad dayOfWeek', async () => {

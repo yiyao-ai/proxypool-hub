@@ -271,6 +271,22 @@ function normalizeScheduleNumber(value, { min, max } = {}) {
   return n;
 }
 
+function normalizeNotifyTargets(value) {
+  if (!Array.isArray(value)) return [];
+  const seen = new Set();
+  const out = [];
+  for (const entry of value) {
+    if (!entry || typeof entry !== 'object') continue;
+    const kind = toText(entry.kind);
+    if (kind !== 'conversation') continue;
+    const conversationId = toText(entry.conversationId);
+    if (!conversationId || seen.has(conversationId)) continue;
+    seen.add(conversationId);
+    out.push({ kind, conversationId });
+  }
+  return out;
+}
+
 export function createScheduledTask({
   id = '',
   personId = '',
@@ -289,7 +305,23 @@ export function createScheduledTask({
   source = 'system',
   createdAt = '',
   updatedAt = '',
-  metadata = {}
+  metadata = {},
+  // Each task owns a dedicated conversation that scopes its assistant
+  // runs. Notifications go to `notifyTargets[]` (separate); the scope
+  // conversation never receives outbound pushes and never pollutes any
+  // user-facing chat thread.
+  scopeConversationId = '',
+  // List of external conversations to ping when the task fires. Each
+  // entry: { kind: 'conversation', conversationId }. Empty array means
+  // background-only execution (run history is still recorded).
+  notifyTargets = [],
+  // When true, all runs of this task continue the same runtime session
+  // (shared LLM context across runs). When false (default) each run
+  // starts a fresh runtime, so e.g. "daily PR summary" is a clean slate
+  // every morning.
+  sharedContext = false,
+  // Optional working directory for assistant runs.
+  cwd = ''
 } = {}) {
   const now = nowIso();
   const normalizedSchedule = schedule && typeof schedule === 'object' ? schedule : {};
@@ -327,6 +359,10 @@ export function createScheduledTask({
     lastError: toText(lastError),
     source: toText(source) || 'system',
     metadata: normalizeObject(metadata),
+    scopeConversationId: toText(scopeConversationId),
+    notifyTargets: normalizeNotifyTargets(notifyTargets),
+    sharedContext: Boolean(sharedContext),
+    cwd: toText(cwd),
     createdAt: normalizeIso(createdAt, now),
     updatedAt: normalizeIso(updatedAt, now)
   };

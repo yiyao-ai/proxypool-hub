@@ -1199,6 +1199,86 @@ export class AgentOrchestratorMessageService {
     return store.listByConversation(String(conversationId || '').trim(), { limit, states });
   }
 
+  /**
+   * Resolve the targets a scheduled-task push should fan out to. Honors the
+   * new `notifyTargets[]` shape and migrates the legacy single
+   * `payload.conversationId` to the same fan-out path.
+   */
+  _resolveScheduledTaskNotifyTargets(scheduledTask = {}) {
+    const explicit = Array.isArray(scheduledTask.notifyTargets) ? scheduledTask.notifyTargets : [];
+    const targets = [];
+    const seen = new Set();
+    for (const entry of explicit) {
+      const conversationId = String(entry?.conversationId || '').trim();
+      if (!conversationId || seen.has(conversationId)) continue;
+      seen.add(conversationId);
+      targets.push({ kind: 'conversation', conversationId });
+    }
+    const legacy = String(scheduledTask?.payload?.conversationId || '').trim();
+    if (legacy && !seen.has(legacy)) {
+      seen.add(legacy);
+      targets.push({ kind: 'conversation', conversationId: legacy });
+    }
+    return targets;
+  }
+
+  /**
+   * Push a tagged notification to each notifyTarget. All deliveries here
+   * carry kind='scheduled_task_notification' so the main-conversation LLM
+   * context filter can exclude them.
+   */
+  async _deliverScheduledTaskNotifications({
+    scheduledTask,
+    runId,
+    title,
+    bodyText,
+    isFailure = false
+  } = {}) {
+    const targets = this._resolveScheduledTaskNotifyTargets(scheduledTask);
+    if (targets.length === 0) {
+      return { delivered: 0, results: [] };
+    }
+    const isZh = /[㐀-鿿]/.test(String(bodyText || title || ''));
+    const header = isFailure
+      ? (isZh ? `⚠️ 定时任务失败：${title}` : `⚠️ Scheduled task failed: ${title}`)
+      : (isZh ? `⏰ 定时任务：${title}` : `⏰ Scheduled task: ${title}`);
+    const text = `${header}\n\n${String(bodyText || '').trim()}`;
+
+    const results = [];
+    const deliverySender = this.deliverySender;
+    if (!deliverySender?.send) {
+      return { delivered: 0, results: [] };
+    }
+    for (const target of targets) {
+      const conversation = this.conversationStore?.get?.(target.conversationId) || null;
+      if (!conversation?.id) {
+        results.push({ conversationId: target.conversationId, ok: false, error: 'conversation_not_found' });
+        continue;
+      }
+      try {
+        const delivery = await deliverySender.send({
+          conversation,
+          channel: conversation.channel,
+          sessionId: null,
+          payload: {
+            text,
+            // Single canonical tag — context filters key on this.
+            kind: 'scheduled_task_notification',
+            sourceType: 'scheduled_task',
+            scheduledTaskId: scheduledTask.id,
+            scheduledTaskRunId: runId,
+            isFailure: Boolean(isFailure)
+          },
+          message: { text }
+        });
+        results.push({ conversationId: target.conversationId, ok: true, delivery });
+      } catch (err) {
+        results.push({ conversationId: target.conversationId, ok: false, error: String(err?.message || err) });
+      }
+    }
+    return { delivered: results.filter((r) => r.ok).length, results };
+  }
+
   async runScheduledTask(task = null) {
     const scheduledTask = task && typeof task === 'object'
       ? task
@@ -1214,50 +1294,114 @@ export class AgentOrchestratorMessageService {
     // already set action='start'/'continue'/'status' still go through the
     // runtime-spawn paths below.
     const action = String(payload.action || (scheduledTask.kind === 'reminder' ? 'notify_user' : 'start')).trim();
+    const runId = `run-${scheduledTask.id}-${Date.now()}`;
+
+    if (action === 'invoke_assistant') {
+      // Run the assistant in the task's OWN scope conversation, never in
+      // any user-facing conversation. The scope conversation is created
+      // and bound when the task is created; we look it up here.
+      const scopeConvId = String(scheduledTask.scopeConversationId || '').trim();
+      if (!scopeConvId) {
+        throw new Error('invoke_assistant scheduled task is missing scopeConversationId; recreate the task');
+      }
+      let scopeConv = this.conversationStore?.get?.(scopeConvId) || null;
+      if (!scopeConv?.id) {
+        // Lazy-heal: scope conversation got lost — recreate it.
+        scopeConv = this.stateCoordinator?.ensureScheduledTaskScopeConversation?.(scheduledTask.id, {
+          title: scheduledTask.title
+        });
+      }
+      if (!scopeConv?.id) {
+        throw new Error('failed to resolve scope conversation for scheduled task');
+      }
+
+      const userText = String(payload.message || scheduledTask.title || '').trim();
+      if (!userText) {
+        throw new Error('invoke_assistant scheduled task requires payload.message');
+      }
+
+      // If this task does NOT share context across runs, detach the active
+      // runtime session on the scope conversation so the assistant starts
+      // each fire from a fresh slate.
+      if (!scheduledTask.sharedContext && scopeConv.activeRuntimeSessionId) {
+        try {
+          scopeConv = this.conversationStore.clearActiveRuntimeSession(scopeConv.id) || scopeConv;
+        } catch {
+          // best-effort — if we can't clear, the existing runtime is reused
+        }
+      }
+
+      // Drive the assistant via the assistant-mode service. We import it
+      // dynamically to avoid a static import cycle (mode-service depends
+      // on this message-service).
+      let assistantResult = null;
+      let assistantError = null;
+      try {
+        const { default: assistantModeService } = await import('../assistant-core/mode-service.js');
+        assistantResult = await assistantModeService.maybeHandleMessage({
+          conversation: scopeConv,
+          text: userText,
+          defaultRuntimeProvider: String(payload.provider || 'codex').trim() || 'codex',
+          cwd: String(payload.cwd || scheduledTask.cwd || '').trim(),
+          model: String(payload.model || '').trim(),
+          executionMode: 'sync'
+        });
+      } catch (err) {
+        assistantError = err;
+      }
+
+      if (assistantError) {
+        // Notify failure to all notifyTargets — the user should know.
+        const failureBody = String(assistantError?.message || assistantError || 'unknown failure').slice(0, 500);
+        await this._deliverScheduledTaskNotifications({
+          scheduledTask,
+          runId,
+          title: scheduledTask.title,
+          bodyText: failureBody,
+          isFailure: true
+        });
+        throw assistantError;
+      }
+
+      const immediateMessage = String(assistantResult?.message || '').trim();
+      await this._deliverScheduledTaskNotifications({
+        scheduledTask,
+        runId,
+        title: scheduledTask.title,
+        bodyText: immediateMessage || (assistantResult?.type ? `[${assistantResult.type}]` : '(no reply)')
+      });
+
+      return {
+        action,
+        scheduledTaskId: scheduledTask.id,
+        scheduledTaskRunId: runId,
+        scopeConversationId: scopeConv.id,
+        assistantRunId: assistantResult?.assistantRun?.id || '',
+        summary: `assistant invoked: ${userText.slice(0, 80)}`,
+        result: immediateMessage || `assistant ${assistantResult?.type || 'invoked'}`
+      };
+    }
 
     if (action === 'notify_user') {
-      const conversationId = String(
-        payload.conversationId
-        || scheduledTask?.metadata?.conversationId
-        || ''
-      ).trim();
-      if (!conversationId) {
-        throw new Error('notify_user scheduled task requires payload.conversationId');
+      const targets = this._resolveScheduledTaskNotifyTargets(scheduledTask);
+      if (targets.length === 0) {
+        throw new Error('notify_user scheduled task has no notifyTargets — nothing to deliver');
       }
-      const conversation = this.conversationStore?.get?.(conversationId) || null;
-      if (!conversation?.id) {
-        throw new Error(`notify_user target conversation ${conversationId} not found`);
-      }
-      const isZh = /[㐀-鿿]/.test(String(payload.message || scheduledTask.title || ''));
-      const headerLabel = isZh ? '⏰ 定时提醒' : '⏰ Reminder';
-      const body = String(payload.message || scheduledTask.title || (isZh ? '到时间了' : 'Reminder due')).trim();
-      const text = body.startsWith(headerLabel) ? body : `${headerLabel}\n\n${body}`;
-      const deliverySender = this.deliverySender;
-      if (!deliverySender?.send) {
-        throw new Error('delivery sender is unavailable; cannot deliver scheduled reminder');
-      }
-      const delivery = await deliverySender.send({
-        conversation,
-        channel: conversation.channel,
-        sessionId: null,
-        payload: {
-          text,
-          kind: 'scheduled_reminder',
-          sourceType: 'scheduled_task',
-          scheduledTaskId: scheduledTask.id
-        },
-        message: {
-          text
-        }
+      const body = String(payload.message || scheduledTask.title || '到时间了').trim();
+      const { delivered, results } = await this._deliverScheduledTaskNotifications({
+        scheduledTask,
+        runId,
+        title: scheduledTask.title,
+        bodyText: body
       });
       return {
         action,
         scheduledTaskId: scheduledTask.id,
-        delivery,
-        summary: isZh
-          ? `已向用户发送提醒: ${body.slice(0, 80)}`
-          : `Reminder delivered to user: ${body.slice(0, 80)}`,
-        result: text
+        scheduledTaskRunId: runId,
+        delivered,
+        deliveryResults: results,
+        summary: `reminder delivered to ${delivered} target(s)`,
+        result: body
       };
     }
 

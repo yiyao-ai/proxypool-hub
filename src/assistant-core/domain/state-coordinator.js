@@ -780,6 +780,22 @@ export class StateCoordinator {
     };
   }
 
+  ensureScheduledTaskScopeConversation(scheduledTaskId, { title = '' } = {}) {
+    const id = toText(scheduledTaskId);
+    if (!id) return null;
+    return this.conversationStore.findOrCreateByExternal({
+      channel: 'scheduled-task-scope',
+      accountId: 'default',
+      externalConversationId: id,
+      externalUserId: 'scheduled-task',
+      title: title ? `[scheduled] ${title}` : `[scheduled] ${id}`,
+      metadata: {
+        scheduledTaskId: id,
+        source: 'scheduled_task_scope'
+      }
+    });
+  }
+
   createScheduledTask({
     personId = '',
     projectId = '',
@@ -791,6 +807,9 @@ export class StateCoordinator {
     payload = null,
     source = 'system',
     metadata = {},
+    notifyTargets = [],
+    sharedContext = false,
+    cwd = '',
     // Caller may pre-compute nextRunAt (used by the 'once' path which has
     // delayMinutes/delaySeconds semantics that the model-layer normalizer
     // doesn't see). For recurring schedules we derive nextRunAt from the
@@ -799,6 +818,14 @@ export class StateCoordinator {
     nextRunAt = '',
     now = Date.now()
   } = {}) {
+    // Backward-compat migration: older callers passed payload.conversationId
+    // as the single notification target. Promote it into notifyTargets so
+    // the new fan-out path treats it uniformly.
+    let resolvedNotifyTargets = Array.isArray(notifyTargets) ? [...notifyTargets] : [];
+    const legacyConvId = toText(payload?.conversationId);
+    if (legacyConvId && !resolvedNotifyTargets.some((t) => t?.conversationId === legacyConvId)) {
+      resolvedNotifyTargets.push({ kind: 'conversation', conversationId: legacyConvId });
+    }
     let resolvedNextRunAt = toText(nextRunAt);
     if (!resolvedNextRunAt) {
       const recurrence = toText(schedule?.recurrence).toLowerCase();
@@ -820,26 +847,44 @@ export class StateCoordinator {
       payload,
       source,
       metadata,
-      nextRunAt: resolvedNextRunAt
+      nextRunAt: resolvedNextRunAt,
+      notifyTargets: resolvedNotifyTargets,
+      sharedContext,
+      cwd
     });
+
+    // Auto-create the scope conversation for this task so assistant runs
+    // have an isolated home and a stable id we can reference.
+    const scopeConversation = this.ensureScheduledTaskScopeConversation(scheduledTask.id, {
+      title: scheduledTask.title
+    });
+    const finalScheduledTask = scopeConversation?.id
+      ? this.scheduledTaskStore.save({
+          ...scheduledTask,
+          scopeConversationId: scopeConversation.id
+        })
+      : scheduledTask;
+
     this.recordEpisode({
       kind: 'scheduled_task.created',
-      personId: scheduledTask.personId,
-      projectId: scheduledTask.projectId,
-      taskId: scheduledTask.taskId,
-      executionId: scheduledTask.executionId,
+      personId: finalScheduledTask.personId,
+      projectId: finalScheduledTask.projectId,
+      taskId: finalScheduledTask.taskId,
+      executionId: finalScheduledTask.executionId,
       payload: {
-        scheduledTaskId: scheduledTask.id,
-        taskKind: scheduledTask.kind,
-        title: scheduledTask.title,
-        nextRunAt: scheduledTask.nextRunAt,
-        recurrence: scheduledTask.schedule?.recurrence || ''
+        scheduledTaskId: finalScheduledTask.id,
+        taskKind: finalScheduledTask.kind,
+        title: finalScheduledTask.title,
+        nextRunAt: finalScheduledTask.nextRunAt,
+        recurrence: finalScheduledTask.schedule?.recurrence || '',
+        notifyTargetCount: finalScheduledTask.notifyTargets?.length || 0,
+        scopeConversationId: finalScheduledTask.scopeConversationId
       },
       metadata: {
         source: 'state_coordinator_scheduled_task'
       }
     });
-    return scheduledTask;
+    return finalScheduledTask;
   }
 
   updateScheduledTask({
@@ -847,6 +892,9 @@ export class StateCoordinator {
     title,
     schedule,
     payload,
+    notifyTargets,
+    sharedContext,
+    cwd,
     now = Date.now()
   } = {}) {
     const current = this.scheduledTaskStore.get(toText(id));
@@ -881,6 +929,9 @@ export class StateCoordinator {
       title: title != null ? toText(title) || current.title : current.title,
       schedule: mergedSchedule,
       payload: mergedPayload,
+      notifyTargets: Array.isArray(notifyTargets) ? notifyTargets : current.notifyTargets,
+      sharedContext: typeof sharedContext === 'boolean' ? sharedContext : current.sharedContext,
+      cwd: cwd != null ? toText(cwd) : current.cwd,
       nextRunAt,
       state: 'scheduled',
       lastError: ''

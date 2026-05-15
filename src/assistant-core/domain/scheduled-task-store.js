@@ -34,9 +34,14 @@ export class ScheduledTaskStore extends JsonEntityStore {
     return this.list({
       limit,
       predicate: (entry) => {
-        const cid = toText(entry?.payload?.conversationId)
-          || toText(entry?.metadata?.conversationId);
-        if (cid !== normalizedConversationId) return false;
+        // Match either: the task's legacy payload.conversationId OR any
+        // entry in the new notifyTargets[] list. This is what "tasks
+        // associated with this conversation" means under the new model.
+        const targets = Array.isArray(entry?.notifyTargets) ? entry.notifyTargets : [];
+        const matched = targets.some((t) => toText(t?.conversationId) === normalizedConversationId)
+          || toText(entry?.payload?.conversationId) === normalizedConversationId
+          || toText(entry?.metadata?.conversationId) === normalizedConversationId;
+        if (!matched) return false;
         if (stateSet.size === 0) return true;
         return stateSet.has(toText(entry.state));
       }
